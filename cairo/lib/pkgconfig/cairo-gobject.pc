@@ -1,0 +1,10 @@
+prefix=/tmp/cairo-ios/install
+includedir=${prefix}/include
+libdir=${prefix}/lib
+
+Name: cairo-gobject
+Description: cairo-gobject for cairo graphics library
+Version: 1.18.2
+Requires: glib-2.0, gobject-2.0, cairo, pixman-1 >=  0.40.0
+Libs: -L${libdir} -lcairo-gobject -lm -ldl -lz -lpng16 -lintl
+Cflags: -I${includedir}/cairo -DG_INTL_STATIC_COMPILATION
