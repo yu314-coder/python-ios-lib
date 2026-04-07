@@ -1,4 +1,4 @@
-"""Preprocessing: StandardScaler, MinMaxScaler, LabelEncoder, OneHotEncoder, PolynomialFeatures."""
+"""Preprocessing: StandardScaler, MinMaxScaler, LabelEncoder, OneHotEncoder, PolynomialFeatures, RobustScaler."""
 import numpy as np
 from sklearn.base import BaseEstimator, TransformerMixin
 
@@ -101,3 +101,89 @@ class PolynomialFeatures(BaseEstimator, TransformerMixin):
                 for j in range(i + 1, p):
                     features.append((X[:, i] * X[:, j]).reshape(-1, 1))
         return np.hstack(features)
+
+
+class OneHotEncoder(BaseEstimator, TransformerMixin):
+    def __init__(self, sparse=False, handle_unknown='error'):
+        self.sparse = sparse  # always dense in this implementation
+        self.handle_unknown = handle_unknown
+        self.categories_ = None
+
+    def fit(self, X, y=None):
+        X = np.asarray(X)
+        if X.ndim == 1:
+            X = X.reshape(-1, 1)
+        self.categories_ = []
+        for col in range(X.shape[1]):
+            self.categories_.append(np.unique(X[:, col]))
+        return self
+
+    def transform(self, X):
+        X = np.asarray(X)
+        if X.ndim == 1:
+            X = X.reshape(-1, 1)
+        n_samples = X.shape[0]
+        encoded_cols = []
+        for col in range(X.shape[1]):
+            cats = self.categories_[col]
+            col_encoded = np.zeros((n_samples, len(cats)), dtype=float)
+            for i, cat in enumerate(cats):
+                col_encoded[:, i] = (X[:, col] == cat).astype(float)
+            if self.handle_unknown == 'ignore':
+                pass  # unknown categories get all zeros
+            encoded_cols.append(col_encoded)
+        return np.hstack(encoded_cols)
+
+    def inverse_transform(self, X):
+        X = np.asarray(X, dtype=float)
+        n_samples = X.shape[0]
+        n_features = len(self.categories_)
+        result = np.empty((n_samples, n_features), dtype=object)
+        col_offset = 0
+        for feat_idx in range(n_features):
+            n_cats = len(self.categories_[feat_idx])
+            sub = X[:, col_offset:col_offset + n_cats]
+            indices = np.argmax(sub, axis=1)
+            result[:, feat_idx] = self.categories_[feat_idx][indices]
+            col_offset += n_cats
+        return result
+
+
+class RobustScaler(BaseEstimator, TransformerMixin):
+    def __init__(self, with_centering=True, with_scaling=True,
+                 quantile_range=(25.0, 75.0)):
+        self.with_centering = with_centering
+        self.with_scaling = with_scaling
+        self.quantile_range = quantile_range
+        self.center_ = None
+        self.scale_ = None
+
+    def fit(self, X, y=None):
+        X = np.asarray(X, dtype=float)
+        if X.ndim == 1:
+            X = X.reshape(-1, 1)
+        if self.with_centering:
+            self.center_ = np.median(X, axis=0)
+        else:
+            self.center_ = np.zeros(X.shape[1])
+        if self.with_scaling:
+            q_low, q_high = self.quantile_range
+            low = np.percentile(X, q_low, axis=0)
+            high = np.percentile(X, q_high, axis=0)
+            self.scale_ = high - low
+            self.scale_[self.scale_ == 0] = 1.0
+        else:
+            self.scale_ = np.ones(X.shape[1])
+        return self
+
+    def transform(self, X):
+        X = np.asarray(X, dtype=float)
+        if X.ndim == 1:
+            X = X.reshape(-1, 1)
+        return (X - self.center_) / self.scale_
+
+    def inverse_transform(self, X):
+        X = np.asarray(X, dtype=float)
+        if X.ndim == 1:
+            X = X.reshape(-1, 1)
+        return X * self.scale_ + self.center_

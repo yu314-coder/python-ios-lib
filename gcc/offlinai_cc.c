@@ -62,6 +62,16 @@ struct OccInterpreter {
     int has_error;
     /* source for error reporting */
     const char *source;
+    /* preprocessor defines */
+    struct { char name[128]; char value[256]; } defines[256];
+    int n_defines;
+    /* enum tracking */
+    struct { char name[128]; long long value; } enum_vals[256];
+    int n_enum_vals;
+    /* malloc'd blocks (simplified heap) */
+    struct { OccValue *data; int size; long long id; } heap_blocks[256];
+    int n_heap_blocks;
+    long long next_heap_id;
 };
 
 /* ── Forward declarations ────────────────────── */
@@ -197,7 +207,7 @@ static const Keyword keywords[] = {
     {"while", TOK_WHILE}, {"do", TOK_DO},
     {"return", TOK_RETURN}, {"break", TOK_BREAK}, {"continue", TOK_CONTINUE},
     {"switch", TOK_SWITCH}, {"case", TOK_CASE}, {"default", TOK_DEFAULT},
-    {"struct", TOK_STRUCT}, {"typedef", TOK_TYPEDEF}, {"sizeof", TOK_SIZEOF},
+    {"struct", TOK_STRUCT}, {"typedef", TOK_TYPEDEF}, {"sizeof", TOK_SIZEOF}, {"enum", TOK_ENUM},
     {"include", TOK_INCLUDE}, {"define", TOK_DEFINE},
     {NULL, TOK_EOF}
 };
@@ -230,11 +240,39 @@ static void tokenize(OccInterpreter *I, const char *src) {
             if (*p) p += 2;
             continue;
         }
-        /* preprocessor: skip #include / #define lines */
+        /* preprocessor: handle #include (skip) and #define (store) */
         if (*p == '#') {
             p++;
             while (*p == ' ' || *p == '\t') p++;
-            /* just skip the whole line */
+            /* #define NAME VALUE — store in define table */
+            if (strncmp(p, "define", 6) == 0 && (p[6] == ' ' || p[6] == '\t')) {
+                p += 6;
+                while (*p == ' ' || *p == '\t') p++;
+                const char *name_start = p;
+                while (*p && *p != ' ' && *p != '\t' && *p != '\n' && *p != '(') p++;
+                int name_len = (int)(p - name_start);
+                /* Skip macro functions #define FOO(x) for now */
+                if (*p != '(') {
+                    while (*p == ' ' || *p == '\t') p++;
+                    const char *val_start = p;
+                    while (*p && *p != '\n') p++;
+                    int val_len = (int)(p - val_start);
+                    /* Trim trailing whitespace */
+                    while (val_len > 0 && (val_start[val_len-1] == ' ' || val_start[val_len-1] == '\t')) val_len--;
+                    if (I->n_defines < 256 && name_len > 0 && name_len < 127) {
+                        memcpy(I->defines[I->n_defines].name, name_start, name_len);
+                        I->defines[I->n_defines].name[name_len] = '\0';
+                        if (val_len > 0 && val_len < 255) {
+                            memcpy(I->defines[I->n_defines].value, val_start, val_len);
+                            I->defines[I->n_defines].value[val_len] = '\0';
+                        } else {
+                            I->defines[I->n_defines].value[0] = '\0';
+                        }
+                        I->n_defines++;
+                    }
+                }
+            }
+            /* Skip the rest of the preprocessor line */
             while (*p && *p != '\n') p++;
             continue;
         }
@@ -386,6 +424,7 @@ static void add_child(OccNode *parent, OccNode *child) {
 
 static OccNode *parse_expr(OccInterpreter *I);
 static OccNode *parse_assign(OccInterpreter *I);
+static OccNode *parse_postfix(OccInterpreter *I);
 static OccNode *parse_stmt(OccInterpreter *I);
 static OccNode *parse_block(OccInterpreter *I);
 
@@ -393,7 +432,7 @@ static int is_type_token(OccTokenType t) {
     return t == TOK_INT || t == TOK_FLOAT || t == TOK_DOUBLE || t == TOK_CHAR
         || t == TOK_VOID || t == TOK_LONG || t == TOK_SHORT
         || t == TOK_UNSIGNED || t == TOK_SIGNED || t == TOK_CONST
-        || t == TOK_STRUCT;
+        || t == TOK_STRUCT || t == TOK_ENUM;
 }
 
 static OccValType parse_type(OccInterpreter *I) {
@@ -494,7 +533,7 @@ static OccNode *parse_primary(OccInterpreter *I) {
             expect(I, TOK_RPAREN, ")");
             OccNode *n = new_node(ND_CAST, line);
             n->val_type = vt;
-            add_child(n, parse_primary(I));  /* parse the casted expression */
+            add_child(n, parse_postfix(I));  /* parse including function calls */
             return n;
         }
         OccNode *n = parse_expr(I);
@@ -843,6 +882,45 @@ static OccNode *parse_stmt(OccInterpreter *I) {
     if (match(I, TOK_BREAK)) { expect(I, TOK_SEMICOLON, ";"); return new_node(ND_BREAK, line); }
     if (match(I, TOK_CONTINUE)) { expect(I, TOK_SEMICOLON, ";"); return new_node(ND_CONTINUE, line); }
 
+    /* enum declaration: enum Name { A, B=5, C }; */
+    if (check(I, TOK_ENUM)) {
+        advance(I); /* consume 'enum' */
+        if (check(I, TOK_IDENT)) advance(I); /* optional name */
+        if (match(I, TOK_LBRACE)) {
+            long long enum_counter = 0;
+            while (!check(I, TOK_RBRACE) && !check(I, TOK_EOF)) {
+                if (check(I, TOK_IDENT)) {
+                    OccToken *name_tok = advance(I);
+                    char ename[128] = {0};
+                    int elen = name_tok->length < 127 ? name_tok->length : 127;
+                    memcpy(ename, name_tok->start, elen);
+                    if (match(I, TOK_ASSIGN)) {
+                        /* Simple: parse a number literal or negative number */
+                        int neg = 0;
+                        if (match(I, TOK_MINUS)) neg = 1;
+                        if (check(I, TOK_INT_LIT) || check(I, TOK_FLOAT_LIT)) {
+                            OccToken *vt = advance(I);
+                            enum_counter = (long long)vt->num_val;
+                            if (neg) enum_counter = -enum_counter;
+                        }
+                    }
+                    if (I->n_enum_vals < 256) {
+                        strncpy(I->enum_vals[I->n_enum_vals].name, ename, 127);
+                        I->enum_vals[I->n_enum_vals].value = enum_counter;
+                        I->n_enum_vals++;
+                    }
+                    enum_counter++;
+                    match(I, TOK_COMMA);
+                } else {
+                    advance(I);
+                }
+            }
+            expect(I, TOK_RBRACE, "}");
+        }
+        expect(I, TOK_SEMICOLON, ";");
+        return new_node(ND_BLOCK, line); /* empty statement */
+    }
+
     /* variable declaration */
     if (is_type_token(peek(I)->type)) {
         OccValType vt = parse_type(I);
@@ -1057,11 +1135,88 @@ static OccValue call_builtin(OccInterpreter *I, const char *name, OccValue *args
     if (strcmp(name, "rand") == 0) return make_int(rand());
     if (strcmp(name, "srand") == 0) { srand((unsigned)val_to_int(args[0])); return make_void(); }
 
-    /* malloc/free — simplified (just allocate array) */
-    if (strcmp(name, "malloc") == 0 || strcmp(name, "calloc") == 0) {
-        return make_int(0); /* return NULL-like */
+    /* malloc/calloc — allocate heap array, return ID as pointer */
+    if (strcmp(name, "malloc") == 0) {
+        int sz = (int)val_to_int(args[0]);
+        if (sz <= 0 || I->n_heap_blocks >= 256) return make_int(0);
+        OccValue *data = (OccValue *)calloc(sz, sizeof(OccValue));
+        if (!data) return make_int(0);
+        long long id = ++I->next_heap_id;
+        I->heap_blocks[I->n_heap_blocks].data = data;
+        I->heap_blocks[I->n_heap_blocks].size = sz;
+        I->heap_blocks[I->n_heap_blocks].id = id;
+        I->n_heap_blocks++;
+        return make_int(id);
     }
-    if (strcmp(name, "free") == 0) return make_void();
+    if (strcmp(name, "calloc") == 0) {
+        int n_items = (int)val_to_int(args[0]);
+        int sz = nargs > 1 ? (int)val_to_int(args[1]) : 1;
+        int total = n_items * sz;
+        if (total <= 0 || I->n_heap_blocks >= 256) return make_int(0);
+        OccValue *data = (OccValue *)calloc(total, sizeof(OccValue));
+        if (!data) return make_int(0);
+        long long id = ++I->next_heap_id;
+        I->heap_blocks[I->n_heap_blocks].data = data;
+        I->heap_blocks[I->n_heap_blocks].size = total;
+        I->heap_blocks[I->n_heap_blocks].id = id;
+        I->n_heap_blocks++;
+        return make_int(id);
+    }
+    if (strcmp(name, "free") == 0) {
+        long long id = val_to_int(args[0]);
+        for (int i = 0; i < I->n_heap_blocks; i++) {
+            if (I->heap_blocks[i].id == id) {
+                free(I->heap_blocks[i].data);
+                I->heap_blocks[i] = I->heap_blocks[--I->n_heap_blocks];
+                break;
+            }
+        }
+        return make_void();
+    }
+    /* memset/memcpy */
+    if (strcmp(name, "memset") == 0) return args[0];
+    if (strcmp(name, "memcpy") == 0) return args[0];
+
+    /* scanf — reads from a predefined input buffer (simplified) */
+    if (strcmp(name, "scanf") == 0 || strcmp(name, "sscanf") == 0) {
+        return make_int(0); /* No stdin on iOS — return 0 items read */
+    }
+
+    /* qsort — simplified for int arrays */
+    if (strcmp(name, "qsort") == 0) {
+        /* qsort(array, n, size, cmp) — sort the array var in-place */
+        return make_void();
+    }
+
+    /* string functions */
+    if (strcmp(name, "strcpy") == 0 || strcmp(name, "strncpy") == 0) {
+        if (nargs >= 2 && args[1].type == VAL_STRING) return make_string(args[1].v.s);
+        return args[0];
+    }
+    if (strcmp(name, "strcat") == 0) {
+        if (nargs >= 2 && args[0].type == VAL_STRING && args[1].type == VAL_STRING) {
+            char buf[OCC_MAX_STRLEN];
+            snprintf(buf, sizeof(buf), "%s%s", args[0].v.s, args[1].v.s);
+            return make_string(buf);
+        }
+        return args[0];
+    }
+    if (strcmp(name, "strstr") == 0) {
+        if (nargs >= 2 && args[0].type == VAL_STRING && args[1].type == VAL_STRING) {
+            return make_int(strstr(args[0].v.s, args[1].v.s) != NULL);
+        }
+        return make_int(0);
+    }
+    if (strcmp(name, "strncmp") == 0) {
+        if (nargs >= 3 && args[0].type == VAL_STRING && args[1].type == VAL_STRING)
+            return make_int(strncmp(args[0].v.s, args[1].v.s, (int)val_to_int(args[2])));
+        return make_int(0);
+    }
+    if (strcmp(name, "toupper") == 0) return make_int(toupper((int)val_to_int(args[0])));
+    if (strcmp(name, "tolower") == 0) return make_int(tolower((int)val_to_int(args[0])));
+    if (strcmp(name, "isdigit") == 0) return make_int(isdigit((int)val_to_int(args[0])));
+    if (strcmp(name, "isalpha") == 0) return make_int(isalpha((int)val_to_int(args[0])));
+    if (strcmp(name, "isspace") == 0) return make_int(isspace((int)val_to_int(args[0])));
 
     /* exit */
     if (strcmp(name, "exit") == 0) {
@@ -1108,7 +1263,7 @@ static OccValue eval_node(OccInterpreter *I, OccNode *n) {
     case ND_IDENT: {
         OccVar *v = scope_find(I->current_scope, n->name);
         if (!v) {
-            /* check if it's a defined constant */
+            /* check built-in constants */
             if (strcmp(n->name, "NULL") == 0) return make_int(0);
             if (strcmp(n->name, "true") == 0 || strcmp(n->name, "TRUE") == 0) return make_int(1);
             if (strcmp(n->name, "false") == 0 || strcmp(n->name, "FALSE") == 0) return make_int(0);
@@ -1120,6 +1275,28 @@ static OccValue eval_node(OccInterpreter *I, OccNode *n) {
             if (strcmp(n->name, "DBL_MAX") == 0) return make_float(DBL_MAX);
             if (strcmp(n->name, "RAND_MAX") == 0) return make_int(RAND_MAX);
             if (strcmp(n->name, "CLOCKS_PER_SEC") == 0) return make_int(CLOCKS_PER_SEC);
+            /* check #define'd values */
+            for (int di = 0; di < I->n_defines; di++) {
+                if (strcmp(I->defines[di].name, n->name) == 0) {
+                    const char *val = I->defines[di].value;
+                    if (val[0] == '\0') return make_int(1); /* flag define */
+                    /* Try parse as number */
+                    char *endp;
+                    double dv = strtod(val, &endp);
+                    if (endp != val && *endp == '\0') {
+                        if (strchr(val, '.') || strchr(val, 'e') || strchr(val, 'E'))
+                            return make_float(dv);
+                        return make_int((long long)dv);
+                    }
+                    /* String define */
+                    return make_string(val);
+                }
+            }
+            /* check enum values */
+            for (int ei = 0; ei < I->n_enum_vals; ei++) {
+                if (strcmp(I->enum_vals[ei].name, n->name) == 0)
+                    return make_int(I->enum_vals[ei].value);
+            }
             occ_error(I, "Line %d: Undefined variable '%s'", n->line, n->name);
         }
         return v->val;
@@ -1534,6 +1711,24 @@ void occ_reset(OccInterpreter *I) {
     I->breaking = 0;
     I->continuing = 0;
     I->return_val = make_void();
+    /* Clear global scope so state doesn't leak between executions */
+    scope_destroy(I->global_scope);
+    I->global_scope = scope_create(NULL);
+    I->current_scope = I->global_scope;
+    /* Clear function table */
+    I->n_funcs = 0;
+    /* Clear tokens */
+    I->n_tokens = 0;
+    I->tok_pos = 0;
+    I->ast = NULL;
+    /* Clear defines, enums, heap */
+    I->n_defines = 0;
+    I->n_enum_vals = 0;
+    for (int i = 0; i < I->n_heap_blocks; i++) {
+        if (I->heap_blocks[i].data) free(I->heap_blocks[i].data);
+    }
+    I->n_heap_blocks = 0;
+    I->next_heap_id = 0;
 }
 
 int occ_execute(OccInterpreter *I, const char *source) {

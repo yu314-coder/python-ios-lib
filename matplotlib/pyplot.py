@@ -8,6 +8,10 @@ Produces interactive HTML charts via fig.show().
 import sys as _sys
 import numpy as np
 import plotly.graph_objects as go
+try:
+    from plotly.subplots import make_subplots as _make_subplots
+except ImportError:
+    _make_subplots = None
 
 # numpy arrays can't be used in if/and/or — this is handled by
 # PythonRuntime which wraps execution to catch and auto-fix these errors.
@@ -689,6 +693,33 @@ class _SafeFigure:
     def data(self, val):
         object.__getattribute__(self, '_fig').data = val
 
+    def savefig(self, fname, dpi=None, bbox_inches=None, transparent=False, **kwargs):
+        """Save figure to file (PNG/JPG/PDF via kaleido, or HTML fallback)."""
+        pfig = object.__getattribute__(self, '_fig')
+        _apply_layout(pfig)
+        fpath = str(fname)
+        ext = fpath.rsplit('.', 1)[-1].lower() if '.' in fpath else ''
+        if ext in ('png', 'jpg', 'jpeg', 'pdf', 'svg', 'webp'):
+            try:
+                scale = (dpi or 100) / 100.0
+                pfig.write_image(fpath, scale=scale)
+                return
+            except Exception as e:
+                print(f"[mpl->plotly] write_image failed ({e}), falling back to HTML", file=_sys.__stderr__)
+                html_path = fpath.rsplit('.', 1)[0] + '.html'
+                pfig.write_html(html_path, include_plotlyjs=True)
+        else:
+            html_path = fpath if fpath.endswith('.html') else fpath.rsplit('.', 1)[0] + '.html'
+            pfig.write_html(html_path, include_plotlyjs=True)
+
+    def add_subplot(self, *args, **kwargs):
+        """Support fig.add_subplot(111, projection='3d')."""
+        projection = kwargs.pop('projection', None)
+        ax = _Axes(self, row=1, col=1, nrows=1, ncols=1)
+        if projection == '3d':
+            ax._is_3d = True
+        return ax
+
 
 def figure(num=None, figsize=None, dpi=None, facecolor=None, **kwargs):
     global _current_fig
@@ -702,23 +733,75 @@ def figure(num=None, figsize=None, dpi=None, facecolor=None, **kwargs):
     return _SafeFigure(_current_fig)
 
 def subplots(nrows=1, ncols=1, figsize=None, sharex=False, sharey=False, subplot_kw=None, **kwargs):
-    sfig = figure(figsize=figsize)
-    ax = _Axes(sfig)
-    if nrows == 1 and ncols == 1:
+    global _current_fig
+    _color_index[0] = 0
+    _fig_counter[0] += 1
+
+    use_subplots = (nrows > 1 or ncols > 1) and _make_subplots is not None
+    if use_subplots:
+        specs = kwargs.pop('specs', None)
+        subplot_titles = kwargs.pop('subplot_titles', None)
+        pfig = _make_subplots(rows=nrows, cols=ncols, shared_xaxes=sharex,
+                              shared_yaxes=sharey, specs=specs,
+                              subplot_titles=subplot_titles)
+        _current_fig = pfig
+        sfig = _SafeFigure(pfig)
+        if figsize:
+            w, h = figsize
+            dpi = 100
+            _layout_updates['width'] = int(w * dpi)
+            _layout_updates['height'] = int(h * dpi)
+        axes = [[_Axes(sfig, row=r+1, col=c+1, nrows=nrows, ncols=ncols) for c in range(ncols)] for r in range(nrows)]
+        if nrows == 1 and ncols == 1:
+            return sfig, axes[0][0]
+        if nrows == 1:
+            arr = axes[0]
+            arr_obj = _AxesArray(arr)
+            return sfig, arr_obj
+        if ncols == 1:
+            arr = [row[0] for row in axes]
+            arr_obj = _AxesArray(arr)
+            return sfig, arr_obj
+        arr_obj = _AxesArray2D(axes)
+        return sfig, arr_obj
+    else:
+        sfig = figure(figsize=figsize)
+        ax = _Axes(sfig, row=1, col=1, nrows=1, ncols=1)
         return sfig, ax
-    axes = [[_Axes(sfig) for _ in range(ncols)] for _ in range(nrows)]
-    if nrows == 1: return sfig, axes[0] if ncols > 1 else axes[0][0]
-    if ncols == 1: return sfig, [row[0] for row in axes]
-    return sfig, axes
 
 def subplot(*args, **kwargs):
-    return _Axes(_ensure_fig())
+    fig = _ensure_fig()
+    projection = kwargs.pop('projection', None)
+    if len(args) == 3:
+        nrows, ncols, index = int(args[0]), int(args[1]), int(args[2])
+    elif len(args) == 1:
+        s = str(int(args[0]))
+        if len(s) == 3:
+            nrows, ncols, index = int(s[0]), int(s[1]), int(s[2])
+        else:
+            nrows, ncols, index = 1, 1, 1
+    else:
+        nrows, ncols, index = 1, 1, 1
+    row = (index - 1) // ncols + 1
+    col = (index - 1) % ncols + 1
+    ax = _Axes(_SafeFigure(fig), row=row, col=col, nrows=nrows, ncols=ncols)
+    if projection == '3d':
+        ax._is_3d = True
+    return ax
 
 def axes(*args, **kwargs):
-    return _Axes(_ensure_fig())
+    projection = kwargs.pop('projection', None)
+    ax = _Axes(_SafeFigure(_ensure_fig()), row=1, col=1, nrows=1, ncols=1)
+    if projection == '3d':
+        ax._is_3d = True
+    return ax
 
 def gca(**kwargs):
-    return _Axes(_ensure_fig())
+    projection = kwargs.pop('projection', None)
+    ax = _Axes(_SafeFigure(_ensure_fig()), row=1, col=1, nrows=1, ncols=1)
+    if projection == '3d':
+        ax._is_3d = True
+    return ax
 
 def gcf():
     return _SafeFigure(_ensure_fig())
@@ -726,10 +809,20 @@ def gcf():
 def savefig(fname, dpi=None, bbox_inches=None, transparent=False, **kwargs):
     fig = _ensure_fig()
     _apply_layout(fig)
-    html_path = str(fname)
-    if not html_path.endswith('.html'):
-        html_path = html_path.rsplit('.', 1)[0] + '.html'
-    fig.write_html(html_path, include_plotlyjs=True)
+    fpath = str(fname)
+    ext = fpath.rsplit('.', 1)[-1].lower() if '.' in fpath else ''
+    if ext in ('png', 'jpg', 'jpeg', 'pdf', 'svg', 'webp'):
+        try:
+            scale = (dpi or 100) / 100.0
+            fig.write_image(fpath, scale=scale)
+            return
+        except Exception as e:
+            print(f"[mpl->plotly] write_image failed ({e}), falling back to HTML", file=_sys.__stderr__)
+            html_path = fpath.rsplit('.', 1)[0] + '.html'
+            fig.write_html(html_path, include_plotlyjs=True)
+    else:
+        html_path = fpath if fpath.endswith('.html') else fpath.rsplit('.', 1)[0] + '.html'
+        fig.write_html(html_path, include_plotlyjs=True)
 
 def show(*args, **kwargs):
     fig = _ensure_fig()
@@ -795,44 +888,354 @@ def _reset():
     _color_index[0] = 0
 
 
+# ─── Additional Plot Types ──────────────────────────────────
+
+def stackplot(x, *ys, labels=None, colors=None, alpha=None, **kwargs):
+    """Stacked area chart."""
+    fig = _ensure_fig()
+    xl = _to_list(x)
+    for i, y in enumerate(ys):
+        yl = _to_list(y)
+        name = labels[i] if labels and i < len(labels) else None
+        fc = _color_to_str(colors[i]) if colors and i < len(colors) else _next_color()
+        stackgroup = 'stack'
+        t = dict(x=xl, y=yl, mode='lines', stackgroup=stackgroup,
+                 fillcolor=fc, line=dict(width=0.5, color=fc), name=name)
+        if alpha is not None:
+            t['opacity'] = _safe_float(alpha)
+        try:
+            fig.add_trace(go.Scatter(**t))
+        except Exception as e:
+            print(f"[mpl->plotly] stackplot error: {e}", file=_sys.__stderr__)
+
+
+def hexbin(x, y, gridsize=20, cmap=None, mincnt=None, **kwargs):
+    """Hexbin approximated as 2D histogram."""
+    fig = _ensure_fig()
+    t = dict(x=_to_list(x), y=_to_list(y), nbinsx=int(gridsize), nbinsy=int(gridsize))
+    if cmap and isinstance(cmap, str):
+        t['colorscale'] = cmap
+    try:
+        fig.add_trace(go.Histogram2d(**t))
+    except Exception as e:
+        print(f"[mpl->plotly] hexbin error: {e}", file=_sys.__stderr__)
+
+
+def table(cellText=None, colLabels=None, rowLabels=None, loc='center', **kwargs):
+    """Table rendered as go.Table."""
+    fig = _ensure_fig()
+    header_vals = colLabels if colLabels else []
+    if cellText:
+        # Transpose: cellText is list of rows, plotly wants list of columns
+        try:
+            cols = list(zip(*cellText))
+            cell_vals = [list(c) for c in cols]
+        except Exception:
+            cell_vals = cellText
+    else:
+        cell_vals = []
+    if rowLabels:
+        header_vals = [''] + list(header_vals)
+        cell_vals = [list(rowLabels)] + cell_vals
+    try:
+        fig.add_trace(go.Table(
+            header=dict(values=list(header_vals)),
+            cells=dict(values=cell_vals)
+        ))
+    except Exception as e:
+        print(f"[mpl->plotly] table error: {e}", file=_sys.__stderr__)
+
+
+# ─── Axes Array Helpers ─────────────────────────────────────
+
+class _AxesArray(list):
+    """1D array of axes with .flat support."""
+    @property
+    def flat(self):
+        return iter(self)
+    def flatten(self):
+        return list(self)
+    @property
+    def shape(self):
+        return (len(self),)
+
+class _AxesArray2D(list):
+    """2D array of axes with .flat and indexing support."""
+    @property
+    def flat(self):
+        return iter(ax for row in self for ax in row)
+    def flatten(self):
+        return [ax for row in self for ax in row]
+    @property
+    def shape(self):
+        return (len(self), len(self[0]) if self else 0)
+
+
 # ─── Axes Object (OO interface) ──────────────────────────────
 
 class _Axes:
-    """Mimics matplotlib Axes for fig, ax = plt.subplots()."""
-    def __init__(self, fig): self._fig = fig
+    """Mimics matplotlib Axes with subplot row/col tracking and 3D support."""
+    def __init__(self, fig, row=1, col=1, nrows=1, ncols=1):
+        self._fig = fig
+        self._row = row
+        self._col = col
+        self._nrows = nrows
+        self._ncols = ncols
+        self._is_3d = False
+        self._secondary_y = False
+        self._yaxis_key = 'yaxis'  # 'yaxis', 'yaxis2', etc.
 
-    def plot(self, *a, **kw): return plot(*a, **kw)
-    def scatter(self, *a, **kw): return scatter(*a, **kw)
-    def bar(self, *a, **kw): return bar(*a, **kw)
-    def barh(self, *a, **kw): return barh(*a, **kw)
-    def hist(self, *a, **kw): return hist(*a, **kw)
-    def pie(self, *a, **kw): return pie(*a, **kw)
-    def fill_between(self, *a, **kw): return fill_between(*a, **kw)
-    def fill_betweenx(self, *a, **kw): return fill_between(*a, **kw)
-    def stem(self, *a, **kw): return stem(*a, **kw)
-    def step(self, *a, **kw): return step(*a, **kw)
-    def errorbar(self, *a, **kw): return errorbar(*a, **kw)
-    def boxplot(self, *a, **kw): return boxplot(*a, **kw)
-    def violinplot(self, *a, **kw): return violinplot(*a, **kw)
-    def imshow(self, *a, **kw): return imshow(*a, **kw)
-    def contour(self, *a, **kw): return contour(*a, **kw)
-    def contourf(self, *a, **kw): return contourf(*a, **kw)
-    def hlines(self, *a, **kw): return hlines(*a, **kw)
-    def vlines(self, *a, **kw): return vlines(*a, **kw)
-    def pcolormesh(self, *a, **kw): return imshow(a[-1] if len(a) >= 3 else a[0], **kw)
-    def pcolor(self, *a, **kw): return imshow(a[-1] if len(a) >= 3 else a[0], **kw)
-    def streamplot(self, *a, **kw): pass  # Not supported, no-op
-    def quiver(self, *a, **kw): pass  # Not supported, no-op
+    def _has_subplots(self):
+        return self._nrows > 1 or self._ncols > 1
 
-    def set_title(self, label, **kw): title(label, **kw)
-    def set_xlabel(self, label, **kw): xlabel(label, **kw)
-    def set_ylabel(self, label, **kw): ylabel(label, **kw)
-    def set_xlim(self, *a, **kw): xlim(*a)
-    def set_ylim(self, *a, **kw): ylim(*a)
-    def set_xscale(self, s, **kw): xscale(s)
-    def set_yscale(self, s, **kw): yscale(s)
-    def set_aspect(self, a, **kw): axis('equal') if a == 'equal' else None
-    def grid(self, v=True, **kw): grid(v, **kw)
+    def _add_trace(self, trace):
+        """Add a trace to the correct subplot cell."""
+        pfig = object.__getattribute__(self._fig, '_fig') if isinstance(self._fig, _SafeFigure) else self._fig
+        if self._has_subplots() and _make_subplots is not None:
+            try:
+                pfig.add_trace(trace, row=self._row, col=self._col)
+                return
+            except Exception:
+                pass
+        if self._secondary_y:
+            trace.update(yaxis='y2')
+        pfig.add_trace(trace)
+
+    def _axis_id(self, axis='x'):
+        """Return the plotly axis key for this subplot cell."""
+        if not self._has_subplots():
+            return f'{axis}axis'
+        idx = (self._row - 1) * self._ncols + self._col
+        return f'{axis}axis' if idx == 1 else f'{axis}axis{idx}'
+
+    # ── Plotting methods (route to correct subplot) ────────
+
+    def plot(self, *a, **kw):
+        if self._is_3d:
+            return self.plot3D(*a, **kw)
+        label = kw.pop('label', None)
+        linewidth = _safe_float(kw.pop('linewidth', kw.pop('lw', None)), 2)
+        color = kw.pop('color', kw.pop('c', None))
+        alpha = _safe_float(kw.pop('alpha', None))
+        linestyle = kw.pop('linestyle', kw.pop('ls', None))
+        marker = kw.pop('marker', None)
+        markersize = _safe_float(kw.pop('markersize', kw.pop('ms', None)))
+        kw.pop('scalex', None); kw.pop('scaley', None)
+        kw.clear()
+
+        if len(a) == 0: return []
+        elif len(a) == 1:
+            y = _to_list(a[0]); x = list(range(len(y))); fmt_style, mode = {}, 'lines'
+        elif len(a) == 2:
+            if isinstance(a[1], str):
+                y = _to_list(a[0]); x = list(range(len(y))); fmt_style, mode = _parse_fmt(a[1])
+            else:
+                x = _to_list(a[0]); y = _to_list(a[1]); fmt_style, mode = {}, 'lines'
+        else:
+            x = _to_list(a[0]); y = _to_list(a[1])
+            fmt_style, mode = _parse_fmt(a[2]) if isinstance(a[2], str) else ({}, 'lines')
+
+        if x is not None and y is not None and len(x) != len(y):
+            minlen = min(len(x), len(y)); x, y = x[:minlen], y[:minlen]
+
+        tc = _color_to_str(color) or fmt_style.get('color') or _next_color()
+        line_dict = dict(width=linewidth)
+        if tc: line_dict['color'] = tc
+        dash_map = {'--': 'dash', '-.': 'dashdot', ':': 'dot', '-': 'solid', 'dashed': 'dash', 'dotted': 'dot', 'dashdot': 'dashdot', 'solid': 'solid'}
+        if linestyle: line_dict['dash'] = dash_map.get(linestyle, 'solid')
+        elif 'line_dash' in fmt_style: line_dict['dash'] = fmt_style['line_dash']
+
+        if marker: mode = 'lines+markers' if 'lines' in mode else 'markers'
+
+        trace_kw = dict(x=x, y=y, mode=mode, line=line_dict)
+        if label: trace_kw['name'] = str(label)
+        if alpha is not None: trace_kw['opacity'] = alpha
+        if marker or fmt_style.get('marker_symbol'):
+            mk = dict(size=markersize or 6)
+            if tc: mk['color'] = tc
+            if fmt_style.get('marker_symbol'): mk['symbol'] = fmt_style['marker_symbol']
+            trace_kw['marker'] = mk
+        try:
+            self._add_trace(go.Scatter(**trace_kw))
+        except Exception as e:
+            print(f"[mpl->plotly] plot error: {e}", file=_sys.__stderr__)
+        return []
+
+    def scatter(self, x, y, s=None, c=None, marker=None, alpha=None, label=None, cmap=None, vmin=None, vmax=None, edgecolors=None, **kw):
+        if self._is_3d:
+            return self.scatter3D(x, y, s=s, c=c, **kw)
+        default_size = 6
+        mk = dict(size=_safe_float(s, default_size) if not _has_len(s) else _to_list(s)) if s is not None else dict(size=default_size)
+        if c is not None:
+            if isinstance(c, str):
+                mk['color'] = _color_to_str(c)
+            elif _has_len(c) and not isinstance(c, str):
+                mk['color'] = _to_list(c)
+                mk['colorscale'] = cmap if isinstance(cmap, str) else 'Viridis'
+                mk['showscale'] = True
+                if vmin is not None: mk['cmin'] = float(vmin)
+                if vmax is not None: mk['cmax'] = float(vmax)
+        try:
+            self._add_trace(go.Scatter(x=_to_list(x), y=_to_list(y), mode='markers', marker=mk,
+                                       name=label, opacity=_safe_float(alpha)))
+        except Exception as e:
+            print(f"[mpl->plotly] scatter error: {e}", file=_sys.__stderr__)
+
+    def bar(self, *a, **kw): self._delegate_plot_fn(bar, *a, **kw)
+    def barh(self, *a, **kw): self._delegate_plot_fn(barh, *a, **kw)
+    def hist(self, *a, **kw): return self._delegate_plot_fn(hist, *a, **kw)
+    def pie(self, *a, **kw): self._delegate_plot_fn(pie, *a, **kw)
+    def fill_between(self, *a, **kw): self._delegate_plot_fn(fill_between, *a, **kw)
+    def fill_betweenx(self, *a, **kw): self._delegate_plot_fn(fill_between, *a, **kw)
+    def stem(self, *a, **kw): self._delegate_plot_fn(stem, *a, **kw)
+    def step(self, *a, **kw): self._delegate_plot_fn(step, *a, **kw)
+    def errorbar(self, *a, **kw): self._delegate_plot_fn(errorbar, *a, **kw)
+    def boxplot(self, *a, **kw): self._delegate_plot_fn(boxplot, *a, **kw)
+    def violinplot(self, *a, **kw): self._delegate_plot_fn(violinplot, *a, **kw)
+    def imshow(self, *a, **kw): self._delegate_plot_fn(imshow, *a, **kw)
+    def contour(self, *a, **kw): self._delegate_plot_fn(contour, *a, **kw)
+    def contourf(self, *a, **kw): self._delegate_plot_fn(contourf, *a, **kw)
+    def hlines(self, *a, **kw): hlines(*a, **kw)
+    def vlines(self, *a, **kw): vlines(*a, **kw)
+    def stackplot(self, *a, **kw): self._delegate_plot_fn(stackplot, *a, **kw)
+    def hexbin(self, *a, **kw): self._delegate_plot_fn(hexbin, *a, **kw)
+    def table(self, **kw): self._delegate_plot_fn(table, **kw)
+    def pcolormesh(self, *a, **kw): self._delegate_plot_fn(imshow, a[-1] if len(a) >= 3 else a[0], **kw)
+    def pcolor(self, *a, **kw): self._delegate_plot_fn(imshow, a[-1] if len(a) >= 3 else a[0], **kw)
+    def streamplot(self, *a, **kw): pass
+    def quiver(self, *a, **kw): pass
+
+    def _delegate_plot_fn(self, fn, *a, **kw):
+        """Run a module-level plot function. For simple subplot cases, just call it."""
+        return fn(*a, **kw)
+
+    # ── 3D Plotting ────────────────────────────────────────
+
+    def plot3D(self, x, y, z, color=None, label=None, linewidth=2, **kw):
+        """3D line plot -> go.Scatter3d(mode='lines')."""
+        tc = _color_to_str(color) or _next_color()
+        try:
+            self._add_trace(go.Scatter3d(
+                x=_to_list(x), y=_to_list(y), z=_to_list(z),
+                mode='lines', line=dict(color=tc, width=linewidth),
+                name=label
+            ))
+        except Exception as e:
+            print(f"[mpl->plotly] plot3D error: {e}", file=_sys.__stderr__)
+
+    def scatter3D(self, x, y, z=None, s=None, c=None, cmap=None, alpha=None, label=None, **kw):
+        """3D scatter -> go.Scatter3d(mode='markers')."""
+        mk = dict(size=_safe_float(s, 3) if not _has_len(s) else _to_list(s))
+        if c is not None:
+            if isinstance(c, str):
+                mk['color'] = _color_to_str(c)
+            elif _has_len(c):
+                mk['color'] = _to_list(c)
+                mk['colorscale'] = cmap if isinstance(cmap, str) else 'Viridis'
+                mk['showscale'] = True
+        if alpha is not None:
+            mk['opacity'] = _safe_float(alpha)
+        try:
+            self._add_trace(go.Scatter3d(
+                x=_to_list(x), y=_to_list(y), z=_to_list(z) if z is not None else None,
+                mode='markers', marker=mk, name=label
+            ))
+        except Exception as e:
+            print(f"[mpl->plotly] scatter3D error: {e}", file=_sys.__stderr__)
+
+    def plot_surface(self, X, Y, Z, cmap=None, alpha=None, rstride=None, cstride=None, **kw):
+        """Surface plot -> go.Surface."""
+        t = dict(
+            z=Z.tolist() if hasattr(Z, 'tolist') else Z,
+            x=X.tolist() if hasattr(X, 'tolist') else X,
+            y=Y.tolist() if hasattr(Y, 'tolist') else Y,
+        )
+        if cmap and isinstance(cmap, str):
+            t['colorscale'] = cmap
+        if alpha is not None:
+            t['opacity'] = _safe_float(alpha)
+        try:
+            self._add_trace(go.Surface(**t))
+        except Exception as e:
+            print(f"[mpl->plotly] plot_surface error: {e}", file=_sys.__stderr__)
+
+    def plot_wireframe(self, X, Y, Z, color=None, rstride=1, cstride=1, **kw):
+        """Wireframe plot -> go.Surface with wireframe appearance."""
+        t = dict(
+            z=Z.tolist() if hasattr(Z, 'tolist') else Z,
+            x=X.tolist() if hasattr(X, 'tolist') else X,
+            y=Y.tolist() if hasattr(Y, 'tolist') else Y,
+            hidesurface=True,
+            contours=dict(
+                x=dict(show=True, highlight=False, color=_color_to_str(color) or '#333'),
+                y=dict(show=True, highlight=False, color=_color_to_str(color) or '#333'),
+                z=dict(show=True, highlight=False, color=_color_to_str(color) or '#333'),
+            )
+        )
+        try:
+            self._add_trace(go.Surface(**t))
+        except Exception as e:
+            print(f"[mpl->plotly] plot_wireframe error: {e}", file=_sys.__stderr__)
+
+    def set_zlabel(self, label, **kw):
+        _layout_updates.setdefault('scene', {}).setdefault('zaxis', {})['title'] = str(label)
+
+    # ── Layout methods ────────────────────────────────────
+
+    def set_title(self, label, **kw):
+        if self._has_subplots():
+            # For subplots, update the annotation title for this cell
+            pfig = object.__getattribute__(self._fig, '_fig') if isinstance(self._fig, _SafeFigure) else self._fig
+            try:
+                idx = (self._row - 1) * self._ncols + (self._col - 1)
+                if hasattr(pfig, 'layout') and pfig.layout.annotations and idx < len(pfig.layout.annotations):
+                    pfig.layout.annotations[idx].text = str(label)
+                    return
+            except Exception:
+                pass
+        title(label, **kw)
+
+    def set_xlabel(self, label, **kw):
+        key = self._axis_id('x')
+        d = _layout_updates.setdefault(key, {})
+        d['title'] = dict(text=str(label))
+
+    def set_ylabel(self, label, **kw):
+        key = self._axis_id('y')
+        d = _layout_updates.setdefault(key, {})
+        d['title'] = dict(text=str(label))
+
+    def set_xlim(self, *a, **kw):
+        if len(a) == 2:
+            key = self._axis_id('x')
+            _layout_updates.setdefault(key, {})['range'] = [float(a[0]), float(a[1])]
+        elif len(a) == 1 and _has_len(a[0]):
+            key = self._axis_id('x')
+            _layout_updates.setdefault(key, {})['range'] = [float(v) for v in a[0]]
+
+    def set_ylim(self, *a, **kw):
+        if len(a) == 2:
+            key = self._axis_id('y')
+            _layout_updates.setdefault(key, {})['range'] = [float(a[0]), float(a[1])]
+        elif len(a) == 1 and _has_len(a[0]):
+            key = self._axis_id('y')
+            _layout_updates.setdefault(key, {})['range'] = [float(v) for v in a[0]]
+
+    def set_xscale(self, s, **kw):
+        if s == 'log':
+            _layout_updates.setdefault(self._axis_id('x'), {})['type'] = 'log'
+
+    def set_yscale(self, s, **kw):
+        if s == 'log':
+            _layout_updates.setdefault(self._axis_id('y'), {})['type'] = 'log'
+
+    def set_aspect(self, a, **kw):
+        if a == 'equal': axis('equal')
+
+    def grid(self, v=True, **kw):
+        _layout_updates.setdefault(self._axis_id('x'), {})['showgrid'] = bool(v)
+        _layout_updates.setdefault(self._axis_id('y'), {})['showgrid'] = bool(v)
+
     def legend(self, *a, **kw): legend(*a, **kw)
     def axhline(self, y=0, **kw): axhline(y, **kw)
     def axvline(self, x=0, **kw): axvline(x, **kw)
@@ -840,32 +1243,93 @@ class _Axes:
     def axvspan(self, *a, **kw): axvspan(*a, **kw)
     def annotate(self, t, xy, **kw): annotate(t, xy, **kw)
     def text(self, x, y, s, **kw): text(x, y, s, **kw)
-    def set_xticks(self, t, labels=None, **kw): xticks(t, labels, **kw)
-    def set_yticks(self, t, labels=None, **kw): yticks(t, labels, **kw)
-    def set_xticklabels(self, labels, **kw): _layout_updates.setdefault('xaxis', {})['ticktext'] = _to_str_list(labels)
-    def set_yticklabels(self, labels, **kw): _layout_updates.setdefault('yaxis', {})['ticktext'] = _to_str_list(labels)
+
+    def set_xticks(self, t, labels=None, **kw):
+        d = _layout_updates.setdefault(self._axis_id('x'), {})
+        d['tickvals'] = _to_list(t)
+        if labels is not None: d['ticktext'] = _to_str_list(labels)
+
+    def set_yticks(self, t, labels=None, **kw):
+        d = _layout_updates.setdefault(self._axis_id('y'), {})
+        d['tickvals'] = _to_list(t)
+        if labels is not None: d['ticktext'] = _to_str_list(labels)
+
+    def set_xticklabels(self, labels, **kw):
+        _layout_updates.setdefault(self._axis_id('x'), {})['ticktext'] = _to_str_list(labels)
+
+    def set_yticklabels(self, labels, **kw):
+        _layout_updates.setdefault(self._axis_id('y'), {})['ticktext'] = _to_str_list(labels)
+
     def tick_params(self, **kw): pass
+
     def set(self, **kw):
-        if 'title' in kw: title(kw['title'])
-        if 'xlabel' in kw: xlabel(kw['xlabel'])
-        if 'ylabel' in kw: ylabel(kw['ylabel'])
-        if 'xlim' in kw: xlim(*kw['xlim'])
-        if 'ylim' in kw: ylim(*kw['ylim'])
-    def twinx(self): return self
-    def twiny(self): return self
-    def invert_yaxis(self): _layout_updates.setdefault('yaxis', {})['autorange'] = 'reversed'
-    def invert_xaxis(self): _layout_updates.setdefault('xaxis', {})['autorange'] = 'reversed'
+        if 'title' in kw: self.set_title(kw['title'])
+        if 'xlabel' in kw: self.set_xlabel(kw['xlabel'])
+        if 'ylabel' in kw: self.set_ylabel(kw['ylabel'])
+        if 'xlim' in kw: self.set_xlim(*kw['xlim'])
+        if 'ylim' in kw: self.set_ylim(*kw['ylim'])
+
+    def twinx(self):
+        """Create secondary y-axis on the right side."""
+        pfig = object.__getattribute__(self._fig, '_fig') if isinstance(self._fig, _SafeFigure) else self._fig
+        _layout_updates['yaxis2'] = dict(
+            overlaying='y', side='right',
+            showline=True, linewidth=1, linecolor='#333333',
+            showgrid=False, tickfont=dict(size=11),
+            ticks='outside', ticklen=4, tickcolor='#333333',
+        )
+        ax2 = _Axes(self._fig, row=self._row, col=self._col,
+                     nrows=self._nrows, ncols=self._ncols)
+        ax2._secondary_y = True
+        ax2._yaxis_key = 'yaxis2'
+        return ax2
+
+    def twiny(self):
+        """Create secondary x-axis on top."""
+        _layout_updates['xaxis2'] = dict(
+            overlaying='x', side='top',
+            showline=True, linewidth=1, linecolor='#333333',
+            showgrid=False, tickfont=dict(size=11),
+            ticks='outside', ticklen=4, tickcolor='#333333',
+        )
+        ax2 = _Axes(self._fig, row=self._row, col=self._col,
+                     nrows=self._nrows, ncols=self._ncols)
+        ax2._secondary_y = False
+        return ax2
+
+    def add_subplot(self, *args, **kwargs):
+        """Support fig.add_subplot(111, projection='3d')."""
+        projection = kwargs.pop('projection', None)
+        ax = _Axes(self._fig, row=1, col=1, nrows=1, ncols=1)
+        if projection == '3d':
+            ax._is_3d = True
+        return ax
+
+    def invert_yaxis(self):
+        _layout_updates.setdefault(self._axis_id('y'), {})['autorange'] = 'reversed'
+
+    def invert_xaxis(self):
+        _layout_updates.setdefault(self._axis_id('x'), {})['autorange'] = 'reversed'
+
     def set_facecolor(self, c): pass
+
     @property
     def spines(self):
         return type('Spines', (), {'__getitem__': lambda s, k: type('S', (), {'set_visible': lambda s, v: None, 'set_color': lambda s, c: None, 'set_linewidth': lambda s, w: None})()})()
+
     @property
-    def xaxis(self): return type('XAxis', (), {'set_visible': lambda s, v: None, 'set_major_formatter': lambda s, f: None, 'set_minor_formatter': lambda s, f: None})()
+    def xaxis(self):
+        return type('XAxis', (), {'set_visible': lambda s, v: None, 'set_major_formatter': lambda s, f: None, 'set_minor_formatter': lambda s, f: None})()
+
     @property
-    def yaxis(self): return type('YAxis', (), {'set_visible': lambda s, v: None, 'set_major_formatter': lambda s, f: None, 'set_minor_formatter': lambda s, f: None})()
+    def yaxis(self):
+        return type('YAxis', (), {'set_visible': lambda s, v: None, 'set_major_formatter': lambda s, f: None, 'set_minor_formatter': lambda s, f: None})()
+
     @property
     def flat(self): return [self]
+
     @property
     def transAxes(self): return None
+
     @property
     def transData(self): return None

@@ -4,7 +4,10 @@ import numpy as np
 
 class BaseEstimator:
     def get_params(self, deep=True):
-        return {k: v for k, v in self.__dict__.items() if not k.startswith('_')}
+        import inspect
+        init = self.__class__.__init__
+        params = inspect.signature(init).parameters
+        return {k: getattr(self, k) for k in params if k != 'self' and hasattr(self, k)}
 
     def set_params(self, **params):
         for k, v in params.items():
