@@ -1,0 +1,7 @@
+prefix=/Volumes/D/offlinai-libs/pango
+libdir=${prefix}/lib
+includedir=${prefix}/include
+Name: PangoCairo
+Version: 1.54.0
+Libs: -L${libdir} -lpangocairo-1.0
+Cflags: -I${includedir}/pango-1.0
