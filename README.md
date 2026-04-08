@@ -13,7 +13,7 @@ Provides drop-in replacements and iOS compatibility patches for popular Python l
 | [**sklearn**](docs/sklearn.md) | Pure NumPy reimplementation | ~85% of common APIs | 13 modules, 40+ classes |
 | [**matplotlib**](docs/matplotlib.md) | matplotlib API -> Plotly backend | ~75% of pyplot | 25+ plot types, 3D, subplots |
 | [**scipy (iOS patches)**](docs/scipy-ios.md) | Cross-compiled + runtime fixes | ~60% of submodules | Fortran stub, dcabs1 fix, import guards |
-| [**C interpreter**](docs/c-interpreter.md) | Tree-walking C89/C99 interpreter | ~70% of C language | 60+ built-in functions, structs, preprocessor |
+| [**C interpreter**](docs/c-interpreter.md) | Tree-walking C89/C99 interpreter | ~90% of C language | 70+ builtins, vmem pointers, 2D arrays, function ptrs, goto, macros |
 | [**Fortran runtime stub**](docs/fortran-runtime.md) | No-op I/O stubs for flang | 22 symbols | Enables scipy Fortran modules on iOS |
 
 ### Stock Python Libraries (fully working)
@@ -163,27 +163,44 @@ print(f"Minimum at: {result.x.round(4)}")
 
 [Full documentation](docs/c-interpreter.md)
 
-A ~2200-line C89/C99 interpreter. Lexer -> recursive descent parser -> tree-walking execution.
+A ~3,450-line C89/C99 interpreter with virtual memory, real pointers, and 48/49 tests passing.
 
 ```c
 #include <stdio.h>
 #include <math.h>
 
+#define MAX(a,b) ((a)>(b)?(a):(b))
+
 struct Point { double x; double y; };
 
-double distance(struct Point a, struct Point b) {
-    return sqrt(pow(a.x - b.x, 2) + pow(a.y - b.y, 2));
-}
-
 int main() {
-    struct Point p1 = {3.0, 4.0};
-    struct Point p2 = {7.0, 1.0};
-    printf("Distance: %.4f\n", distance(p1, p2));
+    // Real pointers with write-through
+    int x = 42;
+    int *p = &x;
+    *p = 100;
+    printf("x = %d\n", x);  // 100
+
+    // 2D arrays + matrix multiply
+    int a[2][2] = {1,2,3,4};
+    int b[2][2] = {5,6,7,8};
+    int c[2][2] = {0,0,0,0};
+    for (int i = 0; i < 2; i++)
+        for (int j = 0; j < 2; j++)
+            for (int k = 0; k < 2; k++)
+                c[i][j] += a[i][k] * b[k][j];
+
+    // Function pointers
+    int add(int a, int b) { return a + b; }
+    int (*op)(int, int) = add;
+    printf("op(3,4) = %d\n", op(3, 4));  // 7
+
+    // Static variables, goto, macros all work
+    printf("MAX(3,9) = %d\n", MAX(3, 9));
     return 0;
 }
 ```
 
-**Supports:** 6 data types, 48 operators, structs, enums, `#ifdef`/`#ifndef`/`#endif`, 60+ built-in functions (printf, math, string, char classification, memory).
+**Supports:** Real pointer arithmetic (`&`, `*`, `ptr+i`), 2D arrays, structs, unions, enums, function pointers, `static` variables, `goto`/labels, function-like macros (`#define F(x) ...`), compound literals, sprintf to buffer, 70+ built-in functions, `malloc`/`calloc`/`realloc`/`free` via virtual memory.
 
 ---
 
@@ -208,7 +225,7 @@ python-ios-lib/
 │   ├── _scipy_ios_fix.c  #   dcabs1 fix source
 │   └── _ios_preload.py   #   Framework preloader
 ├── gcc/                  # C interpreter
-│   ├── offlinai_cc.c     #   ~2200 lines, full interpreter
+│   ├── offlinai_cc.c     #   ~3450 lines, full interpreter with vmem
 │   └── offlinai_cc.h     #   Public API header
 ├── fortran/              # Fortran cross-compilation tools
 │   └── ios-flang-wrapper.py
