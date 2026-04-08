@@ -4,15 +4,40 @@ Pure-Python and native C/Fortran libraries for running **ML, math, plotting, and
 
 Provides drop-in replacements and iOS compatibility patches for popular Python libraries that can't run natively on iOS due to missing compilers, code-signing restrictions, or platform limitations.
 
-## Libraries
+## All Libraries
 
-| Library | Type | Coverage | Documentation |
-|---------|------|----------|---------------|
+### Custom / Reimplemented
+
+| Library | Type | Coverage | Docs |
+|---------|------|----------|------|
 | [**sklearn**](docs/sklearn.md) | Pure NumPy reimplementation | ~85% of common APIs | 13 modules, 40+ classes |
 | [**matplotlib**](docs/matplotlib.md) | matplotlib API -> Plotly backend | ~75% of pyplot | 25+ plot types, 3D, subplots |
 | [**scipy (iOS patches)**](docs/scipy-ios.md) | Cross-compiled + runtime fixes | ~60% of submodules | Fortran stub, dcabs1 fix, import guards |
 | [**C interpreter**](docs/c-interpreter.md) | Tree-walking C89/C99 interpreter | ~70% of C language | 60+ built-in functions, structs, preprocessor |
 | [**Fortran runtime stub**](docs/fortran-runtime.md) | No-op I/O stubs for flang | 22 symbols | Enables scipy Fortran modules on iOS |
+
+### Stock Python Libraries (fully working)
+
+| Library | Version | Docs |
+|---------|---------|------|
+| [**numpy**](docs/numpy.md) | 2.3.5 | Arrays, linalg, FFT, random |
+| [**sympy**](docs/sympy.md) | 1.14.0 | Symbolic math, calculus, solving |
+| [**plotly**](docs/plotly.md) | 6.6.0 | Interactive charts (rendering engine) |
+| [**networkx**](docs/networkx.md) | 3.6.1 | Graph theory, network analysis |
+| [**Pillow (PIL)**](docs/pillow.md) | 12.2.0 | Image processing |
+| [**BeautifulSoup (bs4)**](docs/beautifulsoup.md) | 4.14.3 | HTML/XML parsing |
+| [**PyYAML**](docs/pyyaml.md) | 6.0.3 | YAML parser/emitter |
+| [**mpmath**](docs/mpmath.md) | 1.4.1 | Arbitrary-precision math |
+| [**rich**](docs/rich.md) | 14.3.3 | Rich text formatting |
+| [**tqdm**](docs/tqdm.md) | 4.67.3 | Progress bars |
+| [**Pygments**](docs/pygments.md) | 2.20.0 | Syntax highlighting |
+| [**jsonschema**](docs/jsonschema.md) | 4.26.0 | JSON Schema validation |
+| [**click**](docs/click.md) | 8.3.2 | CLI framework |
+| [**svgelements**](docs/svgelements.md) | 1.9.6 | SVG path manipulation |
+| [**pydub**](docs/pydub.md) | 0.25.1 | Audio manipulation |
+| [**PyAV (av)**](docs/av-pyav.md) | 17.0.1 | FFmpeg Python bindings |
+| [**manim**](docs/manim.md) | 0.20.1 | Math animations (experimental) |
+| [**Minor libs**](docs/minor-libs.md) | various | attrs, packaging, srt, cffi, pycairo, rpds, etc. |
 
 ---
 
