@@ -391,41 +391,8 @@ final class CodeEditorViewController: UIViewController {
         """),
 
         // ── manim ──
-        Template(title: "Test PyAV+FFmpeg", icon: "video.badge.checkmark", category: "Test", language: .python, code: """
-        import os, sys, tempfile, numpy as np
-        t = _offlinai_test
-        print("=== PyAV + FFmpeg Test ===")
-
-        t("import av", lambda: __import__('av'))
-        t("av._av_available", lambda: __import__('av')._av_available)
-        t("av.__version__", lambda: print(__import__('av').__version__) or True)
-        t("av._core", lambda: __import__('av._core', fromlist=['library_versions']).library_versions)
-
-        def _encode_mp4():
-            import av
-            out_path = os.path.join(tempfile.gettempdir(), 'test_pyav.mp4')
-            container = av.open(out_path, mode='w')
-            stream = container.add_stream('mpeg4', rate=24)
-            stream.width = 320
-            stream.height = 240
-            stream.pix_fmt = 'yuv420p'
-            for i in range(24):
-                d = np.zeros((240, 320, 3), dtype=np.uint8)
-                d[:, :, 0] = int(255 * i / 24)
-                d[:, :, 1] = int(255 * (24 - i) / 24)
-                frame = av.VideoFrame.from_ndarray(d, format='rgb24')
-                for pkt in stream.encode(frame):
-                    container.mux(pkt)
-            for pkt in stream.encode():
-                container.mux(pkt)
-            container.close()
-            sz = os.path.getsize(out_path)
-            print("MP4: " + out_path + " (" + str(sz) + " bytes)")
-            return sz > 100
-
-        t("encode MP4", _encode_mp4)
-        print("\\nPassed: " + str(_offlinai_test_pass) + " Failed: " + str(_offlinai_test_fail))
-        """),
+        Template(title: "Test PyAV+FFmpeg", icon: "video.badge.checkmark", category: "Test", language: .python, code:
+        "import os, sys, tempfile, numpy as np\nt = _offlinai_test\nprint('=== PyAV + FFmpeg Test ===')\nt('import av', lambda: __import__('av'))\nt('av._av_available', lambda: __import__('av')._av_available)\nt('av.__version__', lambda: __import__('av').__version__)\nt('av._core', lambda: __import__('av._core', fromlist=['library_versions']).library_versions)\n\nexec(\"def _encode_mp4():\\n import av\\n p = os.path.join(tempfile.gettempdir(), 'test_pyav.mp4')\\n c = av.open(p, mode='w')\\n s = c.add_stream('mpeg4', rate=24)\\n s.width = 320\\n s.height = 240\\n s.pix_fmt = 'yuv420p'\\n [c.mux(pk) for i in range(24) for pk in s.encode(av.VideoFrame.from_ndarray(np.full((240,320,3), i*10, dtype=np.uint8), format='rgb24'))]\\n [c.mux(pk) for pk in s.encode()]\\n c.close()\\n sz = os.path.getsize(p)\\n print('MP4: ' + p + ' (' + str(sz) + ' bytes)')\\n return sz > 100\")\n\nt('encode MP4', _encode_mp4)\nprint('Passed: ' + str(_offlinai_test_pass) + ' Failed: ' + str(_offlinai_test_fail))\n"),
 
         Template(title: "manim: Shapes", icon: "sparkles", category: "Manim", language: .python, code:
         "from manim import *\n\nclass ShapeDemo(Scene):\n  def construct(self):\n    circle = Circle(radius=1.5, color=BLUE, fill_opacity=0.5)\n    square = Square(side_length=2, color=RED, fill_opacity=0.3)\n    triangle = Triangle(color=GREEN, fill_opacity=0.3)\n    shapes = VGroup(circle, square, triangle).arrange(RIGHT, buff=1)\n    self.play(Create(shapes), run_time=2)\n    title = Text('Shapes in Manim', font_size=36).to_edge(UP)\n    self.play(Write(title))\n    self.wait(0.5)\n\nscene = ShapeDemo()\nscene.render()\n"),
