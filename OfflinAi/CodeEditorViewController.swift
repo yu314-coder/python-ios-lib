@@ -2250,9 +2250,11 @@ final class CodeEditorViewController: UIViewController {
             <html><head><meta name="viewport" content="width=device-width,initial-scale=1">
             <style>body{margin:0;background:#000;display:flex;align-items:center;justify-content:center;height:100vh}
             video{max-width:100%;max-height:100%;border-radius:8px}</style></head>
-            <body><video autoplay loop playsinline controls>
+            <body><video autoplay loop playsinline muted preload="auto" style="max-width:100%;max-height:100%;border-radius:8px">
             <source src="\(url.lastPathComponent)" type="video/mp4">
-            </video></body></html>
+            </video>
+            <script>document.querySelector('video').playbackRate=1.0;</script>
+            </body></html>
             """
             let htmlURL = url.deletingLastPathComponent().appendingPathComponent("_video_player.html")
             try? videoHTML.write(to: htmlURL, atomically: true, encoding: .utf8)
