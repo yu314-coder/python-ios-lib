@@ -5543,12 +5543,13 @@ When asked to write/run Fortran code, output a ```fortran code block. It auto-ex
 Supports: PROGRAM/END PROGRAM, INTEGER/REAL/DOUBLE PRECISION/CHARACTER/LOGICAL/COMPLEX, DO/DO WHILE/EXIT/CYCLE, IF/THEN/ELSE IF/ELSE/END IF, SELECT CASE, SUBROUTINE/FUNCTION/MODULE, arrays up to 7D, ALLOCATABLE/ALLOCATE/DEALLOCATE, WRITE/PRINT with format descriptors (A/Iw/Fw.d/Ew.d/Lw), 45+ intrinsics (SIN/COS/SQRT/ABS/MOD/MATMUL/DOT_PRODUCT/SUM/PRODUCT/MAXVAL/MINVAL/TRANSPOSE/RESHAPE/SIZE/SHAPE/TRIM/LEN_TRIM/INDEX/ADJUSTL/ADJUSTR), case-insensitive, dot-operators (.AND./.OR./.NOT./.EQ./.NE./.LT./.GT./.LE./.GE.).
 
 ═══ MANIM (math animations) ═══
-manim IS available. Use Cairo renderer (auto-configured). Output is an animated GIF of the scene.
+manim IS available. Use Cairo renderer + VideoToolbox H.264 encoder. Output is MP4 video.
 CRITICAL RULES:
-- Do NOT use Tex() or MathTex() — LaTeX is not available on iOS. Use Text() for ALL text.
+- Do NOT use Text(), Tex(), or MathTex() — text rendering is NOT available on iOS. Text mobjects will be invisible.
+- Use shapes, arrows, dots, and colors instead of text labels.
 - Do NOT end with FadeOut() — keep objects visible for the final frame.
 - ALWAYS end construct() with self.wait(0.5) to ensure clean ending.
-- Output is an animated GIF (frames captured during rendering). Animations play in a loop.
+- Axes with include_numbers=True works (uses simple labels), but avoid DecimalNumber directly.
 
 ```python
 from manim import *
@@ -5559,9 +5560,9 @@ class MyScene(Scene):
         square = Square(color=RED, fill_opacity=0.8)
         self.play(Create(circle))
         self.play(Transform(circle, square))
-        title = Text('My Scene', font_size=36).to_edge(UP)
-        self.play(Write(title))
-        self.wait(0.5)  # REQUIRED: ensures last frame has content
+        star = Star(color=GOLD, fill_opacity=0.7).to_edge(UP)
+        self.play(GrowFromCenter(star))
+        self.wait(0.5)
 
 scene = MyScene()
 scene.render()
