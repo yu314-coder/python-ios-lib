@@ -1707,7 +1707,7 @@ final class CodeEditorViewController: UIViewController {
         let prompt = "Here is my \(langName) code:\n```\(langName)\n\(code)\n```\n\nUser question: \(text)"
 
         let messages: [ChatMessage] = [
-            ChatMessage(role: .system, content: "You are a helpful coding assistant. Answer concisely about the user's code. Keep responses under 200 words."),
+            ChatMessage(role: .system, content: "You are a helpful coding assistant integrated with a code editor. Answer concisely about the user's code. When suggesting code changes, ALWAYS include the complete updated code in a ```\(langName) code block so the user can apply it directly to the editor. Keep responses under 300 words."),
             ChatMessage(role: .user, content: prompt)
         ]
 
@@ -1727,15 +1727,79 @@ final class CodeEditorViewController: UIViewController {
             }
         }, completion: { [weak self] result in
             DispatchQueue.main.async {
+                guard let self else { return }
                 switch result {
                 case .success(let full):
                     bubbleLabel.text = full
+                    // If response contains a code block, add "Apply to Editor" button
+                    self.addApplyButtonIfCodeBlock(full, below: bubbleLabel)
                 case .failure(let error):
                     bubbleLabel.text = "Error: \(error.localizedDescription)"
                 }
-                self?.scrollChatToBottom()
+                self.scrollChatToBottom()
             }
         })
+    }
+
+    // MARK: - Apply Code from AI Chat
+
+    private func extractCodeBlock(_ text: String) -> String? {
+        // Match ```language\n...\n``` or ```\n...\n```
+        let pattern = "```(?:\\w+)?\\n([\\s\\S]*?)```"
+        guard let regex = try? NSRegularExpression(pattern: pattern),
+              let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
+              let codeRange = Range(match.range(at: 1), in: text) else {
+            return nil
+        }
+        return String(text[codeRange]).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func addApplyButtonIfCodeBlock(_ text: String, below label: UILabel) {
+        guard let code = extractCodeBlock(text) else { return }
+
+        let applyButton = UIButton(type: .system)
+        applyButton.setTitle("  Apply to Editor", for: .normal)
+        applyButton.setImage(UIImage(systemName: "arrow.right.doc.on.clipboard"), for: .normal)
+        applyButton.tintColor = .systemBlue
+        applyButton.titleLabel?.font = .systemFont(ofSize: 13, weight: .medium)
+        applyButton.backgroundColor = UIColor.systemBlue.withAlphaComponent(0.15)
+        applyButton.layer.cornerRadius = 8
+        applyButton.contentEdgeInsets = UIEdgeInsets(top: 6, left: 12, bottom: 6, right: 12)
+        applyButton.translatesAutoresizingMaskIntoConstraints = false
+
+        // Store code in tag via objc associated object
+        objc_setAssociatedObject(applyButton, "codeBlock", code, .OBJC_ASSOCIATION_RETAIN)
+        applyButton.addTarget(self, action: #selector(applyCodeToEditor(_:)), for: .touchUpInside)
+
+        // Insert button into chat stack after the label's parent
+        if let parentStack = label.superview as? UIStackView {
+            let container = UIView()
+            container.translatesAutoresizingMaskIntoConstraints = false
+            container.addSubview(applyButton)
+            NSLayoutConstraint.activate([
+                applyButton.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 8),
+                applyButton.topAnchor.constraint(equalTo: container.topAnchor),
+                applyButton.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            ])
+            parentStack.addArrangedSubview(container)
+        } else {
+            // Fallback: add to chat stack directly
+            chatStackView.addArrangedSubview(applyButton)
+        }
+    }
+
+    @objc private func applyCodeToEditor(_ sender: UIButton) {
+        guard let code = objc_getAssociatedObject(sender, "codeBlock") as? String else { return }
+        codeTextView.text = code
+        applySyntaxHighlighting()
+        updateLineNumbers()
+
+        // Visual feedback
+        sender.setTitle("  Applied!", for: .normal)
+        sender.setImage(UIImage(systemName: "checkmark"), for: .normal)
+        sender.tintColor = .systemGreen
+        sender.backgroundColor = UIColor.systemGreen.withAlphaComponent(0.15)
+        sender.isEnabled = false
     }
 
     // MARK: - Terminal Resize
