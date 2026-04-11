@@ -1166,6 +1166,8 @@ final class CodeEditorViewController: UIViewController {
         let config = WKWebViewConfiguration()
         config.preferences.javaScriptEnabled = true
         config.defaultWebpagePreferences.allowsContentJavaScript = true
+        config.allowsInlineMediaPlayback = true
+        config.mediaTypesRequiringUserActionForPlayback = []
         let wv = WKWebView(frame: .zero, configuration: config)
         wv.isOpaque = false
         wv.backgroundColor = .clear
@@ -2071,6 +2073,22 @@ final class CodeEditorViewController: UIViewController {
         if ext == "html" {
             chartWebView.isHidden = false
             chartWebView.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
+            showingChart = true
+        } else if ["mp4", "mov", "webm", "m4v"].contains(ext) {
+            // Video output (manim animations) — play in WKWebView with HTML5 video
+            chartWebView.isHidden = false
+            let videoHTML = """
+            <!DOCTYPE html>
+            <html><head><meta name="viewport" content="width=device-width,initial-scale=1">
+            <style>body{margin:0;background:#000;display:flex;align-items:center;justify-content:center;height:100vh}
+            video{max-width:100%;max-height:100%;border-radius:8px}</style></head>
+            <body><video autoplay loop playsinline controls>
+            <source src="\(url.lastPathComponent)" type="video/mp4">
+            </video></body></html>
+            """
+            let htmlURL = url.deletingLastPathComponent().appendingPathComponent("_manim_player.html")
+            try? videoHTML.write(to: htmlURL, atomically: true, encoding: .utf8)
+            chartWebView.loadFileURL(htmlURL, allowingReadAccessTo: url.deletingLastPathComponent())
             showingChart = true
         } else if ["png", "jpg", "jpeg", "gif"].contains(ext) {
             if let image = UIImage(contentsOfFile: path) {

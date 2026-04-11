@@ -626,42 +626,51 @@ try:
         os.makedirs(_manim_media, exist_ok=True)
         manim.config.media_dir = _manim_media
         manim.config.renderer = "cairo"
-        manim.config.write_to_movie = False
+        manim.config.write_to_movie = True
         manim.config.save_last_frame = True
         manim.config.preview = False
         manim.config.show_in_file_browser = False
         manim.config.disable_caching = True
         manim.config.verbosity = "WARNING"
-        manim.config.pixel_width = 1920
-        manim.config.pixel_height = 1080
-        manim.config.frame_rate = 30
+        manim.config.pixel_width = 1080
+        manim.config.pixel_height = 720
+        manim.config.frame_rate = 24
+        manim.config.format = "mp4"
         # Monkey-patch Scene.render to capture the output image path (once only)
         if not getattr(manim.Scene, '_offlinai_patched', False):
             _orig_render = manim.Scene.render
             def _offlinai_manim_render(self, *args, **kwargs):
                 global __offlinai_plot_path
-                # Re-apply config before each render (may change between runs)
+                # Re-apply config before each render
                 import manim as _m
                 _m.config.renderer = "cairo"
-                _m.config.write_to_movie = False
+                _m.config.write_to_movie = True
                 _m.config.save_last_frame = True
                 _m.config.preview = False
                 _m.config.disable_caching = True
+                _m.config.format = "mp4"
                 _orig_render(self, *args, **kwargs)
                 try:
                     fw = self.renderer.file_writer
+                    # Prefer video file over static image
+                    movie_path = str(fw.movie_file_path) if hasattr(fw, 'movie_file_path') and fw.movie_file_path else None
                     img_path = str(fw.image_file_path) if hasattr(fw, 'image_file_path') and fw.image_file_path else None
-                    if img_path and os.path.exists(img_path):
+                    # Check movie first
+                    if movie_path and os.path.exists(movie_path) and os.path.getsize(movie_path) > 100:
+                        __offlinai_plot_path = movie_path
+                        _log(f"manim video: {movie_path}")
+                        print(f"[manim rendered] {movie_path}")
+                    elif img_path and os.path.exists(img_path):
                         __offlinai_plot_path = img_path
-                        _log(f"manim rendered: {img_path}")
+                        _log(f"manim image: {img_path}")
                         print(f"[manim rendered] {img_path}")
                     else:
-                        # Search media dir for latest PNG (by mtime)
+                        # Search for latest video or image
                         latest = None
                         latest_t = 0
                         for root, dirs, files in os.walk(_m.config.media_dir):
                             for f in files:
-                                if f.endswith('.png'):
+                                if f.endswith(('.mp4', '.mov', '.png')):
                                     fpath = os.path.join(root, f)
                                     mt = os.path.getmtime(fpath)
                                     if mt > latest_t:

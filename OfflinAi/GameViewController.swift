@@ -4184,9 +4184,15 @@ final class GameViewController: UIViewController {
         sidebarTitle.font = UIFont.systemFont(ofSize: 20, weight: .bold).rounded
         sidebarTitle.textColor = .label
 
-        let sidebarHeader = UIStackView(arrangedSubviews: [sidebarTitle, settingsButton])
+        // Collapse/expand sidebar button
+        let collapseBtn = UIButton(type: .system)
+        collapseBtn.setImage(UIImage(systemName: "sidebar.left", withConfiguration: UIImage.SymbolConfiguration(pointSize: 18, weight: .medium)), for: .normal)
+        collapseBtn.tintColor = .secondaryLabel
+        collapseBtn.addTarget(self, action: #selector(toggleSidebarVisibility), for: .touchUpInside)
+
+        let sidebarHeader = UIStackView(arrangedSubviews: [sidebarTitle, UIView(), collapseBtn, settingsButton])
         sidebarHeader.axis = .horizontal
-        sidebarHeader.distribution = .equalSpacing
+        sidebarHeader.spacing = 8
 
         // Embed compact library docs
         let sidebarDocsVC = LibraryDocsViewController()
@@ -7963,13 +7969,55 @@ Output format rules:
     }
 
     @objc private func hamburgerTapped() {
+        toggleSidebarVisibility()
+    }
+
+    @objc private func toggleSidebarVisibility() {
         isSidebarHidden.toggle()
-        UIView.animate(withDuration: 0.3) {
+        UIView.animate(withDuration: 0.3, delay: 0, usingSpringWithDamping: 0.85, initialSpringVelocity: 0.5) {
             self.sidebarView.isHidden = self.isSidebarHidden
-            self.sidebarWidthConstraint?.constant = self.isSidebarHidden ? 0 : 250
+            self.sidebarWidthConstraint?.constant = self.isSidebarHidden ? 0 : 280
             self.view.layoutIfNeeded()
         }
+        // Show a small expand button when sidebar is collapsed
+        if isSidebarHidden {
+            showSidebarExpandButton()
+        } else {
+            hideSidebarExpandButton()
+        }
         HapticService.shared.tapLight()
+    }
+
+    private var sidebarExpandButton: UIButton?
+
+    private func showSidebarExpandButton() {
+        guard sidebarExpandButton == nil else { return }
+        let btn = UIButton(type: .system)
+        btn.setImage(UIImage(systemName: "sidebar.left", withConfiguration: UIImage.SymbolConfiguration(pointSize: 16, weight: .medium)), for: .normal)
+        btn.tintColor = .secondaryLabel
+        btn.backgroundColor = UIColor(white: 0.2, alpha: 0.8)
+        btn.layer.cornerRadius = 8
+        btn.layer.cornerCurve = .continuous
+        btn.translatesAutoresizingMaskIntoConstraints = false
+        btn.addTarget(self, action: #selector(toggleSidebarVisibility), for: .touchUpInside)
+        view.addSubview(btn)
+        NSLayoutConstraint.activate([
+            btn.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 4),
+            btn.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 8),
+            btn.widthAnchor.constraint(equalToConstant: 36),
+            btn.heightAnchor.constraint(equalToConstant: 36),
+        ])
+        sidebarExpandButton = btn
+        btn.alpha = 0
+        UIView.animate(withDuration: 0.2) { btn.alpha = 1 }
+    }
+
+    private func hideSidebarExpandButton() {
+        guard let btn = sidebarExpandButton else { return }
+        UIView.animate(withDuration: 0.2, animations: { btn.alpha = 0 }) { _ in
+            btn.removeFromSuperview()
+        }
+        sidebarExpandButton = nil
     }
 
     @objc private func newChatTapped() {
