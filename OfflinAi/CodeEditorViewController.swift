@@ -391,6 +391,9 @@ final class CodeEditorViewController: UIViewController {
         """),
 
         // ── manim ──
+        Template(title: "manim: Simple (Debug)", icon: "ladybug", category: "Manim", language: .python, code:
+        "from manim import *\nimport os\n\nclass SimpleTest(Scene):\n  def construct(self):\n    c = Circle(radius=2, color=BLUE, fill_opacity=0.8)\n    self.add(c)\n    s = Square(side_length=2, color=RED, fill_opacity=0.6).shift(RIGHT*2)\n    self.add(s)\n    self.wait(1)\n\nscene = SimpleTest()\nscene.render()\n# Debug: print what files were created\nimport manim\nmdir = manim.config.media_dir\nfor root, dirs, files in os.walk(mdir):\n  for f in files:\n    fpath = os.path.join(root, f)\n    sz = os.path.getsize(fpath)\n    print(f'  FILE: {fpath} ({sz} bytes)')\nprint(f'__offlinai_plot_path = {__offlinai_plot_path}')\n"),
+
         Template(title: "manim: Shapes", icon: "sparkles", category: "Manim", language: .python, code:
         "from manim import *\n\nclass ShapeDemo(Scene):\n  def construct(self):\n    circle = Circle(radius=1.5, color=BLUE, fill_opacity=0.5)\n    square = Square(side_length=2, color=RED, fill_opacity=0.3)\n    triangle = Triangle(color=GREEN, fill_opacity=0.3)\n    shapes = VGroup(circle, square, triangle).arrange(RIGHT, buff=1)\n    self.play(Create(shapes), run_time=2)\n    title = Text('Shapes in Manim', font_size=36).to_edge(UP)\n    self.play(Write(title))\n    self.wait(0.5)\n\nscene = ShapeDemo()\nscene.render()\n"),
 
