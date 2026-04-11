@@ -625,15 +625,16 @@ try:
         os.makedirs(_manim_media, exist_ok=True)
         manim.config.media_dir = _manim_media
         manim.config.renderer = "cairo"
+        manim.config.format = "mp4"           # MUST set before write_to_movie check
         manim.config.write_to_movie = True    # PyAV + bundled ffmpeg dylibs
-        manim.config.save_last_frame = True
+        manim.config.save_last_frame = True   # Also save PNG of last frame
         manim.config.preview = False
         manim.config.show_in_file_browser = False
         manim.config.disable_caching = True
         manim.config.verbosity = "WARNING"
-        manim.config.pixel_width = 640
-        manim.config.pixel_height = 360
-        manim.config.frame_rate = 15  # Lower for GIF size
+        manim.config.pixel_width = 854
+        manim.config.pixel_height = 480
+        manim.config.frame_rate = 24
 
         # Monkey-patch to capture frames → animated GIF (since ffmpeg unavailable)
         if not getattr(manim.Scene, '_offlinai_patched', False):
@@ -675,11 +676,11 @@ try:
                 global __offlinai_plot_path
                 import manim as _m
                 _m.config.renderer = "cairo"
+                _m.config.format = "mp4"
                 _m.config.write_to_movie = True
                 _m.config.save_last_frame = True
                 _m.config.preview = False
                 _m.config.disable_caching = True
-                _m.config.format = "mp4"
                 _collected_frames.clear()
                 _orig_render(self, *args, **kwargs)
                 try:
