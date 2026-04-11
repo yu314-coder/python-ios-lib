@@ -641,7 +641,7 @@ try:
         # Read quality settings from __offlinai_manim_quality / __offlinai_manim_fps
         # (set by CodeEditorViewController via UserDefaults → wrapper globals)
         _mq = int(globals().get('__offlinai_manim_quality', '1') or '1')  # Default: medium (720p)
-        _mfps = int(globals().get('__offlinai_manim_fps', '24') or '24')  # Default: 24fps
+        _mfps = int(globals().get('__offlinai_manim_fps', '30') or '30')  # Default: 30fps (same as real manim)
         if _mq == 0:
             manim.config.pixel_width = 854
             manim.config.pixel_height = 480
