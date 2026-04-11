@@ -682,9 +682,16 @@ try:
                 _m.config.preview = False
                 _m.config.disable_caching = True
                 _collected_frames.clear()
+                # Debug: verify config
+                from manim.utils.file_ops import write_to_movie as _wtm
+                _log(f"pre-render: format={_m.config.format}, write_to_movie={_m.config.write_to_movie}, wtm()={_wtm()}")
                 _orig_render(self, *args, **kwargs)
+                _log(f"post-render: frames={len(_collected_frames)}")
                 try:
                     fw = self.renderer.file_writer
+                    _log(f"fw attrs: movie={hasattr(fw,'movie_file_path')}, image={hasattr(fw,'image_file_path')}")
+                    if hasattr(fw, 'movie_file_path'):
+                        _log(f"movie_file_path={fw.movie_file_path}")
                     # 1. Check for mp4 video (PyAV + ffmpeg)
                     movie_path = str(fw.movie_file_path) if hasattr(fw, 'movie_file_path') and fw.movie_file_path else None
                     if movie_path and os.path.exists(movie_path) and os.path.getsize(movie_path) > 500:
