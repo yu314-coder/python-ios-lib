@@ -3860,7 +3860,8 @@ final class GameViewController: UIViewController {
         sidebarWidthConstraint = sidebarView.widthAnchor.constraint(equalToConstant: 280)
         sidebarWidthConstraint?.isActive = true
 
-        configureFilesManager()
+        // Files browser set up lazily in updateContentMode() when Files tab is selected
+        // configureFilesManager()  // Replaced by FilesBrowserViewController
         updateStatus(statusLabel.text ?? "")
         updateComposerUI()
     }

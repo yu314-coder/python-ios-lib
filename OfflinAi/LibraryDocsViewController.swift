@@ -179,6 +179,11 @@ extension LibraryDocsViewController: UITableViewDataSource, UITableViewDelegate 
             let nav = UINavigationController(rootViewController: detail)
             nav.modalPresentationStyle = .popover
             nav.preferredContentSize = CGSize(width: 500, height: 600)
+            if let popover = nav.popoverPresentationController {
+                popover.sourceView = self.view
+                popover.sourceRect = CGRect(x: self.view.bounds.midX, y: self.view.bounds.midY, width: 0, height: 0)
+                popover.permittedArrowDirections = .any
+            }
             present(nav, animated: true)
         } else {
             navigationController?.pushViewController(detail, animated: true)
