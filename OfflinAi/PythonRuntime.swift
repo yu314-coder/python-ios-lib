@@ -695,11 +695,14 @@ try:
                 _m.config.renderer = "cairo"
                 _m.config.format = "mp4"
                 _m.config.write_to_movie = True
-                _m.config.save_last_frame = False  # MUST be False — save_last_frame=True sets skip_animations=True which kills video!
+                _m.config.save_last_frame = False
                 _m.config.preview = False
                 _m.config.disable_caching = True
+                _m.config.from_animation_number = 0
+                _m.config.upto_animation_number = -1
                 _collected_frames.clear()
                 _orig_render(self, *args, **kwargs)
+                print(f"[manim-debug] frames_written={len(_collected_frames)} skip={getattr(self.renderer, 'skip_animations', '?')} sections_skip={getattr(self.renderer.file_writer.sections[-1], 'skip_animations', '?') if hasattr(self.renderer, 'file_writer') and self.renderer.file_writer.sections else '?'}")
                 try:
                     fw = self.renderer.file_writer
                     _log(f"fw attrs: movie={hasattr(fw,'movie_file_path')}, image={hasattr(fw,'image_file_path')}")
