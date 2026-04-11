@@ -625,9 +625,9 @@ try:
         os.makedirs(_manim_media, exist_ok=True)
         manim.config.media_dir = _manim_media
         manim.config.renderer = "cairo"
-        manim.config.format = "mp4"           # MUST set before write_to_movie check
-        manim.config.write_to_movie = True    # PyAV + bundled ffmpeg dylibs
-        manim.config.save_last_frame = True   # Also save PNG of last frame
+        manim.config.format = "mp4"
+        manim.config.write_to_movie = True
+        manim.config.save_last_frame = False  # MUST be False! save_last_frame=True → skip_animations=True → no frames
         manim.config.preview = False
         manim.config.show_in_file_browser = False
         manim.config.disable_caching = True
@@ -678,15 +678,11 @@ try:
                 _m.config.renderer = "cairo"
                 _m.config.format = "mp4"
                 _m.config.write_to_movie = True
-                _m.config.save_last_frame = True
+                _m.config.save_last_frame = False  # MUST be False — save_last_frame=True sets skip_animations=True which kills video!
                 _m.config.preview = False
                 _m.config.disable_caching = True
                 _collected_frames.clear()
-                # Debug to stdout so user can see
-                from manim.utils.file_ops import write_to_movie as _wtm, is_png_format as _ipf, is_mp4_format as _imp
-                print(f"[manim-debug] format={_m.config.format} wtm_config={_m.config.write_to_movie} wtm()={_wtm()} is_png={_ipf()} is_mp4={_imp()}")
                 _orig_render(self, *args, **kwargs)
-                print(f"[manim-debug] frames_captured={len(_collected_frames)}")
                 try:
                     fw = self.renderer.file_writer
                     _log(f"fw attrs: movie={hasattr(fw,'movie_file_path')}, image={hasattr(fw,'image_file_path')}")
