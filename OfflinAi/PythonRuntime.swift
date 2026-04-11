@@ -682,11 +682,11 @@ try:
                 _m.config.preview = False
                 _m.config.disable_caching = True
                 _collected_frames.clear()
-                # Debug: verify config
-                from manim.utils.file_ops import write_to_movie as _wtm
-                _log(f"pre-render: format={_m.config.format}, write_to_movie={_m.config.write_to_movie}, wtm()={_wtm()}")
+                # Debug to stdout so user can see
+                from manim.utils.file_ops import write_to_movie as _wtm, is_png_format as _ipf, is_mp4_format as _imp
+                print(f"[manim-debug] format={_m.config.format} wtm_config={_m.config.write_to_movie} wtm()={_wtm()} is_png={_ipf()} is_mp4={_imp()}")
                 _orig_render(self, *args, **kwargs)
-                _log(f"post-render: frames={len(_collected_frames)}")
+                print(f"[manim-debug] frames_captured={len(_collected_frames)}")
                 try:
                     fw = self.renderer.file_writer
                     _log(f"fw attrs: movie={hasattr(fw,'movie_file_path')}, image={hasattr(fw,'image_file_path')}")
