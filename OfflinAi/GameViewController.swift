@@ -5570,19 +5570,25 @@ When asked to write/run Fortran code, output a ```fortran code block. It auto-ex
 Supports: PROGRAM/END PROGRAM, INTEGER/REAL/DOUBLE PRECISION/CHARACTER/LOGICAL/COMPLEX, DO/DO WHILE/EXIT/CYCLE, IF/THEN/ELSE IF/ELSE/END IF, SELECT CASE, SUBROUTINE/FUNCTION/MODULE, arrays up to 7D, ALLOCATABLE/ALLOCATE/DEALLOCATE, WRITE/PRINT with format descriptors (A/Iw/Fw.d/Ew.d/Lw), 45+ intrinsics (SIN/COS/SQRT/ABS/MOD/MATMUL/DOT_PRODUCT/SUM/PRODUCT/MAXVAL/MINVAL/TRANSPOSE/RESHAPE/SIZE/SHAPE/TRIM/LEN_TRIM/INDEX/ADJUSTL/ADJUSTR), case-insensitive, dot-operators (.AND./.OR./.NOT./.EQ./.NE./.LT./.GT./.LE./.GE.).
 
 ═══ MANIM (math animations) ═══
-manim IS available. Use Cairo renderer (auto-configured). Output is a PNG image of the last frame.
-IMPORTANT: Do NOT use Tex() or MathTex() — LaTeX is not available on iOS. Use Text() for all text.
+manim IS available. Use Cairo renderer (auto-configured). Output is a PNG image of the LAST FRAME.
+CRITICAL RULES:
+- Do NOT use Tex() or MathTex() — LaTeX is not available on iOS. Use Text() for ALL text.
+- Do NOT end with FadeOut() — the last frame will be BLACK. Always keep objects visible.
+- ALWAYS end construct() with self.wait(0.5) to ensure the last frame captures everything.
+- Video output is NOT supported (no ffmpeg). Only the final frame PNG is rendered.
 
 ```python
 from manim import *
 
 class MyScene(Scene):
     def construct(self):
-        circle = Circle(color=BLUE)
-        square = Square(color=RED)
+        circle = Circle(color=BLUE, fill_opacity=0.8)
+        square = Square(color=RED, fill_opacity=0.8)
         self.play(Create(circle))
         self.play(Transform(circle, square))
-        self.play(FadeOut(circle))
+        title = Text('My Scene', font_size=36).to_edge(UP)
+        self.play(Write(title))
+        self.wait(0.5)  # REQUIRED: ensures last frame has content
 
 scene = MyScene()
 scene.render()
