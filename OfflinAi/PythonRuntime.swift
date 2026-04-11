@@ -630,32 +630,32 @@ try:
         manim.config.show_in_file_browser = False
         manim.config.disable_caching = True
         manim.config.verbosity = "WARNING"
-        # Monkey-patch Scene.render to capture the output image path
-        _orig_render = manim.Scene.render
-        def _offlinai_manim_render(self, *args, **kwargs):
-            global __offlinai_plot_path
-            _orig_render(self, *args, **kwargs)
-            # Find the output image
-            try:
-                fw = self.renderer.file_writer
-                img_path = str(fw.image_file_path) if hasattr(fw, 'image_file_path') and fw.image_file_path else None
-                if img_path and os.path.exists(img_path):
-                    __offlinai_plot_path = img_path
-                    _log(f"manim rendered: {img_path}")
-                    print(f"[manim rendered] {img_path}")
-                else:
-                    # Search media dir for latest PNG
-                    for root, dirs, files in os.walk(_manim_media):
-                        for f in sorted(files, reverse=True):
-                            if f.endswith('.png'):
-                                found = os.path.join(root, f)
-                                __offlinai_plot_path = found
-                                _log(f"manim found: {found}")
-                                print(f"[manim rendered] {found}")
-                                return
-            except Exception as e:
-                _log(f"manim output capture error: {e}")
-        manim.Scene.render = _offlinai_manim_render
+        # Monkey-patch Scene.render to capture the output image path (once only)
+        if not getattr(manim.Scene, '_offlinai_patched', False):
+            _orig_render = manim.Scene.render
+            def _offlinai_manim_render(self, *args, **kwargs):
+                global __offlinai_plot_path
+                _orig_render(self, *args, **kwargs)
+                try:
+                    fw = self.renderer.file_writer
+                    img_path = str(fw.image_file_path) if hasattr(fw, 'image_file_path') and fw.image_file_path else None
+                    if img_path and os.path.exists(img_path):
+                        __offlinai_plot_path = img_path
+                        _log(f"manim rendered: {img_path}")
+                        print(f"[manim rendered] {img_path}")
+                    else:
+                        for root, dirs, files in os.walk(_manim_media):
+                            for f in sorted(files, reverse=True):
+                                if f.endswith('.png'):
+                                    found = os.path.join(root, f)
+                                    __offlinai_plot_path = found
+                                    _log(f"manim found: {found}")
+                                    print(f"[manim rendered] {found}")
+                                    return
+                except Exception as e:
+                    _log(f"manim output capture error: {e}")
+            manim.Scene.render = _offlinai_manim_render
+            manim.Scene._offlinai_patched = True
         _log("manim configured for iOS (Cairo renderer, save_last_frame)")
     except ImportError:
         _log("manim not available")
