@@ -184,6 +184,12 @@ print("__OFFLINAI_LIB_STATUS__=" + json.dumps(_offlinai_lib_status))
             try setGlobalString(encoded, key: "__offlinai_code_b64", globals: globals)
             try setGlobalString(toolDir.path, key: "__offlinai_tool_dir", globals: globals)
 
+            // Pass manim quality settings
+            let manimQuality = UserDefaults.standard.integer(forKey: "manim_quality") // 0=low, 1=med, 2=high
+            let manimFPS = UserDefaults.standard.integer(forKey: "manim_fps")
+            try setGlobalString(String(manimQuality), key: "__offlinai_manim_quality", globals: globals)
+            try setGlobalString(String(manimFPS > 0 ? manimFPS : 24), key: "__offlinai_manim_fps", globals: globals)
+
             print("[python] [\(elapsed())] Running wrapper script (code: \(trimmed.count) chars)...")
             try runStatements(Self.executionWrapperScript, filename: "<offlinai-python-tool>")
             print("[python] [\(elapsed())] Wrapper script completed")
@@ -627,14 +633,25 @@ try:
         manim.config.renderer = "cairo"
         manim.config.format = "mp4"
         manim.config.write_to_movie = True
-        manim.config.save_last_frame = False  # MUST be False! save_last_frame=True → skip_animations=True → no frames
+        manim.config.save_last_frame = False
         manim.config.preview = False
         manim.config.show_in_file_browser = False
         manim.config.disable_caching = True
         manim.config.verbosity = "WARNING"
-        manim.config.pixel_width = 854
-        manim.config.pixel_height = 480
-        manim.config.frame_rate = 24
+        # Read quality settings from __offlinai_manim_quality / __offlinai_manim_fps
+        # (set by CodeEditorViewController via UserDefaults → wrapper globals)
+        _mq = int(globals().get('__offlinai_manim_quality', '1') or '1')
+        _mfps = int(globals().get('__offlinai_manim_fps', '24') or '24')
+        if _mq == 0:
+            manim.config.pixel_width = 480
+            manim.config.pixel_height = 270
+        elif _mq == 2:
+            manim.config.pixel_width = 1920
+            manim.config.pixel_height = 1080
+        else:
+            manim.config.pixel_width = 854
+            manim.config.pixel_height = 480
+        manim.config.frame_rate = int(_mfps) if _mfps else 24
 
         # Monkey-patch to capture frames → animated GIF (since ffmpeg unavailable)
         if not getattr(manim.Scene, '_offlinai_patched', False):

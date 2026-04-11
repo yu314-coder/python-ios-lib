@@ -1116,6 +1116,7 @@ final class CodeEditorViewController: UIViewController {
     private var currentLanguage: Language = .python
     private var chatMessages: [(role: String, text: String)] = []
     private var isAIChatVisible = true
+    private var isSettingsPanelVisible = false
     /// Assigned externally by GameViewController when embedding
     var llamaRunner: LlamaRunner?
     /// Called when the user picks a model from the model selector menu
@@ -1130,6 +1131,7 @@ final class CodeEditorViewController: UIViewController {
     private let clearButton = UIButton(type: .system)
     private let templatesButton = UIButton(type: .system)
     private let aiToggleButton = UIButton(type: .system)
+    private let settingsButton = UIButton(type: .system)
 
     // Editor
     private let editorContainer = UIView()
@@ -1137,35 +1139,19 @@ final class CodeEditorViewController: UIViewController {
     private let lineNumberLabel = UILabel()
     private let codeTextView = UITextView()
 
-    // AI Chat
-    private let chatContainer = UIView()
+    // AI Chat (below code editor in left panel)
+    private let aiChatContainer = UIView()
     private let chatTitleLabel = UILabel()
     private let modelSelectorButton = UIButton(type: .system)
     private let chatScrollView = UIScrollView()
     private let chatStackView = UIStackView()
     private let chatInputField = UITextField()
     private let chatSendButton = UIButton(type: .system)
+    private var aiChatHeightConstraint: NSLayoutConstraint!
 
-    // Terminal
-    private let terminalContainer = UIView()
-    private let terminalTitleBar = UIView()
-    private let terminalTitleLabel = UILabel()
-    private let terminalTextView = UITextView()
-    private var terminalHeightConstraint: NSLayoutConstraint!
-    private let terminalDragHandle = UIView()
-
-    // Image / chart output
-    private let imageOutputView: UIImageView = {
-        let iv = UIImageView()
-        iv.contentMode = .scaleAspectFit
-        iv.backgroundColor = .white
-        iv.layer.cornerRadius = 8
-        iv.clipsToBounds = true
-        iv.translatesAutoresizingMaskIntoConstraints = false
-        iv.isHidden = true
-        return iv
-    }()
-    private let chartWebView: WKWebView = {
+    // Output panel (right side)
+    private let outputPanel = UIView()
+    private let outputWebView: WKWebView = {
         let config = WKWebViewConfiguration()
         config.preferences.javaScriptEnabled = true
         config.defaultWebpagePreferences.allowsContentJavaScript = true
@@ -1178,14 +1164,47 @@ final class CodeEditorViewController: UIViewController {
         wv.layer.cornerRadius = 8
         wv.clipsToBounds = true
         wv.translatesAutoresizingMaskIntoConstraints = false
-        wv.isHidden = true
         return wv
     }()
+    private let outputImageView: UIImageView = {
+        let iv = UIImageView()
+        iv.contentMode = .scaleAspectFit
+        iv.backgroundColor = .black
+        iv.layer.cornerRadius = 8
+        iv.clipsToBounds = true
+        iv.translatesAutoresizingMaskIntoConstraints = false
+        iv.isHidden = true
+        return iv
+    }()
+    private let outputPlaceholderLabel: UILabel = {
+        let l = UILabel()
+        l.text = "Output will appear here"
+        l.textColor = UIColor(red: 0.400, green: 0.420, blue: 0.502, alpha: 1.0)
+        l.font = .systemFont(ofSize: 15, weight: .medium)
+        l.textAlignment = .center
+        l.translatesAutoresizingMaskIntoConstraints = false
+        return l
+    }()
+
+    // Terminal (text only)
+    private let terminalContainer = UIView()
+    private let terminalTitleBar = UIView()
+    private let terminalTitleLabel = UILabel()
+    private let terminalTextView = UITextView()
+    private var terminalHeightConstraint: NSLayoutConstraint!
+    private let terminalDragHandle = UIView()
+
+    // Settings panel (slides in from right)
+    private let settingsPanel = UIView()
+    private var settingsPanelTrailingConstraint: NSLayoutConstraint!
+    private let qualitySegmented = UISegmentedControl(items: ["Low 480p", "Med 720p", "High 1080p"])
+    private let fpsSegmented = UISegmentedControl(items: ["15", "24", "30"])
 
     // Layout
+    private let leftPanel = UIView()
     private let topStack = UIStackView()
     private let mainStack = UIStackView()
-    private var chatWidthConstraint: NSLayoutConstraint!
+    private var outputPanelWidthConstraint: NSLayoutConstraint!
 
     // MARK: - Lifecycle
 
@@ -1195,7 +1214,9 @@ final class CodeEditorViewController: UIViewController {
         setupToolbar()
         setupEditor()
         setupAIChat()
+        setupOutputPanel()
         setupTerminal()
+        setupSettingsPanel()
         setupLayout()
         loadDefaultCode()
     }
@@ -1251,11 +1272,18 @@ final class CodeEditorViewController: UIViewController {
         aiToggleButton.addTarget(self, action: #selector(toggleAIChat), for: .touchUpInside)
         aiToggleButton.translatesAutoresizingMaskIntoConstraints = false
 
+        var settingsConfig = UIButton.Configuration.plain()
+        settingsConfig.image = UIImage(systemName: "gearshape.fill")
+        settingsConfig.baseForegroundColor = EditorTheme.foreground
+        settingsButton.configuration = settingsConfig
+        settingsButton.addTarget(self, action: #selector(toggleSettingsPanel), for: .touchUpInside)
+        settingsButton.translatesAutoresizingMaskIntoConstraints = false
+
         let spacer = UIView()
         spacer.translatesAutoresizingMaskIntoConstraints = false
         spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
 
-        let toolbarStack = UIStackView(arrangedSubviews: [languageControl, runButton, clearButton, templatesButton, spacer, aiToggleButton])
+        let toolbarStack = UIStackView(arrangedSubviews: [languageControl, runButton, clearButton, templatesButton, spacer, aiToggleButton, settingsButton])
         toolbarStack.axis = .horizontal
         toolbarStack.spacing = 12
         toolbarStack.alignment = .center
@@ -1331,10 +1359,10 @@ final class CodeEditorViewController: UIViewController {
     // MARK: - Setup AI Chat
 
     private func setupAIChat() {
-        chatContainer.translatesAutoresizingMaskIntoConstraints = false
-        chatContainer.backgroundColor = EditorTheme.chatBg
-        chatContainer.layer.cornerRadius = 8
-        chatContainer.clipsToBounds = true
+        aiChatContainer.translatesAutoresizingMaskIntoConstraints = false
+        aiChatContainer.backgroundColor = EditorTheme.chatBg
+        aiChatContainer.layer.cornerRadius = 8
+        aiChatContainer.clipsToBounds = true
 
         // Title
         chatTitleLabel.translatesAutoresizingMaskIntoConstraints = false
@@ -1404,18 +1432,18 @@ final class CodeEditorViewController: UIViewController {
         chatHeaderRow.alignment = .center
         chatHeaderRow.translatesAutoresizingMaskIntoConstraints = false
 
-        chatContainer.addSubview(chatHeaderRow)
-        chatContainer.addSubview(chatScrollView)
-        chatContainer.addSubview(inputRow)
+        aiChatContainer.addSubview(chatHeaderRow)
+        aiChatContainer.addSubview(chatScrollView)
+        aiChatContainer.addSubview(inputRow)
 
         NSLayoutConstraint.activate([
-            chatHeaderRow.topAnchor.constraint(equalTo: chatContainer.topAnchor, constant: 10),
-            chatHeaderRow.leadingAnchor.constraint(equalTo: chatContainer.leadingAnchor, constant: 10),
-            chatHeaderRow.trailingAnchor.constraint(equalTo: chatContainer.trailingAnchor, constant: -10),
+            chatHeaderRow.topAnchor.constraint(equalTo: aiChatContainer.topAnchor, constant: 10),
+            chatHeaderRow.leadingAnchor.constraint(equalTo: aiChatContainer.leadingAnchor, constant: 10),
+            chatHeaderRow.trailingAnchor.constraint(equalTo: aiChatContainer.trailingAnchor, constant: -10),
 
             chatScrollView.topAnchor.constraint(equalTo: chatHeaderRow.bottomAnchor, constant: 8),
-            chatScrollView.leadingAnchor.constraint(equalTo: chatContainer.leadingAnchor, constant: 8),
-            chatScrollView.trailingAnchor.constraint(equalTo: chatContainer.trailingAnchor, constant: -8),
+            chatScrollView.leadingAnchor.constraint(equalTo: aiChatContainer.leadingAnchor, constant: 8),
+            chatScrollView.trailingAnchor.constraint(equalTo: aiChatContainer.trailingAnchor, constant: -8),
             chatScrollView.bottomAnchor.constraint(equalTo: inputRow.topAnchor, constant: -8),
 
             chatStackView.topAnchor.constraint(equalTo: chatScrollView.topAnchor),
@@ -1424,9 +1452,9 @@ final class CodeEditorViewController: UIViewController {
             chatStackView.bottomAnchor.constraint(equalTo: chatScrollView.bottomAnchor),
             chatStackView.widthAnchor.constraint(equalTo: chatScrollView.widthAnchor),
 
-            inputRow.leadingAnchor.constraint(equalTo: chatContainer.leadingAnchor, constant: 8),
-            inputRow.trailingAnchor.constraint(equalTo: chatContainer.trailingAnchor, constant: -8),
-            inputRow.bottomAnchor.constraint(equalTo: chatContainer.bottomAnchor, constant: -8),
+            inputRow.leadingAnchor.constraint(equalTo: aiChatContainer.leadingAnchor, constant: 8),
+            inputRow.trailingAnchor.constraint(equalTo: aiChatContainer.trailingAnchor, constant: -8),
+            inputRow.bottomAnchor.constraint(equalTo: aiChatContainer.bottomAnchor, constant: -8),
             inputRow.heightAnchor.constraint(equalToConstant: 36),
 
             chatSendButton.widthAnchor.constraint(equalToConstant: 36),
@@ -1434,15 +1462,38 @@ final class CodeEditorViewController: UIViewController {
         ])
     }
 
-    // MARK: - Setup Terminal
+    // MARK: - Setup Output Panel
 
-    /// Constraint that pins textView.top below chart/image when visible
-    private var terminalTextTopToChartConstraint: NSLayoutConstraint!
-    /// Constraint that pins textView.top to title bar when no chart
-    private var terminalTextTopToTitleConstraint: NSLayoutConstraint!
-    /// Height constraint for chart/image area
-    private var chartHeightConstraint: NSLayoutConstraint!
-    private var imageHeightConstraint: NSLayoutConstraint!
+    private func setupOutputPanel() {
+        outputPanel.translatesAutoresizingMaskIntoConstraints = false
+        outputPanel.backgroundColor = EditorTheme.terminalBg
+        outputPanel.layer.cornerRadius = 8
+        outputPanel.clipsToBounds = true
+
+        outputPanel.addSubview(outputWebView)
+        outputPanel.addSubview(outputImageView)
+        outputPanel.addSubview(outputPlaceholderLabel)
+
+        // Initially show placeholder, hide webview
+        outputWebView.isHidden = true
+
+        NSLayoutConstraint.activate([
+            outputWebView.topAnchor.constraint(equalTo: outputPanel.topAnchor),
+            outputWebView.leadingAnchor.constraint(equalTo: outputPanel.leadingAnchor),
+            outputWebView.trailingAnchor.constraint(equalTo: outputPanel.trailingAnchor),
+            outputWebView.bottomAnchor.constraint(equalTo: outputPanel.bottomAnchor),
+
+            outputImageView.topAnchor.constraint(equalTo: outputPanel.topAnchor, constant: 4),
+            outputImageView.leadingAnchor.constraint(equalTo: outputPanel.leadingAnchor, constant: 4),
+            outputImageView.trailingAnchor.constraint(equalTo: outputPanel.trailingAnchor, constant: -4),
+            outputImageView.bottomAnchor.constraint(equalTo: outputPanel.bottomAnchor, constant: -4),
+
+            outputPlaceholderLabel.centerXAnchor.constraint(equalTo: outputPanel.centerXAnchor),
+            outputPlaceholderLabel.centerYAnchor.constraint(equalTo: outputPanel.centerYAnchor),
+        ])
+    }
+
+    // MARK: - Setup Terminal
 
     private func setupTerminal() {
         terminalContainer.translatesAutoresizingMaskIntoConstraints = false
@@ -1467,7 +1518,7 @@ final class CodeEditorViewController: UIViewController {
         terminalTitleBar.addSubview(terminalDragHandle)
         terminalTitleBar.addSubview(terminalTitleLabel)
 
-        // Terminal output
+        // Terminal output (text only — charts/images go to output panel)
         terminalTextView.translatesAutoresizingMaskIntoConstraints = false
         terminalTextView.font = UIFont.monospacedSystemFont(ofSize: 13, weight: .regular)
         terminalTextView.backgroundColor = EditorTheme.terminalBg
@@ -1479,22 +1530,6 @@ final class CodeEditorViewController: UIViewController {
 
         terminalContainer.addSubview(terminalTitleBar)
         terminalContainer.addSubview(terminalTextView)
-        // Add chart/image AFTER textView so they render on top
-        terminalContainer.addSubview(imageOutputView)
-        terminalContainer.addSubview(chartWebView)
-
-        // Chart and image share the same slot (only one visible at a time)
-        chartHeightConstraint = chartWebView.heightAnchor.constraint(equalToConstant: 280)
-        imageHeightConstraint = imageOutputView.heightAnchor.constraint(equalToConstant: 280)
-
-        // Two mutually exclusive top anchors for terminalTextView:
-        // 1) Directly below title bar (no chart)
-        terminalTextTopToTitleConstraint = terminalTextView.topAnchor.constraint(equalTo: terminalTitleBar.bottomAnchor)
-        // 2) Below chart/image area
-        terminalTextTopToChartConstraint = terminalTextView.topAnchor.constraint(equalTo: terminalTitleBar.bottomAnchor, constant: 288)
-
-        terminalTextTopToTitleConstraint.isActive = true
-        terminalTextTopToChartConstraint.isActive = false
 
         NSLayoutConstraint.activate([
             terminalTitleBar.topAnchor.constraint(equalTo: terminalContainer.topAnchor),
@@ -1510,19 +1545,8 @@ final class CodeEditorViewController: UIViewController {
             terminalTitleLabel.leadingAnchor.constraint(equalTo: terminalTitleBar.leadingAnchor, constant: 8),
             terminalTitleLabel.centerYAnchor.constraint(equalTo: terminalTitleBar.centerYAnchor),
 
-            // Image output (hidden by default)
-            imageOutputView.topAnchor.constraint(equalTo: terminalTitleBar.bottomAnchor, constant: 4),
-            imageOutputView.leadingAnchor.constraint(equalTo: terminalContainer.leadingAnchor, constant: 4),
-            imageOutputView.trailingAnchor.constraint(equalTo: terminalContainer.trailingAnchor, constant: -4),
-            imageHeightConstraint,
-
-            // Chart web view (hidden by default)
-            chartWebView.topAnchor.constraint(equalTo: terminalTitleBar.bottomAnchor, constant: 4),
-            chartWebView.leadingAnchor.constraint(equalTo: terminalContainer.leadingAnchor, constant: 4),
-            chartWebView.trailingAnchor.constraint(equalTo: terminalContainer.trailingAnchor, constant: -4),
-            chartHeightConstraint,
-
-            // Text view fills remaining space
+            // Text view fills below title bar
+            terminalTextView.topAnchor.constraint(equalTo: terminalTitleBar.bottomAnchor),
             terminalTextView.leadingAnchor.constraint(equalTo: terminalContainer.leadingAnchor),
             terminalTextView.trailingAnchor.constraint(equalTo: terminalContainer.trailingAnchor),
             terminalTextView.bottomAnchor.constraint(equalTo: terminalContainer.bottomAnchor),
@@ -1533,21 +1557,134 @@ final class CodeEditorViewController: UIViewController {
         terminalTitleBar.addGestureRecognizer(pan)
     }
 
+    // MARK: - Setup Settings Panel
+
+    private func setupSettingsPanel() {
+        settingsPanel.translatesAutoresizingMaskIntoConstraints = false
+        settingsPanel.backgroundColor = EditorTheme.chatBg
+        settingsPanel.layer.cornerRadius = 12
+        settingsPanel.layer.maskedCorners = [.layerMinXMinYCorner, .layerMinXMaxYCorner]
+        settingsPanel.clipsToBounds = true
+        settingsPanel.layer.shadowColor = UIColor.black.cgColor
+        settingsPanel.layer.shadowOpacity = 0.4
+        settingsPanel.layer.shadowRadius = 10
+
+        let titleLabel = UILabel()
+        titleLabel.text = "Manim Settings"
+        titleLabel.font = .systemFont(ofSize: 16, weight: .bold)
+        titleLabel.textColor = EditorTheme.foreground
+        titleLabel.translatesAutoresizingMaskIntoConstraints = false
+
+        let qualityLabel = UILabel()
+        qualityLabel.text = "Quality"
+        qualityLabel.font = .systemFont(ofSize: 13, weight: .medium)
+        qualityLabel.textColor = EditorTheme.gutterText
+        qualityLabel.translatesAutoresizingMaskIntoConstraints = false
+
+        qualitySegmented.selectedSegmentIndex = UserDefaults.standard.integer(forKey: "manim_quality")
+        qualitySegmented.backgroundColor = EditorTheme.gutterBg
+        qualitySegmented.selectedSegmentTintColor = UIColor.systemPurple.withAlphaComponent(0.5)
+        qualitySegmented.setTitleTextAttributes([.foregroundColor: EditorTheme.foreground, .font: UIFont.systemFont(ofSize: 11)], for: .normal)
+        qualitySegmented.setTitleTextAttributes([.foregroundColor: UIColor.white, .font: UIFont.systemFont(ofSize: 11, weight: .semibold)], for: .selected)
+        qualitySegmented.addTarget(self, action: #selector(manimQualityChanged), for: .valueChanged)
+        qualitySegmented.translatesAutoresizingMaskIntoConstraints = false
+
+        let fpsLabel = UILabel()
+        fpsLabel.text = "FPS"
+        fpsLabel.font = .systemFont(ofSize: 13, weight: .medium)
+        fpsLabel.textColor = EditorTheme.gutterText
+        fpsLabel.translatesAutoresizingMaskIntoConstraints = false
+
+        let savedFPS = UserDefaults.standard.integer(forKey: "manim_fps")
+        fpsSegmented.selectedSegmentIndex = savedFPS
+        fpsSegmented.backgroundColor = EditorTheme.gutterBg
+        fpsSegmented.selectedSegmentTintColor = UIColor.systemPurple.withAlphaComponent(0.5)
+        fpsSegmented.setTitleTextAttributes([.foregroundColor: EditorTheme.foreground], for: .normal)
+        fpsSegmented.setTitleTextAttributes([.foregroundColor: UIColor.white], for: .selected)
+        fpsSegmented.addTarget(self, action: #selector(manimFPSChanged), for: .valueChanged)
+        fpsSegmented.translatesAutoresizingMaskIntoConstraints = false
+
+        let closeButton = UIButton(type: .system)
+        var closeConfig = UIButton.Configuration.plain()
+        closeConfig.image = UIImage(systemName: "xmark.circle.fill")
+        closeConfig.baseForegroundColor = EditorTheme.gutterText
+        closeButton.configuration = closeConfig
+        closeButton.addTarget(self, action: #selector(toggleSettingsPanel), for: .touchUpInside)
+        closeButton.translatesAutoresizingMaskIntoConstraints = false
+
+        settingsPanel.addSubview(titleLabel)
+        settingsPanel.addSubview(closeButton)
+        settingsPanel.addSubview(qualityLabel)
+        settingsPanel.addSubview(qualitySegmented)
+        settingsPanel.addSubview(fpsLabel)
+        settingsPanel.addSubview(fpsSegmented)
+
+        NSLayoutConstraint.activate([
+            titleLabel.topAnchor.constraint(equalTo: settingsPanel.topAnchor, constant: 16),
+            titleLabel.leadingAnchor.constraint(equalTo: settingsPanel.leadingAnchor, constant: 16),
+
+            closeButton.centerYAnchor.constraint(equalTo: titleLabel.centerYAnchor),
+            closeButton.trailingAnchor.constraint(equalTo: settingsPanel.trailingAnchor, constant: -12),
+
+            qualityLabel.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 20),
+            qualityLabel.leadingAnchor.constraint(equalTo: settingsPanel.leadingAnchor, constant: 16),
+
+            qualitySegmented.topAnchor.constraint(equalTo: qualityLabel.bottomAnchor, constant: 8),
+            qualitySegmented.leadingAnchor.constraint(equalTo: settingsPanel.leadingAnchor, constant: 16),
+            qualitySegmented.trailingAnchor.constraint(equalTo: settingsPanel.trailingAnchor, constant: -16),
+
+            fpsLabel.topAnchor.constraint(equalTo: qualitySegmented.bottomAnchor, constant: 20),
+            fpsLabel.leadingAnchor.constraint(equalTo: settingsPanel.leadingAnchor, constant: 16),
+
+            fpsSegmented.topAnchor.constraint(equalTo: fpsLabel.bottomAnchor, constant: 8),
+            fpsSegmented.leadingAnchor.constraint(equalTo: settingsPanel.leadingAnchor, constant: 16),
+            fpsSegmented.trailingAnchor.constraint(equalTo: settingsPanel.trailingAnchor, constant: -16),
+        ])
+    }
+
+    @objc private func manimQualityChanged() {
+        UserDefaults.standard.set(qualitySegmented.selectedSegmentIndex, forKey: "manim_quality")
+    }
+
+    @objc private func manimFPSChanged() {
+        UserDefaults.standard.set(fpsSegmented.selectedSegmentIndex, forKey: "manim_fps")
+    }
+
     // MARK: - Layout
 
     private func setupLayout() {
-        // Top section: editor + AI chat side by side
+        // Left panel: code editor (flex) + AI chat (collapsible, below editor)
+        leftPanel.translatesAutoresizingMaskIntoConstraints = false
+        leftPanel.addSubview(editorContainer)
+        leftPanel.addSubview(aiChatContainer)
+
+        aiChatHeightConstraint = aiChatContainer.heightAnchor.constraint(equalToConstant: 150)
+        aiChatHeightConstraint.priority = .defaultHigh
+
+        NSLayoutConstraint.activate([
+            editorContainer.topAnchor.constraint(equalTo: leftPanel.topAnchor),
+            editorContainer.leadingAnchor.constraint(equalTo: leftPanel.leadingAnchor),
+            editorContainer.trailingAnchor.constraint(equalTo: leftPanel.trailingAnchor),
+            editorContainer.bottomAnchor.constraint(equalTo: aiChatContainer.topAnchor, constant: -2),
+
+            aiChatContainer.leadingAnchor.constraint(equalTo: leftPanel.leadingAnchor),
+            aiChatContainer.trailingAnchor.constraint(equalTo: leftPanel.trailingAnchor),
+            aiChatContainer.bottomAnchor.constraint(equalTo: leftPanel.bottomAnchor),
+            aiChatHeightConstraint,
+        ])
+
+        // Top section: leftPanel (55%) | outputPanel (45%)
         topStack.translatesAutoresizingMaskIntoConstraints = false
         topStack.axis = .horizontal
         topStack.spacing = 2
         topStack.distribution = .fill
-        topStack.addArrangedSubview(editorContainer)
-        topStack.addArrangedSubview(chatContainer)
+        topStack.addArrangedSubview(leftPanel)
+        topStack.addArrangedSubview(outputPanel)
 
-        chatWidthConstraint = chatContainer.widthAnchor.constraint(equalTo: topStack.widthAnchor, multiplier: 0.35)
-        chatWidthConstraint.isActive = true
+        outputPanelWidthConstraint = outputPanel.widthAnchor.constraint(equalTo: topStack.widthAnchor, multiplier: 0.45)
+        outputPanelWidthConstraint.isActive = true
 
-        // Main vertical stack: top + terminal
+        // Main vertical stack: toolbar + topStack + terminal
         mainStack.translatesAutoresizingMaskIntoConstraints = false
         mainStack.axis = .vertical
         mainStack.spacing = 2
@@ -1557,7 +1694,11 @@ final class CodeEditorViewController: UIViewController {
 
         view.addSubview(mainStack)
 
-        terminalHeightConstraint = terminalContainer.heightAnchor.constraint(equalToConstant: 200)
+        // Settings panel overlay (slides in from right edge)
+        view.addSubview(settingsPanel)
+        settingsPanelTrailingConstraint = settingsPanel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: 260)
+
+        terminalHeightConstraint = terminalContainer.heightAnchor.constraint(equalToConstant: 150)
         terminalHeightConstraint.priority = .defaultHigh
 
         NSLayoutConstraint.activate([
@@ -1567,7 +1708,13 @@ final class CodeEditorViewController: UIViewController {
             mainStack.bottomAnchor.constraint(equalTo: view.bottomAnchor),
 
             toolbar.heightAnchor.constraint(equalToConstant: 48),
-            terminalHeightConstraint
+            terminalHeightConstraint,
+
+            // Settings panel
+            settingsPanel.topAnchor.constraint(equalTo: toolbar.bottomAnchor, constant: 8),
+            settingsPanel.bottomAnchor.constraint(equalTo: terminalContainer.topAnchor, constant: -8),
+            settingsPanel.widthAnchor.constraint(equalToConstant: 250),
+            settingsPanelTrailingConstraint,
         ])
     }
 
@@ -1652,24 +1799,31 @@ final class CodeEditorViewController: UIViewController {
     @objc private func clearTerminal() {
         terminalTextView.text = "$ Ready.\n"
         terminalTextView.textColor = EditorTheme.terminalText
-        imageOutputView.isHidden = true
-        imageOutputView.image = nil
-        chartWebView.isHidden = true
 
-        // Reset layout
-        terminalTextTopToChartConstraint.isActive = false
-        terminalTextTopToTitleConstraint.isActive = true
-        terminalTextView.textContainerInset = UIEdgeInsets(top: 8, left: 8, bottom: 8, right: 8)
-        terminalHeightConstraint.constant = 200
+        // Clear output panel
+        outputImageView.isHidden = true
+        outputImageView.image = nil
+        outputWebView.isHidden = true
+        outputPlaceholderLabel.isHidden = false
+
+        terminalHeightConstraint.constant = 150
         view.layoutIfNeeded()
     }
 
     @objc private func toggleAIChat() {
         isAIChatVisible.toggle()
         UIView.animate(withDuration: 0.25, delay: 0, options: .curveEaseInOut) {
-            self.chatContainer.isHidden = !self.isAIChatVisible
-            self.chatWidthConstraint.isActive = self.isAIChatVisible
-            self.topStack.layoutIfNeeded()
+            self.aiChatContainer.isHidden = !self.isAIChatVisible
+            self.aiChatHeightConstraint.isActive = self.isAIChatVisible
+            self.leftPanel.layoutIfNeeded()
+        }
+    }
+
+    @objc private func toggleSettingsPanel() {
+        isSettingsPanelVisible.toggle()
+        UIView.animate(withDuration: 0.3, delay: 0, usingSpringWithDamping: 0.85, initialSpringVelocity: 0, options: .curveEaseInOut) {
+            self.settingsPanelTrailingConstraint.constant = self.isSettingsPanelVisible ? 0 : 260
+            self.view.layoutIfNeeded()
         }
     }
 
@@ -2052,34 +2206,27 @@ final class CodeEditorViewController: UIViewController {
 
     private func showImageOutput(path: String?) {
         // Hide both first
-        imageOutputView.isHidden = true
-        imageOutputView.image = nil
-        chartWebView.isHidden = true
-
-        // Reset text view position to directly below title bar
-        terminalTextTopToChartConstraint.isActive = false
-        terminalTextTopToTitleConstraint.isActive = true
-        terminalTextView.textContainerInset = UIEdgeInsets(top: 8, left: 8, bottom: 8, right: 8)
+        outputImageView.isHidden = true
+        outputImageView.image = nil
+        outputWebView.isHidden = true
+        outputPlaceholderLabel.isHidden = false
 
         guard let path = path, !path.isEmpty,
               FileManager.default.fileExists(atPath: path) else {
-            // Shrink terminal back to normal size
-            terminalHeightConstraint.constant = 200
-            view.layoutIfNeeded()
             return
         }
 
         let url = URL(fileURLWithPath: path)
         let ext = url.pathExtension.lowercased()
-        var showingChart = false
 
         if ext == "html" {
-            chartWebView.isHidden = false
-            chartWebView.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
-            showingChart = true
+            outputPlaceholderLabel.isHidden = true
+            outputWebView.isHidden = false
+            outputWebView.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
         } else if ext == "gif" {
             // Animated GIF (manim) — display in WKWebView for animation support
-            chartWebView.isHidden = false
+            outputPlaceholderLabel.isHidden = true
+            outputWebView.isHidden = false
             let gifHTML = """
             <!DOCTYPE html>
             <html><head><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -2089,11 +2236,11 @@ final class CodeEditorViewController: UIViewController {
             """
             let htmlURL = url.deletingLastPathComponent().appendingPathComponent("_gif_viewer.html")
             try? gifHTML.write(to: htmlURL, atomically: true, encoding: .utf8)
-            chartWebView.loadFileURL(htmlURL, allowingReadAccessTo: url.deletingLastPathComponent())
-            showingChart = true
+            outputWebView.loadFileURL(htmlURL, allowingReadAccessTo: url.deletingLastPathComponent())
         } else if ["mp4", "mov", "webm", "m4v"].contains(ext) {
             // Video output — play in WKWebView with HTML5 video
-            chartWebView.isHidden = false
+            outputPlaceholderLabel.isHidden = true
+            outputWebView.isHidden = false
             let videoHTML = """
             <!DOCTYPE html>
             <html><head><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -2105,26 +2252,12 @@ final class CodeEditorViewController: UIViewController {
             """
             let htmlURL = url.deletingLastPathComponent().appendingPathComponent("_video_player.html")
             try? videoHTML.write(to: htmlURL, atomically: true, encoding: .utf8)
-            chartWebView.loadFileURL(htmlURL, allowingReadAccessTo: url.deletingLastPathComponent())
-            showingChart = true
+            outputWebView.loadFileURL(htmlURL, allowingReadAccessTo: url.deletingLastPathComponent())
         } else if ["png", "jpg", "jpeg"].contains(ext) {
             if let image = UIImage(contentsOfFile: path) {
-                imageOutputView.image = image
-                imageOutputView.isHidden = false
-                showingChart = true
-            }
-        }
-
-        if showingChart {
-            // Push text view below the chart/image area
-            terminalTextTopToTitleConstraint.isActive = false
-            terminalTextTopToChartConstraint.isActive = true
-
-            // Expand terminal to fit chart (280) + text area (120) + title bar (28) + padding
-            let expandedHeight: CGFloat = 440
-            UIView.animate(withDuration: 0.25) {
-                self.terminalHeightConstraint.constant = expandedHeight
-                self.view.layoutIfNeeded()
+                outputPlaceholderLabel.isHidden = true
+                outputImageView.image = image
+                outputImageView.isHidden = false
             }
         }
     }
