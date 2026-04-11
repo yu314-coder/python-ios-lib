@@ -1,8 +1,10 @@
 # C Interpreter (offlinai_cc)
 
-> **Type:** Tree-walking C89/C99 interpreter | **Location:** `gcc/offlinai_cc.c`, `gcc/offlinai_cc.h` | **Size:** ~3,450 lines | **Tests:** 48/49 passing
+> **Type:** Tree-walking C89/C99/C23 interpreter | **Location:** `gcc/offlinai_cc.c`, `gcc/offlinai_cc.h` | **Size:** ~3,450 lines | **Tests:** 48/49 passing
 
 A self-contained C interpreter with virtual memory, real pointer arithmetic, structs, unions, function pointers, goto, and function-like macros. Lexes, parses, and interprets C code at runtime. No JIT, no code generation, no external compiler needed. App Store safe.
+
+Supports C89, C99, and select C23 features.
 
 ---
 
@@ -550,6 +552,69 @@ All verified working:
 
 ---
 
+## C23 Features
+
+The interpreter supports the following C23 additions:
+
+| Feature | Syntax | Description |
+|---------|--------|-------------|
+| `_Static_assert` | `_Static_assert(expr, "msg");` | Compile-time assertion. Evaluates expression at parse time; emits error with message if false. Also available as `static_assert` (no underscore) |
+| `_Generic` | `_Generic(expr, int: "int", double: "dbl", default: "other")` | Type-generic selection expression. Evaluates to the matching association based on the controlling expression's type |
+| `typeof` | `typeof(expr) x = expr;` | Declare variable with same type as expression. Works with `int`, `double`, `char`, `struct`, pointer types |
+| `auto` type inference | `auto x = 42;` | Automatic type deduction from initializer (C23-style, not C89 storage class). Deduces `int`, `double`, `char`, or pointer types |
+| `constexpr` | `constexpr int N = 100;` | Compile-time constant. Evaluates initializer at parse time. Can be used in array sizes and `#if` expressions |
+| Binary literals | `int b = 0b10110;` | Binary integer literals with `0b` or `0B` prefix |
+| Digit separators | `int x = 1'000'000;` | Single-quote digit separators for readability in integer and floating-point literals |
+| `[[attributes]]` | `[[nodiscard]] int f();` | C23-style attributes. Recognized: `[[nodiscard]]`, `[[maybe_unused]]`, `[[deprecated]]`, `[[fallthrough]]`, `[[noreturn]]`. Parsed and stored; `[[nodiscard]]` warns if return value discarded |
+| `#warning` | `#warning "message"` | Preprocessor warning directive. Emits a warning message during preprocessing (does not halt execution) |
+| `bool` / `true` / `false` | `bool flag = true;` | Boolean type as a keyword (not requiring `<stdbool.h>`) |
+| `nullptr` | `int *p = nullptr;` | Null pointer constant (C23-style) |
+
+```c
+// C23 features in action
+#include <stdio.h>
+
+constexpr int SIZE = 10;
+int arr[SIZE];
+
+int main() {
+    // Binary literals with digit separators
+    int mask = 0b1111'0000;
+    int million = 1'000'000;
+    printf("mask = %d, million = %d\n", mask, million);
+
+    // auto type inference
+    auto x = 3.14;    // deduced as double
+    auto n = 42;       // deduced as int
+
+    // typeof
+    typeof(x) y = 2.71;  // y is double
+    printf("x=%.2f y=%.2f\n", x, y);
+
+    // _Generic
+    const char *type_name = _Generic(x,
+        int: "integer",
+        double: "double",
+        default: "other"
+    );
+    printf("x is: %s\n", type_name);  // "double"
+
+    // _Static_assert
+    _Static_assert(SIZE > 0, "SIZE must be positive");
+
+    // [[attributes]]
+    [[maybe_unused]] int unused_var = 0;
+
+    // bool as keyword
+    bool ready = true;
+    printf("ready = %d\n", ready);
+
+    return 0;
+}
+```
+
+---
+
 ## Not Supported
 
 | Feature | Notes |
@@ -561,8 +626,10 @@ All verified working:
 | Union in struct / struct in union | Basic nesting only |
 | File I/O (`fopen`, `fread`) | No filesystem access from interpreter |
 | Threads (`pthread`) | Not applicable on iOS |
-| C11/C23 features | C89/C99 subset |
 | Pointer-to-pointer (`int **pp`) | Limited |
 | Variable-length arrays (VLAs) | Not supported |
 | `setjmp`/`longjmp` (user-level) | Used internally for error handling only |
 | Variadic user functions (`...`) | Only built-in printf family |
+| C23 `_BitInt` | Extended integer types not supported |
+| C23 `#embed` | Binary embedding not supported |
+| C23 `typeof_unqual` | Only `typeof` is supported |

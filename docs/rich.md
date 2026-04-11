@@ -6,32 +6,50 @@ Rich text formatting library. On iOS, renders to plain text (no terminal colors)
 
 ---
 
-## Usage
+## Key Classes
+
+| Class | Description |
+|-------|-------------|
+| `Console(width, force_terminal)` | Main output console |
+| `Table(title, show_header, show_lines)` | Rich tables with columns and rows |
+| `Panel(content, title, subtitle, border_style)` | Bordered panel |
+| `Tree(label)` | Tree visualization |
+| `Columns(renderables, equal, expand)` | Multi-column layout |
+| `Text(text, style)` | Styled text |
+| `Markdown(markup)` | Render markdown |
+| `Syntax(code, lexer, theme, line_numbers)` | Syntax-highlighted code |
+| `Pretty(object)` | Pretty-print any Python object |
+| `Padding(renderable, pad)` | Add padding |
+| `Align(renderable, align)` | Align content (left/center/right) |
+| `Group(*renderables)` | Group renderables |
+| `Rule(title, style)` | Horizontal rule |
+
+### Console Methods
+
+| Method | Description |
+|--------|-------------|
+| `console.print(*objects, style, highlight)` | Print with formatting |
+| `console.log(*objects)` | Print with timestamp |
+| `console.rule(title)` | Print horizontal rule |
+| `console.status(status)` | Spinner status |
+| `console.input(prompt)` | Styled input prompt |
+| `console.export_text()` | Export as plain text |
+| `console.export_html()` | Export as HTML |
+
+### Table Methods
+
+| Method | Description |
+|--------|-------------|
+| `table.add_column(header, style, justify, width)` | Add column |
+| `table.add_row(*cells)` | Add data row |
+| `table.add_section()` | Add section divider |
+
+### Progress Bars
 
 ```python
-from rich.console import Console
-from rich.table import Table
-from rich.panel import Panel
-from rich.tree import Tree
-from rich import print as rprint
-
-# Tables
-table = Table(title="Results")
-table.add_column("Name", style="bold")
-table.add_column("Score")
-table.add_row("Alice", "95")
-table.add_row("Bob", "87")
-console = Console()
-console.print(table)
-
-# Trees
-tree = Tree("Root")
-tree.add("Branch 1").add("Leaf A")
-tree.add("Branch 2").add("Leaf B")
-console.print(tree)
-
-# Panels
-console.print(Panel("Hello from iOS!", title="OfflinAi"))
+from rich.progress import Progress, track
+for item in track(range(100), description="Processing"):
+    pass  # work
 ```
 
 ## Limitations

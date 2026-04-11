@@ -1,6 +1,6 @@
-# python-ios-lib
+# offlinai-libs
 
-Pure-Python and native C/Fortran libraries for running **ML, math, plotting, and C code on iOS/iPadOS** — no JIT, no compilation, App Store safe.
+Pure-Python and native C/Fortran libraries for running **ML, math, plotting, and compiled code on iOS/iPadOS** -- no JIT, no compilation at runtime, App Store safe.
 
 Provides drop-in replacements and iOS compatibility patches for popular Python libraries that can't run natively on iOS due to missing compilers, code-signing restrictions, or platform limitations.
 
@@ -8,33 +8,35 @@ Provides drop-in replacements and iOS compatibility patches for popular Python l
 
 ### Custom / Reimplemented
 
-| Library | Type | Coverage | Docs |
-|---------|------|----------|------|
-| [**sklearn**](docs/sklearn.md) | Pure NumPy reimplementation | ~85% of common APIs | 13 modules, 40+ classes |
-| [**matplotlib**](docs/matplotlib.md) | matplotlib API -> Plotly backend | ~75% of pyplot | 25+ plot types, 3D, subplots |
-| [**scipy (iOS patches)**](docs/scipy-ios.md) | Cross-compiled + runtime fixes | ~60% of submodules | Fortran stub, dcabs1 fix, import guards |
-| [**C interpreter**](docs/c-interpreter.md) | Tree-walking C89/C99 interpreter | ~90% of C language | 70+ builtins, vmem pointers, 2D arrays, function ptrs, goto, macros |
-| [**Fortran runtime stub**](docs/fortran-runtime.md) | No-op I/O stubs for flang | 22 symbols | Enables scipy Fortran modules on iOS |
+| Library | Type | Version | Coverage | Docs |
+|---------|------|---------|----------|------|
+| [**sklearn**](docs/sklearn.md) | Pure NumPy reimplementation | 1.8.0-offlinai | 12,077 lines, 40 modules | 100+ classes, full estimator API |
+| [**matplotlib**](docs/matplotlib.md) | matplotlib API -> Plotly backend | 3.9.0-offlinai | 64 modules | 30+ plot types, 3D, subplots, colormaps |
+| [**scipy (iOS patches)**](docs/scipy-ios.md) | Cross-compiled + runtime fixes | 1.15.2 | 18+ submodules | Fortran stub, dcabs1 fix, import guards |
+| [**C interpreter**](docs/c-interpreter.md) | Tree-walking C89/C99/C23 interpreter | -- | ~3,450 lines | 70+ builtins, vmem pointers, C23 features |
+| [**C++ interpreter**](docs/cpp-interpreter.md) | Tree-walking C++17 interpreter | -- | -- | Classes, templates, STL, lambdas |
+| [**Fortran interpreter**](docs/fortran-interpreter.md) | Tree-walking Fortran 90/95/2003 interpreter | -- | -- | Modules, 7D arrays, 45+ intrinsics |
+| [**Fortran runtime stub**](docs/fortran-runtime.md) | No-op I/O stubs for flang | -- | 22 symbols | Enables scipy Fortran modules on iOS |
 
 ### Stock Python Libraries (fully working)
 
 | Library | Version | Docs |
 |---------|---------|------|
-| [**numpy**](docs/numpy.md) | 2.3.5 | Arrays, linalg, FFT, random |
-| [**sympy**](docs/sympy.md) | 1.14.0 | Symbolic math, calculus, solving |
-| [**plotly**](docs/plotly.md) | 6.6.0 | Interactive charts (rendering engine) |
-| [**networkx**](docs/networkx.md) | 3.6.1 | Graph theory, network analysis |
-| [**Pillow (PIL)**](docs/pillow.md) | 12.2.0 | Image processing |
-| [**BeautifulSoup (bs4)**](docs/beautifulsoup.md) | 4.14.3 | HTML/XML parsing |
+| [**numpy**](docs/numpy.md) | 2.3.5 | Arrays, linalg (Accelerate), FFT, random, polynomials |
+| [**sympy**](docs/sympy.md) | 1.14.0 | Symbolic math, calculus, solving, matrices, number theory |
+| [**plotly**](docs/plotly.md) | 6.6.0 | 30+ interactive chart types, 3D, subplots |
+| [**networkx**](docs/networkx.md) | 3.6.1 | Graph theory, centrality, community detection, shortest paths |
+| [**Pillow (PIL)**](docs/pillow.md) | 12.2.0 | Image processing, drawing, filters, enhancement |
+| [**BeautifulSoup (bs4)**](docs/beautifulsoup.md) | 4.14.3 | HTML/XML parsing, CSS selectors |
 | [**PyYAML**](docs/pyyaml.md) | 6.0.3 | YAML parser/emitter |
-| [**mpmath**](docs/mpmath.md) | 1.4.1 | Arbitrary-precision math |
-| [**rich**](docs/rich.md) | 14.3.3 | Rich text formatting |
+| [**mpmath**](docs/mpmath.md) | 1.4.1 | Arbitrary-precision math, special functions |
+| [**rich**](docs/rich.md) | 14.3.3 | Rich text formatting, tables, trees |
 | [**tqdm**](docs/tqdm.md) | 4.67.3 | Progress bars |
-| [**Pygments**](docs/pygments.md) | 2.20.0 | Syntax highlighting |
+| [**Pygments**](docs/pygments.md) | 2.20.0 | Syntax highlighting (300+ languages) |
 | [**jsonschema**](docs/jsonschema.md) | 4.26.0 | JSON Schema validation |
 | [**click**](docs/click.md) | 8.3.2 | CLI framework |
 | [**svgelements**](docs/svgelements.md) | 1.9.6 | SVG path manipulation |
-| [**pydub**](docs/pydub.md) | 0.25.1 | Audio manipulation |
+| [**pydub**](docs/pydub.md) | 0.25.1 | Audio manipulation & generation |
 | [**PyAV (av)**](docs/av-pyav.md) | 17.0.1 | FFmpeg Python bindings |
 | [**manim**](docs/manim.md) | 0.20.1 | Math animations (experimental) |
 | [**Minor libs**](docs/minor-libs.md) | various | attrs, packaging, srt, cffi, pycairo, rpds, etc. |
@@ -78,84 +80,113 @@ int main() {
 print(String(cString: occ_get_output(interp)))
 ```
 
+### C++ Interpreter
+
+Add `offlinai_cpp.c` and `offlinai_cpp.h` to your Xcode project:
+
+```swift
+let interp = ocpp_create()
+defer { ocpp_destroy(interp) }
+
+ocpp_execute(interp, """
+#include <iostream>
+#include <vector>
+#include <algorithm>
+using namespace std;
+
+int main() {
+    vector<int> v = {5, 2, 8, 1, 9, 3};
+    sort(v.begin(), v.end());
+    for (auto x : v) cout << x << " ";
+    cout << endl;
+    return 0;
+}
+""")
+
+print(String(cString: ocpp_get_output(interp)))
+```
+
+### Fortran Interpreter
+
+Add `offlinai_fortran.c` and `offlinai_fortran.h` to your Xcode project:
+
+```swift
+let interp = ofortran_create()
+defer { ofortran_destroy(interp) }
+
+ofortran_execute(interp, """
+PROGRAM hello
+    IMPLICIT NONE
+    REAL :: x, result
+    x = 2.0
+    result = SQRT(x)
+    WRITE(*, '(A, F10.6)') 'sqrt(2) = ', result
+END PROGRAM hello
+""")
+
+print(String(cString: ofortran_get_output(interp)))
+```
+
 ---
 
-## sklearn - Pure NumPy ML
+## sklearn -- Pure NumPy ML
 
 [Full documentation](docs/sklearn.md)
 
 A complete reimplementation of scikit-learn's most-used classes using only NumPy. No compiled extensions needed.
 
-```python
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.datasets import make_classification
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import accuracy_score
-
-X, y = make_classification(n_samples=500, n_features=10, random_state=42)
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3)
-clf = RandomForestClassifier(n_estimators=20, max_depth=5).fit(X_train, y_train)
-print(f"Accuracy: {accuracy_score(y_test, clf.predict(X_test)):.3f}")
-```
-
-**40+ classes** across 13 modules: linear models, trees, ensembles, clustering, SVM, naive bayes, preprocessing, decomposition, metrics, model selection, pipeline, datasets.
+**40 modules, 100+ classes** including:
+- **Linear models:** LinearRegression, Ridge, Lasso, ElasticNet, LogisticRegression, SGDClassifier/Regressor, and 11 more
+- **Trees:** DecisionTreeClassifier/Regressor, ExtraTreeClassifier/Regressor
+- **Ensembles:** RandomForest, GradientBoosting, AdaBoost, Bagging, ExtraTrees, HistGradientBoosting, IsolationForest, Voting, Stacking
+- **Clustering:** KMeans, DBSCAN, AgglomerativeClustering, SpectralClustering, MeanShift, OPTICS, Birch, HDBSCAN, and 4 more
+- **Preprocessing:** 17 transformers (StandardScaler, OneHotEncoder, PolynomialFeatures, etc.)
+- **Decomposition:** PCA, NMF, FastICA, TruncatedSVD, LDA, and 6 more
+- **Metrics:** 38 functions (classification, regression, clustering)
+- **Model selection:** train_test_split, cross_val_score, GridSearchCV, KFold, and 11 more
+- **Plus:** SVM, Naive Bayes, Neural Networks, Gaussian Processes, Manifold Learning, Pipelines, Imputation, Feature Selection, and more
 
 ---
 
-## matplotlib - Plotly Backend
+## matplotlib -- Plotly Backend
 
 [Full documentation](docs/matplotlib.md)
 
 Drop-in replacement for `matplotlib.pyplot` that renders interactive HTML charts via Plotly.js.
 
-```python
-import numpy as np
-import matplotlib.pyplot as plt
-
-# 2D - works exactly like real matplotlib
-x = np.linspace(0, 2*np.pi, 200)
-plt.plot(x, np.sin(x), label='sin(x)')
-plt.plot(x, np.cos(x), label='cos(x)')
-plt.title('Trig Functions')
-plt.legend()
-plt.grid(True)
-plt.show()
-
-# 3D - also works
-fig = plt.figure()
-ax = fig.add_subplot(111, projection='3d')
-u, v = np.linspace(0, 2*np.pi, 50), np.linspace(0, np.pi, 50)
-X = np.outer(np.cos(u), np.sin(v))
-Y = np.outer(np.sin(u), np.sin(v))
-Z = np.outer(np.ones_like(u), np.cos(v))
-ax.plot_surface(X, Y, Z, cmap='viridis')
-plt.show()
-```
-
-**25+ plot types** including line, scatter, bar, histogram, pie, contour, heatmap, 3D surface, wireframe, polar, subplots, dual axes.
+**64 modules** including:
+- **30+ 2D plot types:** line, scatter, bar, histogram, pie, contour, heatmap, polar, errorbar, violin, boxplot, hexbin, quiver, streamplot
+- **8 3D plot types:** surface, wireframe, scatter3D, bar3d, trisurf, contour3D
+- **Colormaps:** 50+ colormaps with callable `cm.viridis()`, `cm.plasma()`, `cm.jet()`
+- **Colors:** `to_rgba()` with full CSS4 support (148 named colors), custom colormaps
+- **Ticker:** 10 locators, 10 formatters
+- **Patches:** 14 shape classes (Rectangle, Circle, Polygon, FancyArrow, etc.)
+- **Animation:** FuncAnimation, ArtistAnimation
+- **GridSpec:** Flexible subplot grid layout
+- **mpl_toolkits:** mplot3d, axes_grid1, axisartist
 
 ---
 
-## scipy - iOS Patches
+## scipy -- iOS Patches
 
 [Full documentation](docs/scipy-ios.md)
 
 Cross-compiled scipy 1.15.2 for iOS arm64 with runtime patches:
 
-- **Fortran runtime stub** — 22 no-op symbols for Fortran I/O
-- **dcabs1 fix** — Missing BLAS function stub
-- **libsf_error_state** — Install name rewriting for framework conversion
-- **Import cascade guards** — try/except wrappers on all submodule imports
-
-```python
-from scipy.optimize import minimize
-from scipy.stats import ttest_1samp, norm
-from scipy.linalg import solve
-from scipy.interpolate import interp1d
-
-result = minimize(lambda x: (x[0]-1)**2 + (x[1]-2.5)**2, [0, 0], method='Nelder-Mead')
-print(f"Minimum at: {result.x.round(4)}")
-```
+**18+ submodules** including:
+- **optimize:** minimize (9 methods), curve_fit, root, linprog, differential_evolution, least_squares
+- **integrate:** quad, solve_ivp (6 methods), trapezoid, simpson
+- **stats:** 14+ continuous distributions, 8 discrete distributions, 20+ statistical tests
+- **interpolate:** interp1d, CubicSpline, griddata, RBFInterpolator, and 15 more
+- **linalg:** solve, inv, det, eig, svd, lu, cholesky, qr, expm, and 30 more (via Accelerate)
+- **fft:** fft, rfft, dct, dst, fftfreq, and 15 more
+- **signal:** butter, filtfilt, find_peaks, welch, spectrogram, cwt, and 30 more
+- **spatial:** ConvexHull, Voronoi, Delaunay, cKDTree, 15 distance functions
+- **sparse:** csr/csc/coo matrices, sparse solvers, eigensolvers
+- **special:** gamma, erf, beta, bessel, elliptic, hypergeometric functions
+- **ndimage:** gaussian_filter, label, morphology, distance transforms
+- **cluster.hierarchy:** linkage, fcluster, dendrogram
+- **constants:** Physical and mathematical constants
 
 ---
 
@@ -163,44 +194,31 @@ print(f"Minimum at: {result.x.round(4)}")
 
 [Full documentation](docs/c-interpreter.md)
 
-A ~3,450-line C89/C99 interpreter with virtual memory, real pointers, and 48/49 tests passing.
+A ~3,450-line C89/C99/C23 interpreter with virtual memory, real pointers, and 48/49 tests passing.
 
-```c
-#include <stdio.h>
-#include <math.h>
+**Supports:** Real pointer arithmetic (`&`, `*`, `ptr+i`), 2D arrays, structs, unions, enums, function pointers, `static` variables, `goto`/labels, function-like macros, compound literals, sprintf to buffer, 70+ built-in functions, `malloc`/`calloc`/`realloc`/`free` via virtual memory.
 
-#define MAX(a,b) ((a)>(b)?(a):(b))
+**C23 features:** `_Static_assert`, `_Generic`, `typeof`, `auto` type inference, `constexpr`, binary literals (`0b1010`), digit separators (`1'000'000`), `[[attributes]]`, `#warning`, `bool`/`true`/`false` keywords, `nullptr`.
 
-struct Point { double x; double y; };
+---
 
-int main() {
-    // Real pointers with write-through
-    int x = 42;
-    int *p = &x;
-    *p = 100;
-    printf("x = %d\n", x);  // 100
+## C++ Interpreter
 
-    // 2D arrays + matrix multiply
-    int a[2][2] = {1,2,3,4};
-    int b[2][2] = {5,6,7,8};
-    int c[2][2] = {0,0,0,0};
-    for (int i = 0; i < 2; i++)
-        for (int j = 0; j < 2; j++)
-            for (int k = 0; k < 2; k++)
-                c[i][j] += a[i][k] * b[k][j];
+[Full documentation](docs/cpp-interpreter.md)
 
-    // Function pointers
-    int add(int a, int b) { return a + b; }
-    int (*op)(int, int) = add;
-    printf("op(3,4) = %d\n", op(3, 4));  // 7
+A C++17 interpreter extending the C interpreter with object-oriented and modern C++ features.
 
-    // Static variables, goto, macros all work
-    printf("MAX(3,9) = %d\n", MAX(3, 9));
-    return 0;
-}
-```
+**Supports:** Classes (public/private/protected), single inheritance, virtual functions, constructors/destructors with initializer lists, `new`/`delete`, references, `this` pointer, operator overloading, namespaces, `std::cout`/`cin`, `std::string`/`vector`/`map`/`pair`/`set`, `std::sort`/`find`/`count`, `auto` type deduction, range-based for loops, lambda expressions (captures by value/reference), function and class templates, `try`/`catch`/`throw`.
 
-**Supports:** Real pointer arithmetic (`&`, `*`, `ptr+i`), 2D arrays, structs, unions, enums, function pointers, `static` variables, `goto`/labels, function-like macros (`#define F(x) ...`), compound literals, sprintf to buffer, 70+ built-in functions, `malloc`/`calloc`/`realloc`/`free` via virtual memory.
+---
+
+## Fortran Interpreter
+
+[Full documentation](docs/fortran-interpreter.md)
+
+A Fortran 90/95/2003 interpreter for numerical computing.
+
+**Supports:** `PROGRAM`/`END PROGRAM`, `DO`/`DO WHILE` loops, `IF`/`THEN`/`ELSE`, `SELECT CASE` (with ranges), `SUBROUTINE`/`FUNCTION`/`MODULE` with `CONTAINS`, arrays up to 7 dimensions, `ALLOCATABLE` arrays, whole-array operations (`MATMUL`, `SUM`, `MAXVAL`), `WRITE`/`PRINT` with format descriptors (I, F, E, ES, A, L, X, /), 45+ intrinsic functions, case-insensitive parsing, dot-operators (`.EQ.`, `.AND.`, `.NOT.`), derived types, `IMPLICIT NONE`, `INTENT` attributes, recursive functions.
 
 ---
 
@@ -215,26 +233,41 @@ Provides 22 Fortran runtime symbols as no-ops so scipy's Fortran-compiled module
 ## Architecture
 
 ```
-python-ios-lib/
-├── sklearn/              # Pure NumPy sklearn (13 .py files)
-├── matplotlib/           # Plotly-backed matplotlib shim
+offlinai-libs/
+├── sklearn/              # Pure NumPy sklearn (40 modules, 12K+ lines)
+├── matplotlib/           # Plotly-backed matplotlib shim (64 modules)
 │   ├── pyplot.py         #   72 functions, 4 classes
-│   └── cm.py             #   50 colormaps
+│   ├── cm.py             #   50+ colormaps (callable)
+│   └── colors.py         #   to_rgba, CSS4, normalizations
 ├── scipy/                # Cross-compiled scipy + iOS patches
 │   ├── _fortran_stub.c   #   Fortran runtime stub source
 │   ├── _scipy_ios_fix.c  #   dcabs1 fix source
 │   └── _ios_preload.py   #   Framework preloader
-├── gcc/                  # C interpreter
-│   ├── offlinai_cc.c     #   ~3450 lines, full interpreter with vmem
-│   └── offlinai_cc.h     #   Public API header
+├── gcc/                  # Interpreters
+│   ├── offlinai_cc.c     #   C89/C99/C23 interpreter
+│   ├── offlinai_cc.h     #   C interpreter API
+│   ├── offlinai_cpp.c    #   C++17 interpreter
+│   ├── offlinai_cpp.h    #   C++ interpreter API
+│   ├── offlinai_fortran.c #  Fortran 90/95/2003 interpreter
+│   └── offlinai_fortran.h #  Fortran interpreter API
 ├── fortran/              # Fortran cross-compilation tools
 │   └── ios-flang-wrapper.py
 ├── docs/                 # Detailed documentation
-│   ├── sklearn.md
-│   ├── matplotlib.md
-│   ├── scipy-ios.md
-│   ├── c-interpreter.md
-│   └── fortran-runtime.md
+│   ├── sklearn.md        #   100+ classes across 40 modules
+│   ├── matplotlib.md     #   64 modules, all plot types
+│   ├── scipy-ios.md      #   18+ submodules with key functions
+│   ├── c-interpreter.md  #   C89/C99/C23 features, 70+ builtins
+│   ├── cpp-interpreter.md #  C++17: classes, STL, templates, lambdas
+│   ├── fortran-interpreter.md # F90/95/2003: modules, arrays, intrinsics
+│   ├── fortran-runtime.md #  22 Fortran runtime symbols
+│   ├── numpy.md          #   Full NumPy reference
+│   ├── sympy.md          #   Symbolic math reference
+│   ├── plotly.md         #   30+ trace types
+│   ├── networkx.md       #   Graph theory algorithms
+│   ├── pillow.md         #   Image processing reference
+│   ├── beautifulsoup.md  #   HTML parsing reference
+│   ├── mpmath.md         #   Arbitrary-precision math
+│   └── ...               #   14 more library docs
 └── README.md
 ```
 
