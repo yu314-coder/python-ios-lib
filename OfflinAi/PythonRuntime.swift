@@ -625,7 +625,7 @@ try:
         os.makedirs(_manim_media, exist_ok=True)
         manim.config.media_dir = _manim_media
         manim.config.renderer = "cairo"
-        manim.config.write_to_movie = False
+        manim.config.write_to_movie = True    # PyAV + bundled ffmpeg dylibs
         manim.config.save_last_frame = True
         manim.config.preview = False
         manim.config.show_in_file_browser = False
@@ -675,43 +675,46 @@ try:
                 global __offlinai_plot_path
                 import manim as _m
                 _m.config.renderer = "cairo"
-                _m.config.write_to_movie = False
+                _m.config.write_to_movie = True
                 _m.config.save_last_frame = True
                 _m.config.preview = False
                 _m.config.disable_caching = True
-                # Clear frame buffer
+                _m.config.format = "mp4"
                 _collected_frames.clear()
                 _orig_render(self, *args, **kwargs)
                 try:
-                    # Try to assemble GIF from collected frames
+                    fw = self.renderer.file_writer
+                    # 1. Check for mp4 video (PyAV + ffmpeg)
+                    movie_path = str(fw.movie_file_path) if hasattr(fw, 'movie_file_path') and fw.movie_file_path else None
+                    if movie_path and os.path.exists(movie_path) and os.path.getsize(movie_path) > 500:
+                        __offlinai_plot_path = movie_path
+                        _log(f"manim MP4: {movie_path} ({os.path.getsize(movie_path)} bytes)")
+                        print(f"[manim rendered] {movie_path}")
+                        _collected_frames.clear()
+                        return
+                    # 2. Fallback: assemble GIF from captured frames
                     if len(_collected_frames) >= 2:
                         from PIL import Image as _PILImage
                         gif_path = os.path.join(_m.config.media_dir, f"{type(self).__name__}.gif")
-                        # Sample frames: keep ~60 frames max for reasonable GIF size
                         frames = _collected_frames
-                        if len(frames) > 60:
-                            step = len(frames) // 60
+                        if len(frames) > 80:
+                            step = len(frames) // 80
                             frames = frames[::step]
-                        # Resize for smaller GIF
                         w, h = frames[0].size
                         if w > 480:
                             ratio = 480 / w
                             new_size = (480, int(h * ratio))
                             frames = [f.resize(new_size, _PILImage.LANCZOS) for f in frames]
                         fps = _m.config.frame_rate or 15
-                        duration = max(int(1000 / fps), 33)  # ms per frame
-                        frames[0].save(
-                            gif_path, save_all=True, append_images=frames[1:],
-                            duration=duration, loop=0, optimize=True
-                        )
+                        duration = max(int(1000 / fps), 33)
+                        frames[0].save(gif_path, save_all=True, append_images=frames[1:], duration=duration, loop=0, optimize=True)
                         if os.path.exists(gif_path) and os.path.getsize(gif_path) > 100:
                             __offlinai_plot_path = gif_path
                             _log(f"manim GIF: {gif_path} ({len(frames)} frames)")
                             print(f"[manim rendered] {gif_path}")
                             _collected_frames.clear()
                             return
-                    # Fallback to PNG
-                    fw = self.renderer.file_writer
+                    # 3. Fallback: static PNG
                     img_path = str(fw.image_file_path) if hasattr(fw, 'image_file_path') and fw.image_file_path else None
                     if img_path and os.path.exists(img_path):
                         __offlinai_plot_path = img_path
@@ -722,7 +725,7 @@ try:
                         latest_t = 0
                         for root, dirs, files in os.walk(_m.config.media_dir):
                             for f in files:
-                                if f.endswith(('.gif', '.png')):
+                                if f.endswith(('.mp4', '.gif', '.png')):
                                     fpath = os.path.join(root, f)
                                     mt = os.path.getmtime(fpath)
                                     if mt > latest_t:

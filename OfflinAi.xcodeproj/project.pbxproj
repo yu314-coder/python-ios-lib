@@ -6,8 +6,41 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		0F5FF228CE7F457AA86ACE6E /* llama.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = F89F24366B2E40D390AEBB54 /* llama.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		28055AA0EFC548269F101DDD /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 9864F81207304B62A8321929 /* Metal.framework */; };
+		4C1A8B7A7E0B4C4E9FA4D2F1 /* OfflinAi/Resources/KaTeX in Resources */ = {isa = PBXBuildFile; fileRef = 4C1A8B7A7E0B4C4E9FA4D2F2 /* OfflinAi/Resources/KaTeX */; };
+		800C4BF2A9754B1F8F19E02C /* app_packages in Resources */ = {isa = PBXBuildFile; fileRef = 2C57DBA5B9FC46A684ABACD2 /* app_packages */; };
+		82528BD41E84475ABD7306EA /* Python.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 7D9C3AA5FDA74C4BA18EFC23 /* Python.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		829F60A3A6F4421385D66B67 /* Python.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 7D9C3AA5FDA74C4BA18EFC23 /* Python.xcframework */; };
+		9471A8561896430AA109E9BA /* llama.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = F89F24366B2E40D390AEBB54 /* llama.xcframework */; };
+		A63BD55BBE3746868E10CA1F /* Accelerate.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AE440FAB6ABE468783D3B3AD /* Accelerate.framework */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		8F797F20F7514EB9BD301A4F /* Embed Frameworks */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 10;
+			files = (
+				82528BD41E84475ABD7306EA /* Python.xcframework in Embed Frameworks */,
+				0F5FF228CE7F457AA86ACE6E /* llama.xcframework in Embed Frameworks */,
+			);
+			name = "Embed Frameworks";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
+		14DDAF03FDD043D0A1716056 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		2C57DBA5B9FC46A684ABACD2 /* app_packages */ = {isa = PBXFileReference; lastKnownFileType = folder; path = app_packages; sourceTree = "<group>"; };
+		4C1A8B7A7E0B4C4E9FA4D2F2 /* OfflinAi/Resources/KaTeX */ = {isa = PBXFileReference; lastKnownFileType = folder; path = OfflinAi/Resources/KaTeX; sourceTree = "<group>"; };
+		7D9C3AA5FDA74C4BA18EFC23 /* Python.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = Python.xcframework; path = Frameworks/Python.xcframework; sourceTree = "<group>"; };
+		9864F81207304B62A8321929 /* Metal.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Metal.framework; path = System/Library/Frameworks/Metal.framework; sourceTree = SDKROOT; };
+		AE440FAB6ABE468783D3B3AD /* Accelerate.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Accelerate.framework; path = System/Library/Frameworks/Accelerate.framework; sourceTree = SDKROOT; };
 		B98F68152F2E4478007FD74B /* OfflinAi.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = OfflinAi.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		F89F24366B2E40D390AEBB54 /* llama.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = llama.xcframework; path = Frameworks/llama.xcframework; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -23,16 +56,35 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A63BD55BBE3746868E10CA1F /* Accelerate.framework in Frameworks */,
+				28055AA0EFC548269F101DDD /* Metal.framework in Frameworks */,
+				829F60A3A6F4421385D66B67 /* Python.xcframework in Frameworks */,
+				9471A8561896430AA109E9BA /* llama.xcframework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		AC6B6909E0DB480D961E1DBD /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				7D9C3AA5FDA74C4BA18EFC23 /* Python.xcframework */,
+				F89F24366B2E40D390AEBB54 /* llama.xcframework */,
+				9864F81207304B62A8321929 /* Metal.framework */,
+				AE440FAB6ABE468783D3B3AD /* Accelerate.framework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
 		B98F680C2F2E4478007FD74B = {
 			isa = PBXGroup;
 			children = (
 				B98F68172F2E4478007FD74B /* OfflinAi */,
+				14DDAF03FDD043D0A1716056 /* Info.plist */,
+				2C57DBA5B9FC46A684ABACD2 /* app_packages */,
+				4C1A8B7A7E0B4C4E9FA4D2F2 /* OfflinAi/Resources/KaTeX */,
+				AC6B6909E0DB480D961E1DBD /* Frameworks */,
 				B98F68162F2E4478007FD74B /* Products */,
 			);
 			sourceTree = "<group>";
@@ -55,6 +107,8 @@
 				B98F68112F2E4478007FD74B /* Sources */,
 				B98F68122F2E4478007FD74B /* Frameworks */,
 				B98F68132F2E4478007FD74B /* Resources */,
+				FE439133A26945B5B2FB0E5B /* Install Python */,
+				8F797F20F7514EB9BD301A4F /* Embed Frameworks */,
 			);
 			buildRules = (
 			);
@@ -109,10 +163,36 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				800C4BF2A9754B1F8F19E02C /* app_packages in Resources */,
+				4C1A8B7A7E0B4C4E9FA4D2F1 /* OfflinAi/Resources/KaTeX in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		FE439133A26945B5B2FB0E5B /* Install Python */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+				"$(PROJECT_DIR)/Frameworks/Python.xcframework/build/utils.sh",
+				"$(PROJECT_DIR)/Frameworks/Python.xcframework/build/iOS-dylib-Info-template.plist",
+				"$(PROJECT_DIR)/Frameworks/Python.xcframework/lib",
+				"$(PROJECT_DIR)/app_packages",
+			);
+			name = "Install Python";
+			outputPaths = (
+				"$(TARGET_BUILD_DIR)/$(WRAPPER_NAME)/Frameworks",
+				"$(TARGET_BUILD_DIR)/$(WRAPPER_NAME)/python",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -e\nif [ \"$EFFECTIVE_PLATFORM_NAME\" = \"-iphonesimulator\" ]; then\n  HOST_ARCH=$(uname -m)\n  if [ \"$HOST_ARCH\" = \"x86_64\" ]; then\n    export ARCHS=\"x86_64\"\n  else\n    export ARCHS=\"arm64\"\n  fi\nfi\nsource \"$PROJECT_DIR/Frameworks/Python.xcframework/build/utils.sh\"\ninstall_python Frameworks/Python.xcframework app_packages\n\n# Bundle ffmpeg dylibs for PyAV\nFFMPEG_SRC=\"$PROJECT_DIR/Frameworks/ffmpeg\"\nFFMPEG_DST=\"$TARGET_BUILD_DIR/$WRAPPER_NAME/Frameworks\"\nif [ -d \"$FFMPEG_SRC\" ]; then\n  echo \"Bundling ffmpeg dylibs...\"\n  for dylib in \"$FFMPEG_SRC\"/*.dylib; do\n    [ -L \"$dylib\" ] && continue\n    name=$(basename \"$dylib\")\n    short=$(echo \"$name\" | sed 's/\\([0-9]*\\)\\.[0-9]*\\.[0-9]*\\.dylib/\\1.dylib/')\n    cp \"$dylib\" \"$FFMPEG_DST/$short\" 2>/dev/null || true\n    if [ -f \"$FFMPEG_DST/$short\" ]; then\n      install_name_tool -id \"@rpath/$short\" \"$FFMPEG_DST/$short\" 2>/dev/null || true\n      codesign --force --sign \"$EXPANDED_CODE_SIGN_IDENTITY\" \"$FFMPEG_DST/$short\" 2>/dev/null || true\n      echo \"  Bundled: $short\"\n    fi\n  done\nfi\n";
+		};
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		B98F68112F2E4478007FD74B /* Sources */ = {
@@ -178,7 +258,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
@@ -236,7 +316,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
@@ -254,7 +334,13 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = HBSD8CP766;
-				GENERATE_INFOPLIST_FILE = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/Frameworks",
+				);
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Info.plist;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
 				INFOPLIST_KEY_UIMainStoryboardFile = Main;
@@ -273,7 +359,7 @@
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_OBJC_BRIDGING_HEADER = "$(TARGET_NAME)/ShaderTypes.h";
+				SWIFT_OBJC_BRIDGING_HEADER = "$(TARGET_NAME)/OfflinAi-Bridging-Header.h";
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -288,7 +374,13 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = HBSD8CP766;
-				GENERATE_INFOPLIST_FILE = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/Frameworks",
+				);
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Info.plist;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
 				INFOPLIST_KEY_UIMainStoryboardFile = Main;
@@ -307,7 +399,7 @@
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_OBJC_BRIDGING_HEADER = "$(TARGET_NAME)/ShaderTypes.h";
+				SWIFT_OBJC_BRIDGING_HEADER = "$(TARGET_NAME)/OfflinAi-Bridging-Header.h";
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
