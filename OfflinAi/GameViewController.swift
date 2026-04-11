@@ -4962,7 +4962,12 @@ final class GameViewController: UIViewController {
             self.selectedModelSlot = slot
             self.loadModel(for: slot)
         }
-        ec.updateModelName(selectedModelSlot.title)
+        // Show currently loaded model name (or selected slot name)
+        if let loaded = loadedModelSlot {
+            ec.updateModelName(loaded.title)
+        } else {
+            ec.updateModelName(selectedModelSlot.title + " (not loaded)")
+        }
         editorController = ec
     }
 
@@ -8160,6 +8165,10 @@ Output format rules:
                 UserDefaults.standard.set(slot.rawValue, forKey: self.lastModelSlotDefaultsKey)
                 UserDefaults.standard.set(url.path, forKey: self.lastModelPathDefaultsKey)
                 self.loadedModelSlot = slot
+
+                // Update editor with loaded model
+                self.editorController?.llamaRunner = self.runner
+                self.editorController?.updateModelName(slot.title)
 
                 self.setLoadingState(false, message: "Loaded \(slot.title) (ctx \(context), batch \(batch)).")
                 completion?(.success(()))

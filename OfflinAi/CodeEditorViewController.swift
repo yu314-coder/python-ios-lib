@@ -1055,6 +1055,9 @@ final class CodeEditorViewController: UIViewController {
         t("svgelements", lambda: __import__('svgelements').SVG)
         t("packaging", lambda: __import__('packaging.version',fromlist=['Version']).Version('2.0.0'))
         t("cffi", lambda: __import__('cffi').FFI())
+        t("manim", lambda: __import__('manim').Circle)
+        t("manim Scene", lambda: __import__('manim').Scene)
+        t("manim Text", lambda: __import__('manim').Text)
 
         S("FINAL RESULTS")
         elapsed = time.time() - _t0
