@@ -620,48 +620,109 @@ try:
     # Configure manim for iOS (if available)
     try:
         import manim
-        # Use unique media dir per execution to avoid stale cache
         _manim_run_id = uuid.uuid4().hex[:8]
         _manim_media = os.path.join(__offlinai_tool_dir, f"manim_{_manim_run_id}")
         os.makedirs(_manim_media, exist_ok=True)
         manim.config.media_dir = _manim_media
         manim.config.renderer = "cairo"
-        manim.config.write_to_movie = False   # PyAV/ffmpeg not available on iOS
-        manim.config.save_last_frame = True    # Saves final frame as PNG
+        manim.config.write_to_movie = False
+        manim.config.save_last_frame = True
         manim.config.preview = False
         manim.config.show_in_file_browser = False
         manim.config.disable_caching = True
         manim.config.verbosity = "WARNING"
-        manim.config.pixel_width = 1920
-        manim.config.pixel_height = 1080
-        manim.config.frame_rate = 30
-        # Monkey-patch Scene.render to capture the output image path (once only)
+        manim.config.pixel_width = 640
+        manim.config.pixel_height = 360
+        manim.config.frame_rate = 15  # Lower for GIF size
+
+        # Monkey-patch to capture frames → animated GIF (since ffmpeg unavailable)
         if not getattr(manim.Scene, '_offlinai_patched', False):
             _orig_render = manim.Scene.render
+            # Also patch write_frame to collect frames for GIF
+            from manim.scene.scene_file_writer import SceneFileWriter
+            _orig_write_frame = SceneFileWriter.write_frame
+            _collected_frames = []  # shared frame buffer
+
+            def _capture_write_frame(self_fw, frame_or_renderer, num_frames=1):
+                # Intercept write_frame to collect PIL frames for GIF
+                try:
+                    if isinstance(frame_or_renderer, np.ndarray):
+                        frame = frame_or_renderer
+                    elif hasattr(frame_or_renderer, 'get_frame'):
+                        frame = frame_or_renderer.get_frame()
+                    else:
+                        frame = None
+                    if frame is not None and frame.size > 0:
+                        from PIL import Image as _PILImage
+                        # frame is RGBA uint8 numpy array
+                        if frame.shape[-1] == 4:
+                            img = _PILImage.fromarray(frame, 'RGBA').convert('RGB')
+                        else:
+                            img = _PILImage.fromarray(frame, 'RGB')
+                        # Sample every few frames to keep GIF small
+                        _collected_frames.append(img)
+                except Exception:
+                    pass
+                # Still call original (for save_last_frame PNG)
+                try:
+                    _orig_write_frame(self_fw, frame_or_renderer, num_frames)
+                except Exception:
+                    pass
+
+            SceneFileWriter.write_frame = _capture_write_frame
+
             def _offlinai_manim_render(self, *args, **kwargs):
                 global __offlinai_plot_path
-                # Re-apply config before each render
                 import manim as _m
                 _m.config.renderer = "cairo"
                 _m.config.write_to_movie = False
                 _m.config.save_last_frame = True
                 _m.config.preview = False
                 _m.config.disable_caching = True
+                # Clear frame buffer
+                _collected_frames.clear()
                 _orig_render(self, *args, **kwargs)
                 try:
+                    # Try to assemble GIF from collected frames
+                    if len(_collected_frames) >= 2:
+                        from PIL import Image as _PILImage
+                        gif_path = os.path.join(_m.config.media_dir, f"{type(self).__name__}.gif")
+                        # Sample frames: keep ~60 frames max for reasonable GIF size
+                        frames = _collected_frames
+                        if len(frames) > 60:
+                            step = len(frames) // 60
+                            frames = frames[::step]
+                        # Resize for smaller GIF
+                        w, h = frames[0].size
+                        if w > 480:
+                            ratio = 480 / w
+                            new_size = (480, int(h * ratio))
+                            frames = [f.resize(new_size, _PILImage.LANCZOS) for f in frames]
+                        fps = _m.config.frame_rate or 15
+                        duration = max(int(1000 / fps), 33)  # ms per frame
+                        frames[0].save(
+                            gif_path, save_all=True, append_images=frames[1:],
+                            duration=duration, loop=0, optimize=True
+                        )
+                        if os.path.exists(gif_path) and os.path.getsize(gif_path) > 100:
+                            __offlinai_plot_path = gif_path
+                            _log(f"manim GIF: {gif_path} ({len(frames)} frames)")
+                            print(f"[manim rendered] {gif_path}")
+                            _collected_frames.clear()
+                            return
+                    # Fallback to PNG
                     fw = self.renderer.file_writer
                     img_path = str(fw.image_file_path) if hasattr(fw, 'image_file_path') and fw.image_file_path else None
                     if img_path and os.path.exists(img_path):
                         __offlinai_plot_path = img_path
-                        _log(f"manim rendered: {img_path}")
+                        _log(f"manim PNG: {img_path}")
                         print(f"[manim rendered] {img_path}")
                     else:
-                        # Search media dir for latest PNG by mtime
                         latest = None
                         latest_t = 0
                         for root, dirs, files in os.walk(_m.config.media_dir):
                             for f in files:
-                                if f.endswith('.png'):
+                                if f.endswith(('.gif', '.png')):
                                     fpath = os.path.join(root, f)
                                     mt = os.path.getmtime(fpath)
                                     if mt > latest_t:
@@ -672,10 +733,12 @@ try:
                             _log(f"manim found: {latest}")
                             print(f"[manim rendered] {latest}")
                 except Exception as e:
-                    _log(f"manim output capture error: {e}")
+                    _log(f"manim output error: {e}")
+                _collected_frames.clear()
+
             manim.Scene.render = _offlinai_manim_render
             manim.Scene._offlinai_patched = True
-        _log("manim configured for iOS (Cairo renderer, save_last_frame)")
+        _log("manim configured for iOS (Cairo → GIF animation)")
     except ImportError:
         _log("manim not available")
     except Exception as _me:

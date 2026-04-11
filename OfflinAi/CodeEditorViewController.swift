@@ -2074,8 +2074,22 @@ final class CodeEditorViewController: UIViewController {
             chartWebView.isHidden = false
             chartWebView.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
             showingChart = true
+        } else if ext == "gif" {
+            // Animated GIF (manim) — display in WKWebView for animation support
+            chartWebView.isHidden = false
+            let gifHTML = """
+            <!DOCTYPE html>
+            <html><head><meta name="viewport" content="width=device-width,initial-scale=1">
+            <style>body{margin:0;background:#000;display:flex;align-items:center;justify-content:center;height:100vh}
+            img{max-width:100%;max-height:100%;border-radius:8px;image-rendering:auto}</style></head>
+            <body><img src="\(url.lastPathComponent)"></body></html>
+            """
+            let htmlURL = url.deletingLastPathComponent().appendingPathComponent("_gif_viewer.html")
+            try? gifHTML.write(to: htmlURL, atomically: true, encoding: .utf8)
+            chartWebView.loadFileURL(htmlURL, allowingReadAccessTo: url.deletingLastPathComponent())
+            showingChart = true
         } else if ["mp4", "mov", "webm", "m4v"].contains(ext) {
-            // Video output (manim animations) — play in WKWebView with HTML5 video
+            // Video output — play in WKWebView with HTML5 video
             chartWebView.isHidden = false
             let videoHTML = """
             <!DOCTYPE html>
@@ -2086,11 +2100,11 @@ final class CodeEditorViewController: UIViewController {
             <source src="\(url.lastPathComponent)" type="video/mp4">
             </video></body></html>
             """
-            let htmlURL = url.deletingLastPathComponent().appendingPathComponent("_manim_player.html")
+            let htmlURL = url.deletingLastPathComponent().appendingPathComponent("_video_player.html")
             try? videoHTML.write(to: htmlURL, atomically: true, encoding: .utf8)
             chartWebView.loadFileURL(htmlURL, allowingReadAccessTo: url.deletingLastPathComponent())
             showingChart = true
-        } else if ["png", "jpg", "jpeg", "gif"].contains(ext) {
+        } else if ["png", "jpg", "jpeg"].contains(ext) {
             if let image = UIImage(contentsOfFile: path) {
                 imageOutputView.image = image
                 imageOutputView.isHidden = false
