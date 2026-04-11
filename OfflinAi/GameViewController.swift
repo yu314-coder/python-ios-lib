@@ -3751,22 +3751,7 @@ final class GameViewController: UIViewController {
         super.viewDidLayoutSubviews()
         backgroundLayer.frame = contentView.bounds
         let w = view.bounds.width
-        if w < 500 {
-            // Compact: hide sidebar, show hamburger
-            if !isSidebarHidden {
-                isSidebarHidden = true
-                sidebarWidthConstraint?.constant = 0
-                sidebarView.isHidden = true
-                hamburgerButton.isHidden = false
-            }
-        } else {
-            if isSidebarHidden {
-                isSidebarHidden = false
-                sidebarView.isHidden = false
-                hamburgerButton.isHidden = true
-            }
-            sidebarWidthConstraint?.constant = w < 900 ? 220 : (w < 1100 ? 250 : 300)
-        }
+        // No sidebar — full width for content
         updateComposerUI()
     }
 
@@ -3820,15 +3805,14 @@ final class GameViewController: UIViewController {
     private func configureUI() {
         configureControlStyles()
 
-        let rootStack = UIStackView(arrangedSubviews: [sidebarView, contentView])
+        // No sidebar — content fills the full width
+        let rootStack = UIStackView(arrangedSubviews: [contentView])
         rootStack.axis = .horizontal
         rootStack.spacing = 0
         rootStack.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(rootStack)
 
-        let sidebarStack = buildSidebarSection()
-        let chatSection = buildChatSection()
-        let contentStack = buildFilesContainerSection(chatContainer: chatSection)
+        let contentStack = buildContentStack()
         buildSettingsPanel()
 
         NSLayoutConstraint.activate([
@@ -3837,16 +3821,10 @@ final class GameViewController: UIViewController {
             rootStack.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor),
             rootStack.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor),
 
-            sidebarStack.topAnchor.constraint(equalTo: sidebarView.topAnchor, constant: WorkspaceStyle.spacing20),
-            sidebarStack.leadingAnchor.constraint(equalTo: sidebarView.leadingAnchor, constant: WorkspaceStyle.spacing16),
-            sidebarStack.trailingAnchor.constraint(equalTo: sidebarView.trailingAnchor, constant: -WorkspaceStyle.spacing16),
-            sidebarStack.bottomAnchor.constraint(equalTo: sidebarView.bottomAnchor, constant: -WorkspaceStyle.spacing16),
-
             contentStack.topAnchor.constraint(equalTo: contentView.topAnchor, constant: WorkspaceStyle.spacing16),
             contentStack.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 18),
             contentStack.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -18),
 
-            chatScrollView.heightAnchor.constraint(greaterThanOrEqualToConstant: 280),
             filesContainer.heightAnchor.constraint(greaterThanOrEqualToConstant: 320),
 
             settingsPanel.topAnchor.constraint(equalTo: contentView.safeAreaLayoutGuide.topAnchor, constant: 12),
@@ -3856,9 +3834,6 @@ final class GameViewController: UIViewController {
         ])
         contentStackBottomConstraint = contentStack.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -WorkspaceStyle.spacing16)
         contentStackBottomConstraint?.isActive = true
-
-        sidebarWidthConstraint = sidebarView.widthAnchor.constraint(equalToConstant: 280)
-        sidebarWidthConstraint?.isActive = true
 
         // Files browser set up lazily in updateContentMode() when Files tab is selected
         // configureFilesManager()  // Replaced by FilesBrowserViewController
@@ -4294,20 +4269,18 @@ final class GameViewController: UIViewController {
         return container
     }
 
-    private func buildFilesContainerSection(chatContainer: UIStackView) -> UIStackView {
+    private func buildContentStack() -> UIStackView {
         styleCard(filesContainer, tint: UIColor.systemIndigo)
         filesContainer.translatesAutoresizingMaskIntoConstraints = false
         filesContainer.isHidden = true
 
         editorContainer.translatesAutoresizingMaskIntoConstraints = false
-        // Editor is now index 0 — shown by default
-        editorContainer.isHidden = false
+        editorContainer.isHidden = false  // Editor is default tab (index 0)
 
         docsContainer.translatesAutoresizingMaskIntoConstraints = false
         docsContainer.isHidden = true
 
-        // Editor first (index 0), then Files (1), Docs (2). chatContainer kept for compatibility but hidden.
-        let contentStack = UIStackView(arrangedSubviews: [contentModeControl, editorContainer, filesContainer, docsContainer, chatContainer])
+        let contentStack = UIStackView(arrangedSubviews: [contentModeControl, editorContainer, filesContainer, docsContainer])
         contentStack.axis = .vertical
         contentStack.spacing = WorkspaceStyle.spacing16
         contentStack.translatesAutoresizingMaskIntoConstraints = false
