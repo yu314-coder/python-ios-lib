@@ -391,68 +391,14 @@ final class CodeEditorViewController: UIViewController {
         """),
 
         // ── manim ──
-        Template(title: "manim: Shapes", icon: "sparkles", category: "Manim", language: .python, code: """
-        from manim import *
+        Template(title: "manim: Shapes", icon: "sparkles", category: "Manim", language: .python, code:
+        "from manim import *\n\nclass ShapeDemo(Scene):\n  def construct(self):\n    circle = Circle(radius=1.5, color=BLUE, fill_opacity=0.5)\n    square = Square(side_length=2, color=RED, fill_opacity=0.3)\n    triangle = Triangle(color=GREEN, fill_opacity=0.3)\n    shapes = VGroup(circle, square, triangle).arrange(RIGHT, buff=1)\n    self.play(Create(shapes), run_time=2)\n    title = Text('Shapes in Manim', font_size=36).to_edge(UP)\n    self.play(Write(title))\n    self.wait(0.5)\n\nscene = ShapeDemo()\nscene.render()\n"),
 
-        class ShapeDemo(Scene):
-            def construct(self):
-                circle = Circle(radius=1.5, color=BLUE, fill_opacity=0.5)
-                square = Square(side_length=2, color=RED, fill_opacity=0.3)
-                triangle = Triangle(color=GREEN, fill_opacity=0.3)
+        Template(title: "manim: Transform", icon: "arrow.triangle.2.circlepath", category: "Manim", language: .python, code:
+        "from manim import *\n\nclass TransformDemo(Scene):\n  def construct(self):\n    circle = Circle(color=BLUE, fill_opacity=0.8)\n    square = Square(color=RED, fill_opacity=0.8)\n    triangle = Triangle(color=GREEN, fill_opacity=0.8)\n    self.play(Create(circle))\n    self.play(Transform(circle, square))\n    self.play(Transform(circle, triangle))\n    self.play(FadeOut(circle))\n\nscene = TransformDemo()\nscene.render()\n"),
 
-                shapes = VGroup(circle, square, triangle).arrange(RIGHT, buff=1)
-                self.play(Create(shapes), run_time=2)
-
-                title = Text("Shapes in Manim", font_size=36).to_edge(UP)
-                self.play(Write(title))
-                self.wait(0.5)
-
-        scene = ShapeDemo()
-        scene.render()
-        """),
-
-        Template(title: "manim: Transform", icon: "arrow.triangle.2.circlepath", category: "Manim", language: .python, code: """
-        from manim import *
-
-        class TransformDemo(Scene):
-            def construct(self):
-                circle = Circle(color=BLUE, fill_opacity=0.8)
-                square = Square(color=RED, fill_opacity=0.8)
-                triangle = Triangle(color=GREEN, fill_opacity=0.8)
-
-                self.play(Create(circle))
-                self.play(Transform(circle, square))
-                self.play(Transform(circle, triangle))
-                self.play(FadeOut(circle))
-
-        scene = TransformDemo()
-        scene.render()
-        """),
-
-        Template(title: "manim: Graph Plot", icon: "chart.xyaxis.line", category: "Manim", language: .python, code: """
-        from manim import *
-        import numpy as np
-
-        class FunctionPlot(Scene):
-            def construct(self):
-                axes = Axes(
-                    x_range=[-3, 3, 1],
-                    y_range=[-2, 2, 1],
-                    axis_config={"include_numbers": False}
-                )
-                sin_graph = axes.plot(lambda x: np.sin(x), color=BLUE)
-                cos_graph = axes.plot(lambda x: np.cos(x), color=RED)
-
-                sin_label = Text("sin(x)", font_size=24, color=BLUE).next_to(axes, UP + LEFT)
-                cos_label = Text("cos(x)", font_size=24, color=RED).next_to(axes, UP + RIGHT)
-
-                self.play(Create(axes), run_time=0.5)
-                self.play(Create(sin_graph), Write(sin_label), run_time=0.5)
-                self.play(Create(cos_graph), Write(cos_label), run_time=0.5)
-
-        scene = FunctionPlot()
-        scene.render()
-        """),
+        Template(title: "manim: Graph Plot", icon: "chart.xyaxis.line", category: "Manim", language: .python, code:
+        "from manim import *\nimport numpy as np\n\nclass FunctionPlot(Scene):\n  def construct(self):\n    axes = Axes(x_range=[-3, 3, 1], y_range=[-2, 2, 1], axis_config={'include_numbers': False})\n    sin_graph = axes.plot(lambda x: np.sin(x), color=BLUE)\n    cos_graph = axes.plot(lambda x: np.cos(x), color=RED)\n    sin_label = Text('sin(x)', font_size=24, color=BLUE).next_to(axes, UP + LEFT)\n    cos_label = Text('cos(x)', font_size=24, color=RED).next_to(axes, UP + RIGHT)\n    self.play(Create(axes), run_time=0.5)\n    self.play(Create(sin_graph), Write(sin_label), run_time=0.5)\n    self.play(Create(cos_graph), Write(cos_label), run_time=0.5)\n\nscene = FunctionPlot()\nscene.render()\n"),
 
         // ── Comprehensive Tests ──
         Template(title: "Test matplotlib (ALL)", icon: "chart.xyaxis.line", category: "Test", language: .python, code: """
