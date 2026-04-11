@@ -640,8 +640,8 @@ try:
         manim.config.verbosity = "WARNING"
         # Read quality settings from __offlinai_manim_quality / __offlinai_manim_fps
         # (set by CodeEditorViewController via UserDefaults → wrapper globals)
-        _mq = int(globals().get('__offlinai_manim_quality', '0') or '0')  # Default: low (480p)
-        _mfps = int(globals().get('__offlinai_manim_fps', '15') or '15')  # Default: 15fps
+        _mq = int(globals().get('__offlinai_manim_quality', '1') or '1')  # Default: medium (720p)
+        _mfps = int(globals().get('__offlinai_manim_fps', '24') or '24')  # Default: 24fps
         if _mq == 0:
             manim.config.pixel_width = 854
             manim.config.pixel_height = 480
