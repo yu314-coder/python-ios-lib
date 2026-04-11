@@ -640,18 +640,18 @@ try:
         manim.config.verbosity = "WARNING"
         # Read quality settings from __offlinai_manim_quality / __offlinai_manim_fps
         # (set by CodeEditorViewController via UserDefaults → wrapper globals)
-        _mq = int(globals().get('__offlinai_manim_quality', '1') or '1')
-        _mfps = int(globals().get('__offlinai_manim_fps', '24') or '24')
+        _mq = int(globals().get('__offlinai_manim_quality', '0') or '0')  # Default: low (480p)
+        _mfps = int(globals().get('__offlinai_manim_fps', '15') or '15')  # Default: 15fps
         if _mq == 0:
-            manim.config.pixel_width = 480
-            manim.config.pixel_height = 270
+            manim.config.pixel_width = 854
+            manim.config.pixel_height = 480
+        elif _mq == 1:
+            manim.config.pixel_width = 1280
+            manim.config.pixel_height = 720
         elif _mq == 2:
             manim.config.pixel_width = 1920
             manim.config.pixel_height = 1080
-        else:
-            manim.config.pixel_width = 854
-            manim.config.pixel_height = 480
-        manim.config.frame_rate = int(_mfps) if _mfps else 24
+        manim.config.frame_rate = int(_mfps) if _mfps else 15
 
         # Monkey-patch to capture frames → animated GIF (since ffmpeg unavailable)
         if not getattr(manim.Scene, '_offlinai_patched', False):
