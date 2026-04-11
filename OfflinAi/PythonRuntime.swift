@@ -620,7 +620,9 @@ try:
     # Configure manim for iOS (if available)
     try:
         import manim
-        _manim_media = os.path.join(__offlinai_tool_dir, "manim_media")
+        # Use unique media dir per execution to avoid stale cache
+        _manim_run_id = uuid.uuid4().hex[:8]
+        _manim_media = os.path.join(__offlinai_tool_dir, f"manim_{_manim_run_id}")
         os.makedirs(_manim_media, exist_ok=True)
         manim.config.media_dir = _manim_media
         manim.config.renderer = "cairo"
@@ -630,11 +632,21 @@ try:
         manim.config.show_in_file_browser = False
         manim.config.disable_caching = True
         manim.config.verbosity = "WARNING"
+        manim.config.pixel_width = 1920
+        manim.config.pixel_height = 1080
+        manim.config.frame_rate = 30
         # Monkey-patch Scene.render to capture the output image path (once only)
         if not getattr(manim.Scene, '_offlinai_patched', False):
             _orig_render = manim.Scene.render
             def _offlinai_manim_render(self, *args, **kwargs):
                 global __offlinai_plot_path
+                # Re-apply config before each render (may change between runs)
+                import manim as _m
+                _m.config.renderer = "cairo"
+                _m.config.write_to_movie = False
+                _m.config.save_last_frame = True
+                _m.config.preview = False
+                _m.config.disable_caching = True
                 _orig_render(self, *args, **kwargs)
                 try:
                     fw = self.renderer.file_writer
@@ -644,14 +656,21 @@ try:
                         _log(f"manim rendered: {img_path}")
                         print(f"[manim rendered] {img_path}")
                     else:
-                        for root, dirs, files in os.walk(_manim_media):
-                            for f in sorted(files, reverse=True):
+                        # Search media dir for latest PNG (by mtime)
+                        latest = None
+                        latest_t = 0
+                        for root, dirs, files in os.walk(_m.config.media_dir):
+                            for f in files:
                                 if f.endswith('.png'):
-                                    found = os.path.join(root, f)
-                                    __offlinai_plot_path = found
-                                    _log(f"manim found: {found}")
-                                    print(f"[manim rendered] {found}")
-                                    return
+                                    fpath = os.path.join(root, f)
+                                    mt = os.path.getmtime(fpath)
+                                    if mt > latest_t:
+                                        latest = fpath
+                                        latest_t = mt
+                        if latest:
+                            __offlinai_plot_path = latest
+                            _log(f"manim found: {latest}")
+                            print(f"[manim rendered] {latest}")
                 except Exception as e:
                     _log(f"manim output capture error: {e}")
             manim.Scene.render = _offlinai_manim_render
