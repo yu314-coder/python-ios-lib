@@ -1974,6 +1974,48 @@ final class CodeEditorViewController: UIViewController {
         modelSelectorButton.configuration = config
     }
 
+    // MARK: - File Loading
+
+    private var currentFileURL: URL?
+
+    func loadFile(url: URL) {
+        guard let contents = try? String(contentsOf: url, encoding: .utf8) else { return }
+        let ext = url.pathExtension.lowercased()
+        switch ext {
+        case "py": currentLanguage = .python
+        case "c", "h": currentLanguage = .c
+        case "cpp", "cc", "cxx", "hpp": currentLanguage = .cpp
+        case "f90", "f95", "f", "for": currentLanguage = .fortran
+        default: break
+        }
+        languageControl.selectedSegmentIndex = currentLanguage.rawValue
+        codeTextView.text = contents
+        applySyntaxHighlighting()
+        updateLineNumbers()
+        currentFileURL = url
+        appendToTerminal("$ Loaded: \(url.lastPathComponent)\n", isError: false)
+    }
+
+    func insertCode(_ code: String, language: String) {
+        switch language.lowercased() {
+        case "c": currentLanguage = .c
+        case "cpp", "c++": currentLanguage = .cpp
+        case "fortran", "f90": currentLanguage = .fortran
+        default: currentLanguage = .python
+        }
+        languageControl.selectedSegmentIndex = currentLanguage.rawValue
+        codeTextView.text = code
+        applySyntaxHighlighting()
+        updateLineNumbers()
+        currentFileURL = nil
+    }
+
+    func saveCurrentFile() {
+        guard let url = currentFileURL, let text = codeTextView.text else { return }
+        try? text.write(to: url, atomically: true, encoding: .utf8)
+        appendToTerminal("$ Saved: \(url.lastPathComponent)\n", isError: false)
+    }
+
     // MARK: - Image Output
 
     private func showImageOutput(path: String?) {

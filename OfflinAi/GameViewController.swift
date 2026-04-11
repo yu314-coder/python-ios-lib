@@ -105,12 +105,15 @@ final class GameViewController: UIViewController {
     private let importButton = UIButton(type: .system)
     private let downloadButton = UIButton(type: .system)
     private let loadButton = UIButton(type: .system)
-    private let contentModeControl = UISegmentedControl(items: ["Chat", "Files", "Editor"])
+    private let contentModeControl = UISegmentedControl(items: ["Editor", "Files", "Docs"])
     private let filesContainer = UIView()
     private var loadedModelSlot: ModelSlot?
     private var chatContainer: UIStackView?
     private var filesManagerController: ModelsManagerViewController?
     private let editorContainer = UIView()
+    private let docsContainer = UIView()
+    private var filesBrowserController: FilesBrowserViewController?
+    private var docsController: LibraryDocsViewController?
     private var editorController: CodeEditorViewController?
     private let effortLabel = UILabel()
     private let effortSegment = UISegmentedControl(items: [ThinkingEffort.low.title, ThinkingEffort.medium.title, ThinkingEffort.high.title])
@@ -3726,6 +3729,10 @@ final class GameViewController: UIViewController {
 
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
+        // Editor is default tab — set it up immediately
+        if editorController == nil {
+            setupEditorController()
+        }
         if !didInitialConversationReload {
             didInitialConversationReload = true
             reloadConversationList()
@@ -4170,18 +4177,32 @@ final class GameViewController: UIViewController {
             sidebarBackground.bottomAnchor.constraint(equalTo: sidebarView.bottomAnchor)
         ])
 
-        let sidebarHeader = UIStackView(arrangedSubviews: [titleLabel, newChatButton])
-        sidebarHeader.axis = .vertical
-        sidebarHeader.spacing = WorkspaceStyle.spacing12
+        // Library docs sidebar (replaces conversation history)
+        let sidebarTitle = UILabel()
+        sidebarTitle.text = "Libraries"
+        sidebarTitle.font = UIFont.systemFont(ofSize: 20, weight: .bold).rounded
+        sidebarTitle.textColor = .label
 
-        let sidebarSpacer = UIView()
-        sidebarSpacer.setContentHuggingPriority(.defaultLow, for: .vertical)
+        let sidebarHeader = UIStackView(arrangedSubviews: [sidebarTitle, settingsButton])
+        sidebarHeader.axis = .horizontal
+        sidebarHeader.distribution = .equalSpacing
 
-        let sidebarStack = UIStackView(arrangedSubviews: [sidebarHeader, conversationSearchBar, conversationsTable, sidebarSpacer, settingsButton])
+        // Embed compact library docs
+        let sidebarDocsVC = LibraryDocsViewController()
+        sidebarDocsVC.isCompactMode = true
+        sidebarDocsVC.delegate = self
+        sidebarDocsVC.view.translatesAutoresizingMaskIntoConstraints = false
+
+        let sidebarStack = UIStackView(arrangedSubviews: [sidebarHeader, sidebarDocsVC.view])
         sidebarStack.axis = .vertical
-        sidebarStack.spacing = WorkspaceStyle.spacing16
+        sidebarStack.spacing = WorkspaceStyle.spacing12
         sidebarStack.translatesAutoresizingMaskIntoConstraints = false
         sidebarView.addSubview(sidebarStack)
+
+        // Keep VC alive
+        addChild(sidebarDocsVC)
+        sidebarDocsVC.didMove(toParent: self)
+
         return sidebarStack
     }
 
@@ -4272,9 +4293,14 @@ final class GameViewController: UIViewController {
         filesContainer.isHidden = true
 
         editorContainer.translatesAutoresizingMaskIntoConstraints = false
-        editorContainer.isHidden = true
+        // Editor is now index 0 — shown by default
+        editorContainer.isHidden = false
 
-        let contentStack = UIStackView(arrangedSubviews: [contentModeControl, chatContainer, filesContainer, editorContainer])
+        docsContainer.translatesAutoresizingMaskIntoConstraints = false
+        docsContainer.isHidden = true
+
+        // Editor first (index 0), then Files (1), Docs (2). chatContainer kept for compatibility but hidden.
+        let contentStack = UIStackView(arrangedSubviews: [contentModeControl, editorContainer, filesContainer, docsContainer, chatContainer])
         contentStack.axis = .vertical
         contentStack.spacing = WorkspaceStyle.spacing16
         contentStack.translatesAutoresizingMaskIntoConstraints = false
@@ -4927,21 +4953,61 @@ final class GameViewController: UIViewController {
 
     private func updateContentMode() {
         let selected = contentModeControl.selectedSegmentIndex
-        let showingChat = selected == 0
+        let showingEditor = selected == 0
         let showingFiles = selected == 1
-        let showingEditor = selected == 2
+        let showingDocs = selected == 2
         UIView.transition(with: contentView, duration: 0.18, options: [.transitionCrossDissolve, .allowUserInteraction]) {
-            self.chatContainer?.isHidden = !showingChat
-            self.filesContainer.isHidden = !showingFiles
             self.editorContainer.isHidden = !showingEditor
-        }
-        if showingFiles {
-            filesManagerController?.reloadEntries()
+            self.filesContainer.isHidden = !showingFiles
+            self.docsContainer.isHidden = !showingDocs
+            self.chatContainer?.isHidden = true  // Chat tab removed
         }
         if showingEditor && editorController == nil {
             setupEditorController()
         }
+        if showingFiles {
+            if filesBrowserController == nil {
+                setupFilesBrowser()
+            }
+            filesBrowserController?.refresh()
+        }
+        if showingDocs && docsController == nil {
+            setupDocsController()
+        }
         settingsPanel.isHidden = true
+    }
+
+    private func setupFilesBrowser() {
+        let fb = FilesBrowserViewController()
+        fb.delegate = self
+        addChild(fb)
+        fb.view.translatesAutoresizingMaskIntoConstraints = false
+        filesContainer.addSubview(fb.view)
+        NSLayoutConstraint.activate([
+            fb.view.topAnchor.constraint(equalTo: filesContainer.topAnchor),
+            fb.view.leadingAnchor.constraint(equalTo: filesContainer.leadingAnchor),
+            fb.view.trailingAnchor.constraint(equalTo: filesContainer.trailingAnchor),
+            fb.view.bottomAnchor.constraint(equalTo: filesContainer.bottomAnchor),
+        ])
+        fb.didMove(toParent: self)
+        filesBrowserController = fb
+    }
+
+    private func setupDocsController() {
+        let dc = LibraryDocsViewController()
+        dc.isCompactMode = false
+        dc.delegate = self
+        addChild(dc)
+        dc.view.translatesAutoresizingMaskIntoConstraints = false
+        docsContainer.addSubview(dc.view)
+        NSLayoutConstraint.activate([
+            dc.view.topAnchor.constraint(equalTo: docsContainer.topAnchor),
+            dc.view.leadingAnchor.constraint(equalTo: docsContainer.leadingAnchor),
+            dc.view.trailingAnchor.constraint(equalTo: docsContainer.trailingAnchor),
+            dc.view.bottomAnchor.constraint(equalTo: docsContainer.bottomAnchor),
+        ])
+        dc.didMove(toParent: self)
+        docsController = dc
     }
 
     private func setupEditorController() {
@@ -8783,5 +8849,39 @@ private extension UIColor {
         let g = Int(green * 255.0)
         let b = Int(blue * 255.0)
         return String(format: "#%02X%02X%02X", r, g, b)
+    }
+}
+
+// MARK: - FilesBrowserDelegate
+
+extension GameViewController: FilesBrowserDelegate {
+    func filesBrowser(_ controller: FilesBrowserViewController, didSelectCodeFile url: URL) {
+        // Switch to Editor tab and load the file
+        contentModeControl.selectedSegmentIndex = 0
+        updateContentMode()
+        editorController?.loadFile(url: url)
+    }
+
+    func filesBrowser(_ controller: FilesBrowserViewController, didRequestLoadModel url: URL) {
+        // Find matching ModelSlot or load directly
+        for (slot, existingURL) in modelURLs {
+            if existingURL == url {
+                loadModel(for: slot)
+                return
+            }
+        }
+        // Load as the currently selected slot
+        loadModel(at: url, slot: selectedModelSlot, completion: nil)
+    }
+}
+
+// MARK: - LibraryDocsDelegate
+
+extension GameViewController: LibraryDocsDelegate {
+    func libraryDocs(_ controller: LibraryDocsViewController, didRequestOpenCode code: String, language: String) {
+        // Switch to Editor tab and insert the code
+        contentModeControl.selectedSegmentIndex = 0
+        updateContentMode()
+        editorController?.insertCode(code, language: language)
     }
 }
