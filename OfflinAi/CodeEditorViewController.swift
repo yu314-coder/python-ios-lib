@@ -1470,12 +1470,13 @@ final class CodeEditorViewController: UIViewController {
         outputPanel.layer.cornerRadius = 8
         outputPanel.clipsToBounds = true
 
+        outputPanel.addSubview(outputPlaceholderLabel)
         outputPanel.addSubview(outputWebView)
         outputPanel.addSubview(outputImageView)
-        outputPanel.addSubview(outputPlaceholderLabel)
 
-        // Initially show placeholder, hide webview
+        // Initially hide everything except placeholder
         outputWebView.isHidden = true
+        outputImageView.isHidden = true
 
         NSLayoutConstraint.activate([
             outputWebView.topAnchor.constraint(equalTo: outputPanel.topAnchor),
@@ -2211,10 +2212,13 @@ final class CodeEditorViewController: UIViewController {
         outputWebView.isHidden = true
         outputPlaceholderLabel.isHidden = false
 
-        guard let path = path, !path.isEmpty,
-              FileManager.default.fileExists(atPath: path) else {
+        guard let path = path, !path.isEmpty else {
+            appendToTerminal("$ [output] No image path\n", isError: false)
             return
         }
+        let exists = FileManager.default.fileExists(atPath: path)
+        appendToTerminal("$ [output] \(URL(fileURLWithPath: path).lastPathComponent) exists=\(exists)\n", isError: false)
+        guard exists else { return }
 
         let url = URL(fileURLWithPath: path)
         let ext = url.pathExtension.lowercased()
