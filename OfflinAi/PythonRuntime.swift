@@ -638,20 +638,12 @@ try:
         manim.config.show_in_file_browser = False
         manim.config.disable_caching = True
         manim.config.verbosity = "WARNING"
-        # Read quality settings from __offlinai_manim_quality / __offlinai_manim_fps
-        # (set by CodeEditorViewController via UserDefaults → wrapper globals)
-        _mq = int(globals().get('__offlinai_manim_quality', '1') or '1')  # Default: medium (720p)
-        _mfps = int(globals().get('__offlinai_manim_fps', '30') or '30')  # Default: 30fps (same as real manim)
-        if _mq == 0:
-            manim.config.pixel_width = 854
-            manim.config.pixel_height = 480
-        elif _mq == 1:
-            manim.config.pixel_width = 1280
-            manim.config.pixel_height = 720
-        elif _mq == 2:
-            manim.config.pixel_width = 1920
-            manim.config.pixel_height = 1080
-        manim.config.frame_rate = int(_mfps) if _mfps else 15
+        # MUST use standard quality presets — custom pixel values break frame_rate!
+        # Manim's quality presets set pixel_width, pixel_height, AND frame_rate together.
+        _mq = int(globals().get('__offlinai_manim_quality', '1') or '1')
+        _quality_map = {0: 'low_quality', 1: 'medium_quality', 2: 'high_quality'}
+        manim.config.quality = _quality_map.get(_mq, 'medium_quality')
+        _log(f"manim quality={manim.config.quality} res={manim.config.pixel_width}x{manim.config.pixel_height} fps={manim.config.frame_rate}")
 
         # Monkey-patch to capture frames → animated GIF (since ffmpeg unavailable)
         if not getattr(manim.Scene, '_offlinai_patched', False):
@@ -700,6 +692,10 @@ try:
                 _m.config.disable_caching = True
                 _m.config.from_animation_number = 0
                 _m.config.upto_animation_number = -1
+                # Re-apply quality preset to ensure correct frame_rate
+                _q = int(globals().get('__offlinai_manim_quality', '1') or '1')
+                _qmap = {0: 'low_quality', 1: 'medium_quality', 2: 'high_quality'}
+                _m.config.quality = _qmap.get(_q, 'medium_quality')
                 _collected_frames.clear()
                 _orig_render(self, *args, **kwargs)
                 print(f"[manim-debug] frames_written={len(_collected_frames)} skip={getattr(self.renderer, 'skip_animations', '?')} sections_skip={getattr(self.renderer.file_writer.sections[-1], 'skip_animations', '?') if hasattr(self.renderer, 'file_writer') and self.renderer.file_writer.sections else '?'}")
