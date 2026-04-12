@@ -5545,8 +5545,8 @@ Supports: PROGRAM/END PROGRAM, INTEGER/REAL/DOUBLE PRECISION/CHARACTER/LOGICAL/C
 ═══ MANIM (math animations) ═══
 manim IS available. Use Cairo renderer + VideoToolbox H.264 encoder. Output is MP4 video.
 CRITICAL RULES:
-- Do NOT use Tex() or MathTex() — LaTeX is not available on iOS.
-- Use Text() for all text labels (renders as colored blocks representing characters).
+- Use Text() for text labels — renders using Cairo font paths (real glyph outlines).
+- MathTex() and Tex() also work — LaTeX expressions are rendered as simplified text via Cairo.
 - Do NOT end with FadeOut() — keep objects visible for the final frame.
 - ALWAYS end construct() with self.wait(0.5) to ensure clean ending.
 - Axes with include_numbers=True works (uses simple labels), but avoid DecimalNumber directly.
