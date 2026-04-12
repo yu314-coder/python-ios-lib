@@ -3653,6 +3653,9 @@ final class GameViewController: UIViewController {
         super.viewDidLoad()
         view.backgroundColor = UIColor.systemBackground
 
+        // Initialize LaTeX engine (ios_system + pdftex)
+        LaTeXEngine.shared.initialize()
+
         configureUI()
         configureBackground()
         registerKeyboardObservers()

@@ -338,6 +338,9 @@
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
 					"$(PROJECT_DIR)/Frameworks",
+					"$(PROJECT_DIR)/Frameworks/latex/pdftex.xcframework/ios-arm64",
+					"$(PROJECT_DIR)/Frameworks/latex/kpathsea.xcframework/ios-arm64",
+					"$(PROJECT_DIR)/Frameworks/latex/ios_system.xcframework/ios-arm64_armv7",
 				);
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Info.plist;
@@ -351,6 +354,11 @@
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
+				);
+				OTHER_LDFLAGS = (
+					"-framework", "pdftex",
+					"-framework", "kpathsea",
+					"-framework", "ios_system",
 				);
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = euler.OfflinAi;
@@ -378,6 +386,9 @@
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
 					"$(PROJECT_DIR)/Frameworks",
+					"$(PROJECT_DIR)/Frameworks/latex/pdftex.xcframework/ios-arm64",
+					"$(PROJECT_DIR)/Frameworks/latex/kpathsea.xcframework/ios-arm64",
+					"$(PROJECT_DIR)/Frameworks/latex/ios_system.xcframework/ios-arm64_armv7",
 				);
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Info.plist;
@@ -391,6 +402,11 @@
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
+				);
+				OTHER_LDFLAGS = (
+					"-framework", "pdftex",
+					"-framework", "kpathsea",
+					"-framework", "ios_system",
 				);
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = euler.OfflinAi;
