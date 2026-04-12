@@ -1206,6 +1206,7 @@ final class CodeEditorViewController: UIViewController {
     // MARK: - File Loading
 
     private var currentFileURL: URL?
+    private var currentOutputPath: String?
 
     func loadFile(url: URL) {
         guard let contents = try? String(contentsOf: url, encoding: .utf8) else { return }
@@ -1247,12 +1248,22 @@ final class CodeEditorViewController: UIViewController {
 
     // MARK: - Image Output
 
+    @objc private func exportOutput() {
+        guard let path = currentOutputPath, FileManager.default.fileExists(atPath: path) else { return }
+        let url = URL(fileURLWithPath: path)
+        let ac = UIActivityViewController(activityItems: [url], applicationActivities: nil)
+        ac.popoverPresentationController?.sourceView = view
+        ac.popoverPresentationController?.sourceRect = CGRect(x: view.bounds.midX, y: 50, width: 0, height: 0)
+        present(ac, animated: true)
+    }
+
     private func showImageOutput(path: String?) {
         // Hide both first
         outputImageView.isHidden = true
         outputImageView.image = nil
         outputWebView.isHidden = true
         outputPlaceholderLabel.isHidden = false
+        currentOutputPath = path
 
         guard let path = path, !path.isEmpty else {
             appendToTerminal("$ [output] No image path\n", isError: false)
@@ -1290,12 +1301,45 @@ final class CodeEditorViewController: UIViewController {
             let videoHTML = """
             <!DOCTYPE html>
             <html><head><meta name="viewport" content="width=device-width,initial-scale=1">
-            <style>body{margin:0;background:#000;display:flex;align-items:center;justify-content:center;height:100vh}
-            video{max-width:100%;max-height:100%;border-radius:8px}</style></head>
-            <body><video autoplay loop playsinline muted preload="auto" style="max-width:100%;max-height:100%;border-radius:8px">
-            <source src="\(url.lastPathComponent)" type="video/mp4">
-            </video>
-            <script>document.querySelector('video').playbackRate=1.0;</script>
+            <style>
+            *{margin:0;padding:0;box-sizing:border-box}
+            body{background:#1e1e2e;display:flex;flex-direction:column;height:100vh;font-family:-apple-system,sans-serif}
+            .player{flex:1;display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden}
+            video{max-width:100%;max-height:100%;border-radius:8px;background:#000}
+            .controls{display:flex;align-items:center;gap:8px;padding:8px 12px;background:#313244}
+            .btn{background:none;border:none;color:#cdd6f4;font-size:18px;cursor:pointer;padding:4px 8px;border-radius:4px}
+            .btn:active{background:rgba(255,255,255,0.1)}
+            .progress{flex:1;height:4px;background:#45475a;border-radius:2px;cursor:pointer;position:relative}
+            .progress-fill{height:100%;background:#89b4fa;border-radius:2px;width:0%;transition:none}
+            .time{color:#a6adc8;font-size:11px;min-width:40px;text-align:center}
+            .speed{color:#a6adc8;font-size:11px;cursor:pointer;padding:2px 6px;border:1px solid #45475a;border-radius:4px}
+            </style></head>
+            <body>
+            <div class="player"><video id="v" playsinline preload="auto" muted>
+            <source src="\(url.lastPathComponent)" type="video/mp4"></video></div>
+            <div class="controls">
+            <button class="btn" id="playBtn" onclick="togglePlay()">▶</button>
+            <span class="time" id="curTime">0:00</span>
+            <div class="progress" id="prog" onclick="seek(event)"><div class="progress-fill" id="progFill"></div></div>
+            <span class="time" id="durTime">0:00</span>
+            <span class="speed" id="speedBtn" onclick="cycleSpeed()">1x</span>
+            <button class="btn" onclick="toggleLoop()">🔁</button>
+            </div>
+            <script>
+            const v=document.getElementById('v'),pb=document.getElementById('playBtn'),
+            pf=document.getElementById('progFill'),ct=document.getElementById('curTime'),
+            dt=document.getElementById('durTime'),sb=document.getElementById('speedBtn');
+            let speeds=[0.5,1,1.5,2],si=1;
+            v.loop=true;v.muted=true;
+            v.addEventListener('loadeddata',()=>{v.play();pb.textContent='⏸';dt.textContent=fmt(v.duration)});
+            v.addEventListener('timeupdate',()=>{if(v.duration){pf.style.width=(v.currentTime/v.duration*100)+'%';ct.textContent=fmt(v.currentTime)}});
+            v.addEventListener('ended',()=>{if(!v.loop){pb.textContent='▶'}});
+            function togglePlay(){if(v.paused){v.play();pb.textContent='⏸'}else{v.pause();pb.textContent='▶'}}
+            function seek(e){const r=e.target.getBoundingClientRect();v.currentTime=(e.clientX-r.left)/r.width*v.duration}
+            function cycleSpeed(){si=(si+1)%speeds.length;v.playbackRate=speeds[si];sb.textContent=speeds[si]+'x'}
+            function toggleLoop(){v.loop=!v.loop}
+            function fmt(s){const m=Math.floor(s/60),sec=Math.floor(s%60);return m+':'+(sec<10?'0':'')+sec}
+            </script>
             </body></html>
             """
             let htmlURL = url.deletingLastPathComponent().appendingPathComponent("_video_player.html")

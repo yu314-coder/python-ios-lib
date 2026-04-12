@@ -690,6 +690,12 @@ try:
                 _m.config.save_last_frame = False
                 _m.config.preview = False
                 _m.config.disable_caching = True
+                # Log Pango status
+                import manimpango as _mp
+                if _mp._pango_available:
+                    print("[manim] Pango: native rendering available")
+                else:
+                    print(f"[manim] Pango: stub mode ({_mp._pango_error})")
                 _m.config.from_animation_number = 0
                 _m.config.upto_animation_number = -1
                 # Re-apply quality preset to ensure correct frame_rate
