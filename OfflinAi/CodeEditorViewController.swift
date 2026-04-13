@@ -180,7 +180,7 @@ final class CodeEditorViewController: UIViewController {
     private var currentLanguage: Language = .python
     private var chatMessages: [(role: String, text: String)] = []
     private var isAIChatVisible = true
-    private var isSettingsPanelVisible = false
+    // isSettingsPanelVisible removed — settings now shown as popover
     /// Assigned externally by GameViewController when embedding
     var llamaRunner: LlamaRunner?
     /// Called when the user picks a model from the model selector menu
@@ -258,9 +258,7 @@ final class CodeEditorViewController: UIViewController {
     private var terminalHeightConstraint: NSLayoutConstraint!
     private let terminalDragHandle = UIView()
 
-    // Settings panel (slides in from right)
-    private let settingsPanel = UIView()
-    private var settingsPanelTrailingConstraint: NSLayoutConstraint!
+    // Settings (popover)
     private let qualitySegmented = UISegmentedControl(items: ["Low 480p", "Med 720p", "High 1080p"])
     private let fpsSegmented = UISegmentedControl(items: ["15", "24", "30"])
 
@@ -625,86 +623,14 @@ final class CodeEditorViewController: UIViewController {
     // MARK: - Setup Settings Panel
 
     private func setupSettingsPanel() {
-        settingsPanel.translatesAutoresizingMaskIntoConstraints = false
-        settingsPanel.backgroundColor = EditorTheme.chatBg
-        settingsPanel.layer.cornerRadius = 12
-        settingsPanel.layer.maskedCorners = [.layerMinXMinYCorner, .layerMinXMaxYCorner]
-        settingsPanel.clipsToBounds = true
-        settingsPanel.layer.shadowColor = UIColor.black.cgColor
-        settingsPanel.layer.shadowOpacity = 0.4
-        settingsPanel.layer.shadowRadius = 10
-
-        let titleLabel = UILabel()
-        titleLabel.text = "Manim Settings"
-        titleLabel.font = .systemFont(ofSize: 16, weight: .bold)
-        titleLabel.textColor = EditorTheme.foreground
-        titleLabel.translatesAutoresizingMaskIntoConstraints = false
-
-        let qualityLabel = UILabel()
-        qualityLabel.text = "Quality"
-        qualityLabel.font = .systemFont(ofSize: 13, weight: .medium)
-        qualityLabel.textColor = EditorTheme.gutterText
-        qualityLabel.translatesAutoresizingMaskIntoConstraints = false
-
+        // Settings are shown as a popover — no panel to set up here
+        // Just initialize segmented control values
         qualitySegmented.selectedSegmentIndex = UserDefaults.standard.integer(forKey: "manim_quality")
-        qualitySegmented.backgroundColor = EditorTheme.gutterBg
-        qualitySegmented.selectedSegmentTintColor = UIColor.systemPurple.withAlphaComponent(0.5)
-        qualitySegmented.setTitleTextAttributes([.foregroundColor: EditorTheme.foreground, .font: UIFont.systemFont(ofSize: 11)], for: .normal)
-        qualitySegmented.setTitleTextAttributes([.foregroundColor: UIColor.white, .font: UIFont.systemFont(ofSize: 11, weight: .semibold)], for: .selected)
         qualitySegmented.addTarget(self, action: #selector(manimQualityChanged), for: .valueChanged)
-        qualitySegmented.translatesAutoresizingMaskIntoConstraints = false
-
-        let fpsLabel = UILabel()
-        fpsLabel.text = "FPS"
-        fpsLabel.font = .systemFont(ofSize: 13, weight: .medium)
-        fpsLabel.textColor = EditorTheme.gutterText
-        fpsLabel.translatesAutoresizingMaskIntoConstraints = false
 
         let savedFPS = UserDefaults.standard.integer(forKey: "manim_fps")
         fpsSegmented.selectedSegmentIndex = savedFPS
-        fpsSegmented.backgroundColor = EditorTheme.gutterBg
-        fpsSegmented.selectedSegmentTintColor = UIColor.systemPurple.withAlphaComponent(0.5)
-        fpsSegmented.setTitleTextAttributes([.foregroundColor: EditorTheme.foreground], for: .normal)
-        fpsSegmented.setTitleTextAttributes([.foregroundColor: UIColor.white], for: .selected)
         fpsSegmented.addTarget(self, action: #selector(manimFPSChanged), for: .valueChanged)
-        fpsSegmented.translatesAutoresizingMaskIntoConstraints = false
-
-        let closeButton = UIButton(type: .system)
-        var closeConfig = UIButton.Configuration.plain()
-        closeConfig.image = UIImage(systemName: "xmark.circle.fill")
-        closeConfig.baseForegroundColor = EditorTheme.gutterText
-        closeButton.configuration = closeConfig
-        closeButton.addTarget(self, action: #selector(toggleSettingsPanel), for: .touchUpInside)
-        closeButton.translatesAutoresizingMaskIntoConstraints = false
-
-        settingsPanel.addSubview(titleLabel)
-        settingsPanel.addSubview(closeButton)
-        settingsPanel.addSubview(qualityLabel)
-        settingsPanel.addSubview(qualitySegmented)
-        settingsPanel.addSubview(fpsLabel)
-        settingsPanel.addSubview(fpsSegmented)
-
-        NSLayoutConstraint.activate([
-            titleLabel.topAnchor.constraint(equalTo: settingsPanel.topAnchor, constant: 16),
-            titleLabel.leadingAnchor.constraint(equalTo: settingsPanel.leadingAnchor, constant: 16),
-
-            closeButton.centerYAnchor.constraint(equalTo: titleLabel.centerYAnchor),
-            closeButton.trailingAnchor.constraint(equalTo: settingsPanel.trailingAnchor, constant: -12),
-
-            qualityLabel.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 20),
-            qualityLabel.leadingAnchor.constraint(equalTo: settingsPanel.leadingAnchor, constant: 16),
-
-            qualitySegmented.topAnchor.constraint(equalTo: qualityLabel.bottomAnchor, constant: 8),
-            qualitySegmented.leadingAnchor.constraint(equalTo: settingsPanel.leadingAnchor, constant: 16),
-            qualitySegmented.trailingAnchor.constraint(equalTo: settingsPanel.trailingAnchor, constant: -16),
-
-            fpsLabel.topAnchor.constraint(equalTo: qualitySegmented.bottomAnchor, constant: 20),
-            fpsLabel.leadingAnchor.constraint(equalTo: settingsPanel.leadingAnchor, constant: 16),
-
-            fpsSegmented.topAnchor.constraint(equalTo: fpsLabel.bottomAnchor, constant: 8),
-            fpsSegmented.leadingAnchor.constraint(equalTo: settingsPanel.leadingAnchor, constant: 16),
-            fpsSegmented.trailingAnchor.constraint(equalTo: settingsPanel.trailingAnchor, constant: -16),
-        ])
     }
 
     @objc private func manimQualityChanged() {
@@ -759,10 +685,6 @@ final class CodeEditorViewController: UIViewController {
 
         view.addSubview(mainStack)
 
-        // Settings panel overlay (slides in from right edge)
-        view.addSubview(settingsPanel)
-        settingsPanelTrailingConstraint = settingsPanel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: 260)
-
         terminalHeightConstraint = terminalContainer.heightAnchor.constraint(equalToConstant: 150)
         terminalHeightConstraint.priority = .defaultHigh
 
@@ -774,12 +696,6 @@ final class CodeEditorViewController: UIViewController {
 
             toolbar.heightAnchor.constraint(equalToConstant: 48),
             terminalHeightConstraint,
-
-            // Settings panel
-            settingsPanel.topAnchor.constraint(equalTo: toolbar.bottomAnchor, constant: 8),
-            settingsPanel.bottomAnchor.constraint(equalTo: terminalContainer.topAnchor, constant: -8),
-            settingsPanel.widthAnchor.constraint(equalToConstant: 250),
-            settingsPanelTrailingConstraint,
         ])
     }
 
@@ -813,11 +729,17 @@ final class CodeEditorViewController: UIViewController {
             var output = ""
             var hasError = false
             var resultImagePath: String?
+            var didStream = false
 
             switch self.currentLanguage {
             case .python:
-                let result = PythonRuntime.shared.execute(code: code)
-                output = result.output.isEmpty ? "(no output)" : result.output
+                didStream = true
+                let result = PythonRuntime.shared.execute(code: code) { [weak self] chunk in
+                    DispatchQueue.main.async {
+                        self?.appendToTerminal(chunk, isError: false)
+                    }
+                }
+                output = result.output.isEmpty ? "" : result.output
                 hasError = output.lowercased().contains("error") || output.contains("Traceback")
                 resultImagePath = result.imagePath
 
@@ -854,7 +776,20 @@ final class CodeEditorViewController: UIViewController {
             DispatchQueue.main.async {
                 self.runButton.isEnabled = true
                 self.showImageOutput(path: resultImagePath)
-                self.appendToTerminal("> \(output)\n", isError: hasError)
+
+                if didStream {
+                    // Output was already streamed to terminal — only show errors & timing
+                    if hasError && !output.isEmpty {
+                        // Show stderr that wasn't streamed
+                        let stderrOnly = output.components(separatedBy: "stderr:\n").dropFirst().joined(separator: "\n")
+                        if !stderrOnly.isEmpty {
+                            self.appendToTerminal(stderrOnly + "\n", isError: true)
+                        }
+                    }
+                } else {
+                    self.appendToTerminal("> \(output)\n", isError: hasError)
+                }
+
                 let status = hasError ? "completed with errors" : "completed"
                 self.appendToTerminal("$ Execution \(status) in \(String(format: "%.3f", elapsed))s\n", isError: false)
             }
@@ -885,11 +820,80 @@ final class CodeEditorViewController: UIViewController {
     }
 
     @objc private func toggleSettingsPanel() {
-        isSettingsPanelVisible.toggle()
-        UIView.animate(withDuration: 0.3, delay: 0, usingSpringWithDamping: 0.85, initialSpringVelocity: 0, options: .curveEaseInOut) {
-            self.settingsPanelTrailingConstraint.constant = self.isSettingsPanelVisible ? 0 : 260
-            self.view.layoutIfNeeded()
+        let popoverVC = UIViewController()
+        popoverVC.modalPresentationStyle = .popover
+        popoverVC.preferredContentSize = CGSize(width: 280, height: 220)
+
+        let popView = popoverVC.view!
+        popView.backgroundColor = EditorTheme.chatBg
+
+        let titleLabel = UILabel()
+        titleLabel.text = "Manim Settings"
+        titleLabel.font = .systemFont(ofSize: 15, weight: .bold)
+        titleLabel.textColor = EditorTheme.foreground
+        titleLabel.translatesAutoresizingMaskIntoConstraints = false
+
+        let qualityLabel = UILabel()
+        qualityLabel.text = "Quality"
+        qualityLabel.font = .systemFont(ofSize: 12, weight: .medium)
+        qualityLabel.textColor = EditorTheme.gutterText
+        qualityLabel.translatesAutoresizingMaskIntoConstraints = false
+
+        // Re-parent segmented controls into popover
+        qualitySegmented.removeFromSuperview()
+        qualitySegmented.translatesAutoresizingMaskIntoConstraints = false
+        qualitySegmented.backgroundColor = EditorTheme.gutterBg
+        qualitySegmented.selectedSegmentTintColor = UIColor.systemPurple.withAlphaComponent(0.5)
+        qualitySegmented.setTitleTextAttributes([.foregroundColor: EditorTheme.foreground, .font: UIFont.systemFont(ofSize: 11)], for: .normal)
+        qualitySegmented.setTitleTextAttributes([.foregroundColor: UIColor.white, .font: UIFont.systemFont(ofSize: 11, weight: .semibold)], for: .selected)
+
+        let fpsLabel = UILabel()
+        fpsLabel.text = "Frame Rate"
+        fpsLabel.font = .systemFont(ofSize: 12, weight: .medium)
+        fpsLabel.textColor = EditorTheme.gutterText
+        fpsLabel.translatesAutoresizingMaskIntoConstraints = false
+
+        fpsSegmented.removeFromSuperview()
+        fpsSegmented.translatesAutoresizingMaskIntoConstraints = false
+        fpsSegmented.backgroundColor = EditorTheme.gutterBg
+        fpsSegmented.selectedSegmentTintColor = UIColor.systemPurple.withAlphaComponent(0.5)
+        fpsSegmented.setTitleTextAttributes([.foregroundColor: EditorTheme.foreground, .font: UIFont.systemFont(ofSize: 12)], for: .normal)
+        fpsSegmented.setTitleTextAttributes([.foregroundColor: UIColor.white, .font: UIFont.systemFont(ofSize: 12, weight: .semibold)], for: .selected)
+
+        popView.addSubview(titleLabel)
+        popView.addSubview(qualityLabel)
+        popView.addSubview(qualitySegmented)
+        popView.addSubview(fpsLabel)
+        popView.addSubview(fpsSegmented)
+
+        NSLayoutConstraint.activate([
+            titleLabel.topAnchor.constraint(equalTo: popView.topAnchor, constant: 16),
+            titleLabel.leadingAnchor.constraint(equalTo: popView.leadingAnchor, constant: 16),
+
+            qualityLabel.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 16),
+            qualityLabel.leadingAnchor.constraint(equalTo: popView.leadingAnchor, constant: 16),
+
+            qualitySegmented.topAnchor.constraint(equalTo: qualityLabel.bottomAnchor, constant: 6),
+            qualitySegmented.leadingAnchor.constraint(equalTo: popView.leadingAnchor, constant: 16),
+            qualitySegmented.trailingAnchor.constraint(equalTo: popView.trailingAnchor, constant: -16),
+
+            fpsLabel.topAnchor.constraint(equalTo: qualitySegmented.bottomAnchor, constant: 16),
+            fpsLabel.leadingAnchor.constraint(equalTo: popView.leadingAnchor, constant: 16),
+
+            fpsSegmented.topAnchor.constraint(equalTo: fpsLabel.bottomAnchor, constant: 6),
+            fpsSegmented.leadingAnchor.constraint(equalTo: popView.leadingAnchor, constant: 16),
+            fpsSegmented.trailingAnchor.constraint(equalTo: popView.trailingAnchor, constant: -16),
+        ])
+
+        if let popoverPresentation = popoverVC.popoverPresentationController {
+            popoverPresentation.sourceView = settingsButton
+            popoverPresentation.sourceRect = settingsButton.bounds
+            popoverPresentation.permittedArrowDirections = .up
+            popoverPresentation.backgroundColor = EditorTheme.chatBg
+            popoverPresentation.delegate = self
         }
+
+        present(popoverVC, animated: true)
     }
 
     @objc private func sendChatMessage() {
@@ -1322,45 +1326,57 @@ final class CodeEditorViewController: UIViewController {
             outputWebView.isHidden = false
             let videoHTML = """
             <!DOCTYPE html>
-            <html><head><meta name="viewport" content="width=device-width,initial-scale=1">
+            <html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
             <style>
             *{margin:0;padding:0;box-sizing:border-box}
-            body{background:#1e1e2e;display:flex;flex-direction:column;height:100vh;font-family:-apple-system,sans-serif}
-            .player{flex:1;display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden}
-            video{max-width:100%;max-height:100%;border-radius:8px;background:#000}
-            .controls{display:flex;align-items:center;gap:8px;padding:8px 12px;background:#313244}
-            .btn{background:none;border:none;color:#cdd6f4;font-size:18px;cursor:pointer;padding:4px 8px;border-radius:4px}
-            .btn:active{background:rgba(255,255,255,0.1)}
-            .progress{flex:1;height:4px;background:#45475a;border-radius:2px;cursor:pointer;position:relative}
-            .progress-fill{height:100%;background:#89b4fa;border-radius:2px;width:0%;transition:none}
-            .time{color:#a6adc8;font-size:11px;min-width:40px;text-align:center}
-            .speed{color:#a6adc8;font-size:11px;cursor:pointer;padding:2px 6px;border:1px solid #45475a;border-radius:4px}
+            body{background:#1e1e2e;display:flex;flex-direction:column;height:100vh;font-family:-apple-system,system-ui,sans-serif;overflow:hidden}
+            .player{flex:1;display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden;background:#000}
+            video{max-width:100%;max-height:100%;border-radius:0;background:#000}
+            .controls{display:flex;align-items:center;gap:6px;padding:6px 10px;background:rgba(30,30,46,0.95);backdrop-filter:blur(8px);border-top:1px solid rgba(255,255,255,0.06)}
+            .btn{background:none;border:none;color:#cdd6f4;cursor:pointer;padding:6px;border-radius:6px;display:flex;align-items:center;justify-content:center;width:32px;height:32px;transition:background 0.15s}
+            .btn:hover{background:rgba(255,255,255,0.08)}
+            .btn:active{background:rgba(255,255,255,0.15)}
+            .btn svg{width:16px;height:16px;fill:currentColor}
+            .progress-wrap{flex:1;height:28px;display:flex;align-items:center;cursor:pointer;position:relative}
+            .progress{width:100%;height:3px;background:#45475a;border-radius:2px;position:relative;transition:height 0.15s}
+            .progress-wrap:hover .progress{height:5px}
+            .progress-fill{height:100%;background:#89b4fa;border-radius:2px;width:0%;pointer-events:none}
+            .progress-thumb{position:absolute;top:50%;width:12px;height:12px;background:#89b4fa;border-radius:50%;transform:translate(-50%,-50%);opacity:0;transition:opacity 0.15s;pointer-events:none;left:0}
+            .progress-wrap:hover .progress-thumb{opacity:1}
+            .time{color:#a6adc8;font-size:11px;min-width:36px;text-align:center;font-variant-numeric:tabular-nums;user-select:none}
+            .speed{color:#a6adc8;font-size:11px;cursor:pointer;padding:3px 8px;border:1px solid rgba(255,255,255,0.1);border-radius:6px;background:rgba(255,255,255,0.04);transition:all 0.15s;user-select:none}
+            .speed:hover{background:rgba(255,255,255,0.08);border-color:rgba(255,255,255,0.2)}
+            .loop-active{color:#89b4fa}
             </style></head>
             <body>
             <div class="player"><video id="v" playsinline preload="auto" muted>
             <source src="\(url.lastPathComponent)" type="video/mp4"></video></div>
             <div class="controls">
-            <button class="btn" id="playBtn" onclick="togglePlay()">▶</button>
+            <button class="btn" id="playBtn" onclick="togglePlay()"><svg viewBox="0 0 24 24"><polygon id="playIcon" points="8,5 19,12 8,19"/></svg></button>
             <span class="time" id="curTime">0:00</span>
-            <div class="progress" id="prog" onclick="seek(event)"><div class="progress-fill" id="progFill"></div></div>
+            <div class="progress-wrap" id="progWrap"><div class="progress" id="prog"><div class="progress-fill" id="progFill"></div><div class="progress-thumb" id="progThumb"></div></div></div>
             <span class="time" id="durTime">0:00</span>
             <span class="speed" id="speedBtn" onclick="cycleSpeed()">1x</span>
-            <button class="btn" onclick="toggleLoop()">🔁</button>
+            <button class="btn" id="loopBtn" onclick="toggleLoop()" title="Loop"><svg viewBox="0 0 24 24"><path d="M7 7h10l-1.6-1.6L16.8 4l3.6 3.6-3.6 3.6-1.4-1.4L17 8H7v3H5V7h2zm10 10H7l1.6 1.6L7.2 20l-3.6-3.6L7.2 13l1.4 1.4L7 16h10v-3h2v5h-2z"/></svg></button>
             </div>
             <script>
-            const v=document.getElementById('v'),pb=document.getElementById('playBtn'),
-            pf=document.getElementById('progFill'),ct=document.getElementById('curTime'),
-            dt=document.getElementById('durTime'),sb=document.getElementById('speedBtn');
+            const v=document.getElementById('v'),pb=document.getElementById('playBtn'),pi=document.getElementById('playIcon'),
+            pf=document.getElementById('progFill'),pt=document.getElementById('progThumb'),pw=document.getElementById('progWrap'),
+            ct=document.getElementById('curTime'),dt=document.getElementById('durTime'),
+            sb=document.getElementById('speedBtn'),lb=document.getElementById('loopBtn');
             let speeds=[0.5,1,1.5,2],si=1;
-            v.loop=true;v.muted=true;
-            v.addEventListener('loadeddata',()=>{v.play();pb.textContent='⏸';dt.textContent=fmt(v.duration)});
-            v.addEventListener('timeupdate',()=>{if(v.duration){pf.style.width=(v.currentTime/v.duration*100)+'%';ct.textContent=fmt(v.currentTime)}});
-            v.addEventListener('ended',()=>{if(!v.loop){pb.textContent='▶'}});
-            function togglePlay(){if(v.paused){v.play();pb.textContent='⏸'}else{v.pause();pb.textContent='▶'}}
-            function seek(e){const r=e.target.getBoundingClientRect();v.currentTime=(e.clientX-r.left)/r.width*v.duration}
+            const playPath='8,5 19,12 8,19',pausePath='7,5 10,5 10,19 7,19 14,5 17,5 17,19 14,19';
+            v.loop=true;v.muted=true;lb.classList.add('loop-active');
+            v.addEventListener('loadeddata',function(){v.play();pi.setAttribute('points',pausePath);dt.textContent=fmt(v.duration)});
+            v.addEventListener('timeupdate',function(){if(v.duration){var p=v.currentTime/v.duration*100;pf.style.width=p+'%';pt.style.left=p+'%';ct.textContent=fmt(v.currentTime)}});
+            v.addEventListener('ended',function(){if(!v.loop){pi.setAttribute('points',playPath)}});
+            v.addEventListener('play',function(){pi.setAttribute('points',pausePath)});
+            v.addEventListener('pause',function(){pi.setAttribute('points',playPath)});
+            function togglePlay(){if(v.paused){v.play()}else{v.pause()}}
+            pw.addEventListener('click',function(e){var r=pw.getBoundingClientRect();v.currentTime=(e.clientX-r.left)/r.width*v.duration});
             function cycleSpeed(){si=(si+1)%speeds.length;v.playbackRate=speeds[si];sb.textContent=speeds[si]+'x'}
-            function toggleLoop(){v.loop=!v.loop}
-            function fmt(s){const m=Math.floor(s/60),sec=Math.floor(s%60);return m+':'+(sec<10?'0':'')+sec}
+            function toggleLoop(){v.loop=!v.loop;if(v.loop){lb.classList.add('loop-active')}else{lb.classList.remove('loop-active')}}
+            function fmt(s){if(!s||isNaN(s))return '0:00';var m=Math.floor(s/60),sec=Math.floor(s%60);return m+':'+(sec<10?'0':'')+sec}
             </script>
             </body></html>
             """
@@ -1445,6 +1461,14 @@ extension CodeEditorViewController: UITextFieldDelegate {
             sendChatMessage()
         }
         return true
+    }
+}
+
+// MARK: - UIPopoverPresentationControllerDelegate
+
+extension CodeEditorViewController: UIPopoverPresentationControllerDelegate {
+    func adaptivePresentationStyle(for controller: UIPresentationController) -> UIModalPresentationStyle {
+        return .none  // Force popover on iPad (don't convert to full-screen)
     }
 }
 

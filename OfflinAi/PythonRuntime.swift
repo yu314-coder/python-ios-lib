@@ -68,11 +68,63 @@ final class PythonRuntime {
     }
 
     func execute(code: String) -> ExecutionResult {
+        return execute(code: code, onOutput: nil)
+    }
+
+    func execute(code: String, onOutput: ((String) -> Void)?) -> ExecutionResult {
+        if let onOutput = onOutput {
+            // Streaming mode: run Python on its queue, poll output file from caller thread
+            let semaphore = DispatchSemaphore(value: 0)
+            var result = ExecutionResult(output: "", imagePath: nil)
+
+            queue.async {
+                result = self.executeSync(code: code)
+                semaphore.signal()
+            }
+
+            // Poll the stream file for new output while Python runs
+            let toolDir = (try? ensureToolOutputDirectory())?.path ?? NSTemporaryDirectory()
+            let streamFile = (toolDir as NSString).appendingPathComponent("_stream_stdout.txt")
+            var bytesRead: UInt64 = 0
+
+            while semaphore.wait(timeout: .now() + .milliseconds(200)) == .timedOut {
+                // Read new content from the stream file
+                let newContent = readNewBytes(from: streamFile, offset: &bytesRead)
+                if !newContent.isEmpty {
+                    onOutput(newContent)
+                }
+            }
+
+            // Final flush — read any remaining content
+            let remaining = readNewBytes(from: streamFile, offset: &bytesRead)
+            if !remaining.isEmpty {
+                onOutput(remaining)
+            }
+
+            return result
+        }
+
+        // Non-streaming mode (original behavior)
         if DispatchQueue.getSpecific(key: queueKey) != nil {
             return executeSync(code: code)
         }
         return queue.sync {
             executeSync(code: code)
+        }
+    }
+
+    /// Read new bytes from a file starting at the given offset
+    private func readNewBytes(from path: String, offset: inout UInt64) -> String {
+        guard let fh = FileHandle(forReadingAtPath: path) else { return "" }
+        defer { try? fh.close() }
+        do {
+            try fh.seek(toOffset: offset)
+            let data = fh.readDataToEndOfFile()
+            if data.isEmpty { return "" }
+            offset += UInt64(data.count)
+            return String(data: data, encoding: .utf8) ?? ""
+        } catch {
+            return ""
         }
     }
 
@@ -484,10 +536,44 @@ def _log(msg):
 _log("Decoding code...")
 _offlinai_code = base64.b64decode(__offlinai_code_b64.encode("utf-8")).decode("utf-8", "replace")
 _log(f"Code decoded ({len(_offlinai_code)} chars)")
-_out_buf = io.StringIO()
-_err_buf = io.StringIO()
+
+# Streaming stdout/stderr — writes to file immediately so Swift can poll
+class _StreamWriter:
+    def __init__(self, path):
+        self._buf = io.StringIO()
+        self._f = open(path, 'w', encoding='utf-8') if path else None
+    def write(self, s):
+        if s:
+            self._buf.write(s)
+            if self._f:
+                self._f.write(s)
+                self._f.flush()
+        return len(s) if s else 0
+    def flush(self):
+        if self._f:
+            self._f.flush()
+    def getvalue(self):
+        return self._buf.getvalue()
+    def close(self):
+        if self._f:
+            self._f.close()
+    def fileno(self):
+        raise io.UnsupportedOperation("fileno")
+    @property
+    def encoding(self):
+        return 'utf-8'
+    def isatty(self):
+        return False
+    def readable(self):
+        return False
+    def writable(self):
+        return True
+
+_stream_dir = globals().get('__offlinai_tool_dir', '')
+_out_stream = _StreamWriter(os.path.join(_stream_dir, '_stream_stdout.txt') if _stream_dir else '')
+_err_stream = _StreamWriter(os.path.join(_stream_dir, '_stream_stderr.txt') if _stream_dir else '')
 _old_stdout, _old_stderr = sys.stdout, sys.stderr
-sys.stdout, sys.stderr = _out_buf, _err_buf
+sys.stdout, sys.stderr = _out_stream, _err_stream
 try:
     # Import numpy and create SafeArray subclass so `if array:` never crashes
     _log("Importing numpy...")
@@ -814,7 +900,9 @@ except Exception:
     traceback.print_exc()
 finally:
     sys.stdout, sys.stderr = _old_stdout, _old_stderr
-__offlinai_stdout = _out_buf.getvalue()
-__offlinai_stderr = _err_buf.getvalue()
+__offlinai_stdout = _out_stream.getvalue()
+__offlinai_stderr = _err_stream.getvalue()
+_out_stream.close()
+_err_stream.close()
 """
 }

@@ -64,7 +64,7 @@ final class LibraryDocsViewController: UIViewController {
         view.backgroundColor = bgColor
         title = "Library Docs"
 
-        searchBar.placeholder = "Search libraries and modules..."
+        searchBar.placeholder = "Search libraries, modules, functions..."
         searchBar.delegate = self
         searchBar.searchBarStyle = .minimal
         searchBar.barTintColor = bgColor
@@ -72,14 +72,14 @@ final class LibraryDocsViewController: UIViewController {
         if let tf = searchBar.searchTextField as UITextField? {
             tf.textColor = textColor
             tf.attributedPlaceholder = NSAttributedString(
-                string: "Search libraries and modules...",
+                string: "Search libraries, modules, functions...",
                 attributes: [.foregroundColor: dimTextColor]
             )
             tf.backgroundColor = surfaceColor
         }
 
         tableView.backgroundColor = bgColor
-        tableView.separatorColor = surfaceColor
+        tableView.separatorColor = surfaceColor.withAlphaComponent(0.5)
         tableView.indicatorStyle = .white
         tableView.dataSource = self
         tableView.delegate = self
@@ -90,7 +90,10 @@ final class LibraryDocsViewController: UIViewController {
         tableView.rowHeight = UITableView.automaticDimension
         tableView.keyboardDismissMode = .onDrag
 
-        let stack = UIStackView(arrangedSubviews: [searchBar, tableView])
+        // Hero header with stats
+        let headerView = buildHeroHeader()
+
+        let stack = UIStackView(arrangedSubviews: [headerView, searchBar, tableView])
         stack.axis = .vertical
         stack.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(stack)
@@ -100,6 +103,109 @@ final class LibraryDocsViewController: UIViewController {
             stack.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             stack.bottomAnchor.constraint(equalTo: view.bottomAnchor)
         ])
+    }
+
+    private func buildHeroHeader() -> UIView {
+        let container = UIView()
+        container.translatesAutoresizingMaskIntoConstraints = false
+        container.heightAnchor.constraint(equalToConstant: isCompactMode ? 0 : 110).isActive = true
+        if isCompactMode { container.isHidden = true; return container }
+
+        // Gradient background
+        let gradientLayer = CAGradientLayer()
+        gradientLayer.colors = [
+            UIColor(red: 0.14, green: 0.16, blue: 0.28, alpha: 1.0).cgColor,
+            bgColor.cgColor
+        ]
+        gradientLayer.startPoint = CGPoint(x: 0, y: 0)
+        gradientLayer.endPoint = CGPoint(x: 1, y: 1)
+        container.layer.insertSublayer(gradientLayer, at: 0)
+        container.clipsToBounds = true
+
+        // Auto-resize gradient
+        DispatchQueue.main.async { gradientLayer.frame = container.bounds }
+        let observer = container // Will layout sublayers on bounds change
+
+        // Title
+        let titleLabel = UILabel()
+        titleLabel.text = "Offline Library Reference"
+        titleLabel.font = .systemFont(ofSize: 20, weight: .bold)
+        titleLabel.textColor = textColor
+        titleLabel.translatesAutoresizingMaskIntoConstraints = false
+
+        // Subtitle
+        let subtitleLabel = UILabel()
+        subtitleLabel.text = "All libraries run locally on-device. No internet required."
+        subtitleLabel.font = .systemFont(ofSize: 12)
+        subtitleLabel.textColor = dimTextColor
+        subtitleLabel.translatesAutoresizingMaskIntoConstraints = false
+
+        // Stats row
+        let totalModules = allSections.reduce(0) { $0 + $1.modules.count }
+        let totalItems = allSections.flatMap(\.modules).reduce(0) { $0 + $1.items.count }
+        let statsStack = UIStackView()
+        statsStack.axis = .horizontal
+        statsStack.spacing = 20
+        statsStack.translatesAutoresizingMaskIntoConstraints = false
+
+        func statBadge(value: String, label: String, color: UIColor) -> UIView {
+            let v = UIView()
+            let valLbl = UILabel()
+            valLbl.text = value
+            valLbl.font = .monospacedDigitSystemFont(ofSize: 18, weight: .bold)
+            valLbl.textColor = color
+            let lblLbl = UILabel()
+            lblLbl.text = label
+            lblLbl.font = .systemFont(ofSize: 10, weight: .medium)
+            lblLbl.textColor = dimTextColor
+            let stack = UIStackView(arrangedSubviews: [valLbl, lblLbl])
+            stack.axis = .vertical; stack.alignment = .center; stack.spacing = 1
+            stack.translatesAutoresizingMaskIntoConstraints = false
+            v.addSubview(stack)
+            NSLayoutConstraint.activate([
+                stack.topAnchor.constraint(equalTo: v.topAnchor, constant: 6),
+                stack.leadingAnchor.constraint(equalTo: v.leadingAnchor, constant: 12),
+                stack.trailingAnchor.constraint(equalTo: v.trailingAnchor, constant: -12),
+                stack.bottomAnchor.constraint(equalTo: v.bottomAnchor, constant: -6),
+            ])
+            v.backgroundColor = color.withAlphaComponent(0.1)
+            v.layer.cornerRadius = 8
+            return v
+        }
+
+        statsStack.addArrangedSubview(statBadge(value: "\(allSections.count)", label: "Libraries", color: accentColor))
+        statsStack.addArrangedSubview(statBadge(value: "\(totalModules)", label: "Modules", color: UIColor.systemGreen))
+        statsStack.addArrangedSubview(statBadge(value: "\(totalItems)+", label: "APIs", color: UIColor.systemOrange))
+        statsStack.addArrangedSubview(statBadge(value: "4", label: "Languages", color: UIColor.systemPurple))
+
+        container.addSubview(titleLabel)
+        container.addSubview(subtitleLabel)
+        container.addSubview(statsStack)
+
+        NSLayoutConstraint.activate([
+            titleLabel.topAnchor.constraint(equalTo: container.topAnchor, constant: 12),
+            titleLabel.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 16),
+
+            subtitleLabel.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 4),
+            subtitleLabel.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 16),
+
+            statsStack.topAnchor.constraint(equalTo: subtitleLabel.bottomAnchor, constant: 10),
+            statsStack.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 16),
+        ])
+
+        return container
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        // Update gradient layer frames
+        for sub in view.subviews {
+            for v in sub.subviews {
+                if let gradient = v.layer.sublayers?.first as? CAGradientLayer {
+                    gradient.frame = v.bounds
+                }
+            }
+        }
     }
 
     // MARK: - Filtering
@@ -469,6 +575,7 @@ extension LibraryDocsViewController {
         return [
             numpySection, scipySection, sklearnSection, matplotlibSection,
             sympySection, networkxSection, pilSection, manimSection,
+            mediaSection, webSection,
             cSection, cppSection, fortranSection, otherSection
         ]
     }
@@ -1092,6 +1199,58 @@ extension LibraryDocsViewController {
     }
 
     // MARK: Other Libraries
+    // MARK: Media (PyAV, Cairo, FFmpeg)
+    private static var mediaSection: LibrarySection {
+        LibrarySection(name: "Media & Rendering", icon: "play.rectangle", modules: [
+            LibraryModule(name: "av (PyAV)", summary: "FFmpeg bindings for video/audio encoding and decoding",
+                importLine: "import av",
+                items: ["av.open", "av.OutputContainer", "av.InputContainer", "av.CodecContext", "av.VideoFrame", "av.AudioFrame", "av.Stream", "av.Packet", "container.add_stream", "stream.encode", "container.mux"],
+                example: "import av\nimport numpy as np\n# Create a 2-second test video\ncontainer = av.open('/tmp/test.mp4', mode='w')\nstream = container.add_stream('h264_videotoolbox', rate=30)\nstream.width = 640\nstream.height = 480\nfor i in range(60):\n    img = np.zeros((480, 640, 3), dtype=np.uint8)\n    img[:, :, 0] = int(255 * i / 60)  # fade red\n    frame = av.VideoFrame.from_ndarray(img, format='rgb24')\n    for pkt in stream.encode(frame):\n        container.mux(pkt)\nfor pkt in stream.encode():\n    container.mux(pkt)\ncontainer.close()\nprint('Video created!')"),
+            LibraryModule(name: "cairo", summary: "2D vector graphics: SVG, PNG, paths, text rendering",
+                importLine: "import cairo",
+                items: ["cairo.SVGSurface", "cairo.ImageSurface", "cairo.Context", "ctx.move_to", "ctx.line_to", "ctx.arc", "ctx.curve_to", "ctx.text_path", "ctx.fill", "ctx.stroke", "ctx.set_source_rgb", "ctx.set_line_width", "ctx.save", "ctx.restore"],
+                example: "import cairo\n# Create SVG with shapes\nsurf = cairo.SVGSurface('/tmp/drawing.svg', 200, 200)\nctx = cairo.Context(surf)\nctx.set_source_rgb(0.2, 0.4, 0.8)\nctx.arc(100, 100, 80, 0, 2 * 3.14159)\nctx.fill()\nctx.set_source_rgb(1, 1, 1)\nctx.select_font_face('sans-serif')\nctx.set_font_size(24)\nctx.move_to(55, 107)\nctx.text_path('Cairo!')\nctx.fill()\nsurf.finish()\nprint('SVG created')"),
+            LibraryModule(name: "offlinai_latex", summary: "Local LaTeX rendering via pdftex — no internet needed",
+                importLine: "from offlinai_latex import tex_to_svg",
+                items: ["tex_to_svg", "compile_tex", "_load_pdftex", "_render_with_cairo"],
+                example: "from offlinai_latex import tex_to_svg\n# Render a LaTeX equation to SVG\nsvg_path = tex_to_svg(r'E = mc^2')\nprint(f'SVG at: {svg_path}')\n\n# More complex equation\nsvg2 = tex_to_svg(r'\\int_0^\\infty e^{-x^2} dx = \\frac{\\sqrt{\\pi}}{2}')\nprint(f'Integral SVG at: {svg2}')"),
+            LibraryModule(name: "svgelements", summary: "Parse, manipulate, and generate SVG files in pure Python",
+                importLine: "from svgelements import SVG, Path, Circle, Rect",
+                items: ["SVG", "Path", "Circle", "Rect", "Line", "Polyline", "Polygon", "Text", "Group", "Matrix", "Color", "parse"],
+                example: "from svgelements import SVG\nsvg = SVG()\nprint('SVG parsing ready')\n# Use with manim for SVG path manipulation"),
+            LibraryModule(name: "PIL (Pillow)", summary: "Image processing: open, resize, filter, draw, convert",
+                importLine: "from PIL import Image, ImageDraw, ImageFilter",
+                items: ["Image.open", "Image.new", "img.resize", "img.crop", "img.rotate", "img.filter", "img.convert", "ImageDraw.Draw", "draw.rectangle", "draw.ellipse", "draw.text", "ImageFilter.BLUR", "ImageFilter.SHARPEN", "img.save"],
+                example: "from PIL import Image, ImageDraw\n# Create a gradient image\nimg = Image.new('RGB', (200, 200))\ndraw = ImageDraw.Draw(img)\nfor y in range(200):\n    r = int(255 * y / 200)\n    draw.line([(0, y), (200, y)], fill=(r, 100, 255-r))\ndraw.ellipse([50, 50, 150, 150], fill='white', outline='black')\nimg.save('/tmp/gradient.png')\nprint(f'Image: {img.size}')")
+        ])
+    }
+
+    // MARK: Web & Networking
+    private static var webSection: LibrarySection {
+        LibrarySection(name: "Web & Data", icon: "globe", modules: [
+            LibraryModule(name: "requests", summary: "HTTP client: GET, POST, sessions, auth, JSON",
+                importLine: "import requests",
+                items: ["requests.get", "requests.post", "requests.put", "requests.delete", "requests.head", "requests.Session", "Response.json()", "Response.text", "Response.status_code", "Response.headers", "HTTPBasicAuth"],
+                example: "import requests\n# GET request\nresp = requests.get('https://httpbin.org/get')\nprint(resp.status_code)\nprint(resp.json())\n\n# POST with JSON\nresp = requests.post('https://httpbin.org/post',\n    json={'name': 'OfflinAi', 'version': 1})\nprint(resp.json()['json'])"),
+            LibraryModule(name: "bs4 (BeautifulSoup)", summary: "HTML/XML parsing and web scraping",
+                importLine: "from bs4 import BeautifulSoup",
+                items: ["BeautifulSoup", "find", "find_all", "select", "select_one", "get_text", "Tag", "NavigableString", "prettify", "children", "parents", "attrs"],
+                example: "from bs4 import BeautifulSoup\nhtml = '''<html><body>\n<h1>Title</h1>\n<ul><li class=\"item\">One</li><li class=\"item\">Two</li></ul>\n</body></html>'''\nsoup = BeautifulSoup(html, 'html.parser')\nfor li in soup.select('li.item'):\n    print(li.get_text())"),
+            LibraryModule(name: "json / yaml", summary: "Data serialization: JSON, YAML, CSV parsing",
+                importLine: "import json\nimport yaml\nimport csv",
+                items: ["json.loads", "json.dumps", "json.load", "json.dump", "yaml.safe_load", "yaml.safe_dump", "csv.reader", "csv.writer", "csv.DictReader", "csv.DictWriter"],
+                example: "import json, yaml\ndata = {'name': 'OfflinAi', 'libs': ['numpy', 'scipy', 'manim']}\n\n# JSON\nj = json.dumps(data, indent=2)\nprint(j)\n\n# YAML\ny = yaml.safe_dump(data)\nprint(y)"),
+            LibraryModule(name: "jsonschema", summary: "Validate JSON data against schemas (Draft 7)",
+                importLine: "import jsonschema",
+                items: ["jsonschema.validate", "jsonschema.Draft7Validator", "jsonschema.ValidationError", "jsonschema.SchemaError", "FormatChecker"],
+                example: "import jsonschema\nschema = {\n    'type': 'object',\n    'properties': {\n        'name': {'type': 'string'},\n        'age': {'type': 'integer', 'minimum': 0}\n    },\n    'required': ['name']\n}\njsonschema.validate({'name': 'Alice', 'age': 30}, schema)\nprint('Schema validation passed!')"),
+            LibraryModule(name: "packaging", summary: "Version parsing and specifier matching (PEP 440)",
+                importLine: "from packaging.version import Version\nfrom packaging.specifiers import SpecifierSet",
+                items: ["Version", "SpecifierSet", "Requirement", "parse", "version.major", "version.minor", "version.micro"],
+                example: "from packaging.version import Version\nv1 = Version('1.2.3')\nv2 = Version('2.0.0')\nprint(f'{v1} < {v2}: {v1 < v2}')\nfrom packaging.specifiers import SpecifierSet\nspec = SpecifierSet('>=1.0,<3.0')\nprint(f'{v1} in spec: {v1 in spec}')")
+        ])
+    }
+
     private static var otherSection: LibrarySection {
         LibrarySection(name: "Other", icon: "shippingbox", modules: [
             LibraryModule(name: "plotly", summary: "Interactive plotting: scatter, bar, 3D, maps",
