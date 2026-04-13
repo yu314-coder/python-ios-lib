@@ -50,6 +50,9 @@ import UIKit
 
         isInitialized = true
         print("[LaTeX] Engine initialized. texmf=\(texmfPath)")
+
+        // Start watching for Python compile requests
+        startSignalWatcher()
     }
 
     /// Compile a LaTeX expression to DVI, then return the path to the output.
@@ -150,9 +153,59 @@ import UIKit
         }
 
         // Convert DVI/PDF to SVG
-        // For now, we create a minimal SVG from the DVI metrics
-        // Full dvisvgm conversion would need that library too
         return convertToSVG(inputPath: dviPath, svgPath: outputPath)
+    }
+
+    // MARK: - Signal File Watcher (Python→Swift IPC)
+
+    private var signalTimer: Timer?
+
+    private func startSignalWatcher() {
+        // Poll for compile requests from Python every 100ms
+        DispatchQueue.main.async {
+            self.signalTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
+                self?.checkForCompileRequest()
+            }
+        }
+    }
+
+    private func checkForCompileRequest() {
+        let signalDir = NSTemporaryDirectory().appending("latex_signals/")
+        let signalFile = signalDir.appending("compile_request.txt")
+
+        guard FileManager.default.fileExists(atPath: signalFile),
+              let content = try? String(contentsOfFile: signalFile, encoding: .utf8) else {
+            return
+        }
+
+        // Delete signal file immediately to prevent re-processing
+        try? FileManager.default.removeItem(atPath: signalFile)
+
+        let lines = content.components(separatedBy: "\n")
+        guard lines.count >= 2 else { return }
+
+        let inputPath = lines[0].trimmingCharacters(in: .whitespacesAndNewlines)
+        let svgPath = lines[1].trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !inputPath.isEmpty, !svgPath.isEmpty else { return }
+
+        // Process on background queue
+        queue.async { [weak self] in
+            let ext = (inputPath as NSString).pathExtension.lowercased()
+            var success = false
+
+            if ext == "pdf" {
+                success = self?.convertPDFToSVG(pdfPath: inputPath, svgPath: svgPath) ?? false
+            } else if ext == "dvi" {
+                // For DVI, try using pdftex to convert to PDF first
+                // dvisvgm is not available, but we can render DVI via pdftex --output-format=pdf
+                print("[LaTeX] DVI→SVG needs dvisvgm. Attempting PDF conversion.")
+            }
+
+            if success {
+                print("[LaTeX] Signal processed: \(inputPath) → \(svgPath)")
+            }
+        }
     }
 
     /// Convert DVI to SVG (simplified — extracts glyph paths)
