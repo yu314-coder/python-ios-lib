@@ -7,6 +7,7 @@
 
 // Our platform independent renderer class
 
+import Foundation
 import Metal
 import MetalKit
 import simd
@@ -23,18 +24,9 @@ nonisolated enum RendererError: Error {
 class Renderer: NSObject, MTKViewDelegate {
     
     public let device: MTLDevice
-    
-#if !targetEnvironment(simulator)
-    let commandQueue: MTL4CommandQueue
-    let commandBuffer: MTL4CommandBuffer
-    let commandAllocators: [MTL4CommandAllocator]
-    let commandQueueResidencySet: MTLResidencySet
-    let vertexArgumentTable: MTL4ArgumentTable
-    let fragmentArgumentTable: MTL4ArgumentTable
-#endif
-    
-    let endFrameEvent: MTLSharedEvent
-    var frameIndex = 0
+
+    let commandQueue: MTLCommandQueue
+    private let inFlightSemaphore = DispatchSemaphore(value: maxBuffersInFlight)
     
     var dynamicUniformBuffer: MTLBuffer
     var pipelineState: MTLRenderPipelineState
@@ -55,25 +47,10 @@ class Renderer: NSObject, MTKViewDelegate {
     
     @MainActor
     init?(metalKitView: MTKView) {
-#if targetEnvironment(simulator)
-        return nil
-#else
         let device = metalKitView.device!
         self.device = device
         
-        self.commandQueue = device.makeMTL4CommandQueue()!
-        self.commandBuffer = device.makeCommandBuffer()!
-        self.commandAllocators = (0...maxBuffersInFlight).map { _ in device.makeCommandAllocator()! }
-
-        let argTableDesc = MTL4ArgumentTableDescriptor()
-        argTableDesc.maxBufferBindCount = 4
-        self.vertexArgumentTable = try! device.makeArgumentTable(descriptor: argTableDesc)
-        argTableDesc.maxTextureBindCount = 1
-        self.fragmentArgumentTable = try! device.makeArgumentTable(descriptor: argTableDesc)
-
-        self.endFrameEvent = device.makeSharedEvent()!
-        frameIndex = maxBuffersInFlight
-        self.endFrameEvent.signaledValue = UInt64(frameIndex - 1)
+        self.commandQueue = device.makeCommandQueue()!
         
         let uniformBufferSize = alignedUniformsSize * maxBuffersInFlight
         
@@ -119,18 +96,7 @@ class Renderer: NSObject, MTKViewDelegate {
             return nil
         }
         
-        let residencySetDesc = MTLResidencySetDescriptor()
-        residencySetDesc.initialCapacity = mesh.vertexBuffers.count + mesh.submeshes.count + 2 // color map + uniforms buffer
-        let residencySet = try! self.device.makeResidencySet(descriptor: residencySetDesc)
-        residencySet.addAllocations(mesh.vertexBuffers.map { $0.buffer })
-        residencySet.addAllocations(mesh.submeshes.map { $0.indexBuffer.buffer })
-        residencySet.addAllocations([colorMap, dynamicUniformBuffer])
-        residencySet.commit()
-        commandQueue.addResidencySet(residencySet)
-        commandQueueResidencySet = residencySet
-        
         super.init()
-#endif
     }
     
     class func buildMetalVertexDescriptor() -> MTLVertexDescriptor {
@@ -158,37 +124,31 @@ class Renderer: NSObject, MTKViewDelegate {
         return mtlVertexDescriptor
     }
     
-#if !targetEnvironment(simulator)
-    
     @MainActor
     class func buildRenderPipelineWithDevice(device: MTLDevice,
                                              metalKitView: MTKView,
                                              mtlVertexDescriptor: MTLVertexDescriptor) throws -> MTLRenderPipelineState {
         /// Build a render state pipeline object
         
-        let library = device.makeDefaultLibrary()
-        let compiler = try device.makeCompiler(descriptor: MTL4CompilerDescriptor())
+        guard let library = device.makeDefaultLibrary(),
+              let vertexFunction = library.makeFunction(name: "vertexShader"),
+              let fragmentFunction = library.makeFunction(name: "fragmentShader") else {
+            throw RendererError.badVertexDescriptor
+        }
         
-        let vertexFunctionDescriptor = MTL4LibraryFunctionDescriptor()
-        vertexFunctionDescriptor.library = library
-        vertexFunctionDescriptor.name = "vertexShader"
-        let fragmentFunctionDescriptor = MTL4LibraryFunctionDescriptor()
-        fragmentFunctionDescriptor.library = library
-        fragmentFunctionDescriptor.name = "fragmentShader"
-        
-        let pipelineDescriptor = MTL4RenderPipelineDescriptor()
+        let pipelineDescriptor = MTLRenderPipelineDescriptor()
         pipelineDescriptor.label = "RenderPipeline"
         pipelineDescriptor.rasterSampleCount = metalKitView.sampleCount
-        pipelineDescriptor.vertexFunctionDescriptor = vertexFunctionDescriptor
-        pipelineDescriptor.fragmentFunctionDescriptor = fragmentFunctionDescriptor
+        pipelineDescriptor.vertexFunction = vertexFunction
+        pipelineDescriptor.fragmentFunction = fragmentFunction
         pipelineDescriptor.vertexDescriptor = mtlVertexDescriptor
         
         pipelineDescriptor.colorAttachments[0].pixelFormat = metalKitView.colorPixelFormat
+        pipelineDescriptor.depthAttachmentPixelFormat = metalKitView.depthStencilPixelFormat
+        pipelineDescriptor.stencilAttachmentPixelFormat = metalKitView.depthStencilPixelFormat
         
-        return try compiler.makeRenderPipelineState(descriptor: pipelineDescriptor)
+        return try device.makeRenderPipelineState(descriptor: pipelineDescriptor)
     }
-    
-#endif
     
     class func buildMesh(device: MTLDevice,
                          mtlVertexDescriptor: MTLVertexDescriptor) throws -> MTKMesh {
@@ -257,26 +217,29 @@ class Renderer: NSObject, MTKViewDelegate {
     
     func draw(in view: MTKView) {
         /// Per frame updates hare
-        
-#if !targetEnvironment(simulator)
 
         guard let drawable = view.currentDrawable else { return }
         
         /// Delay getting the currentRenderPassDescriptor until we absolutely need it to avoid
         ///   holding onto the drawable and blocking the display pipeline any longer than necessary
-        guard let renderPassDescriptor = view.currentMTL4RenderPassDescriptor else { return }
-                    
-        let previousValueToWaitFor = self.frameIndex - maxBuffersInFlight
-        self.endFrameEvent.wait(untilSignaledValue: UInt64(previousValueToWaitFor), timeoutMS: 10)
-        let commandAllocator = self.commandAllocators[uniformBufferIndex]
-        commandAllocator.reset()
-        commandBuffer.beginCommandBuffer(allocator: commandAllocator)
+        guard let renderPassDescriptor = view.currentRenderPassDescriptor else { return }
+        
+        _ = inFlightSemaphore.wait(timeout: .distantFuture)
         
         self.updateDynamicBufferState()
         
         self.updateGameState()
         
-        guard let renderEncoder = self.commandBuffer.makeRenderCommandEncoder(descriptor: renderPassDescriptor) else {
+        guard let commandBuffer = commandQueue.makeCommandBuffer() else {
+            inFlightSemaphore.signal()
+            return
+        }
+        
+        commandBuffer.addCompletedHandler { [weak self] _ in
+            self?.inFlightSemaphore.signal()
+        }
+        
+        guard let renderEncoder = commandBuffer.makeRenderCommandEncoder(descriptor: renderPassDescriptor) else {
             fatalError("Failed to create render command encoder")
         }
         
@@ -293,11 +256,8 @@ class Renderer: NSObject, MTKViewDelegate {
         
         renderEncoder.setDepthStencilState(depthState)
         
-        renderEncoder.setArgumentTable(self.vertexArgumentTable, stages:.vertex)
-        renderEncoder.setArgumentTable(self.fragmentArgumentTable, stages:.fragment)
-        
-        self.vertexArgumentTable.setAddress(dynamicUniformBuffer.gpuAddress + UInt64(uniformBufferOffset), index: BufferIndex.uniforms.rawValue)
-        self.fragmentArgumentTable.setAddress(dynamicUniformBuffer.gpuAddress + UInt64(uniformBufferOffset), index: BufferIndex.uniforms.rawValue)
+        renderEncoder.setVertexBuffer(dynamicUniformBuffer, offset: uniformBufferOffset, index: BufferIndex.uniforms.rawValue)
+        renderEncoder.setFragmentBuffer(dynamicUniformBuffer, offset: uniformBufferOffset, index: BufferIndex.uniforms.rawValue)
         
         for (index, element) in mesh.vertexDescriptor.layouts.enumerated() {
             guard let layout = element as? MDLVertexBufferLayout else {
@@ -306,34 +266,26 @@ class Renderer: NSObject, MTKViewDelegate {
             
             if layout.stride != 0 {
                 let buffer = mesh.vertexBuffers[index]
-                self.vertexArgumentTable.setAddress(buffer.buffer.gpuAddress + UInt64(buffer.offset), index: index)
+                renderEncoder.setVertexBuffer(buffer.buffer, offset: buffer.offset, index: index)
             }
         }
         
-        self.fragmentArgumentTable.setTexture(colorMap.gpuResourceID, index: TextureIndex.color.rawValue)
+        renderEncoder.setFragmentTexture(colorMap, index: TextureIndex.color.rawValue)
         
         for submesh in mesh.submeshes {
-            renderEncoder.drawIndexedPrimitives(primitiveType: submesh.primitiveType,
+            renderEncoder.drawIndexedPrimitives(type: submesh.primitiveType,
                                                 indexCount: submesh.indexCount,
                                                 indexType: submesh.indexType,
-                                                indexBuffer: submesh.indexBuffer.buffer.gpuAddress + UInt64(submesh.indexBuffer.offset),
-                                                indexBufferLength: submesh.indexBuffer.buffer.length)
+                                                indexBuffer: submesh.indexBuffer.buffer,
+                                                indexBufferOffset: submesh.indexBuffer.offset)
         }
         
         renderEncoder.popDebugGroup()
         
         renderEncoder.endEncoding()
         
-        commandBuffer.useResidencySet((view.layer as! CAMetalLayer).residencySet);
-        commandBuffer.endCommandBuffer()
-        
-        commandQueue.waitForDrawable(drawable);
-        commandQueue.commit([commandBuffer])
-        commandQueue.signalDrawable(drawable);
-        commandQueue.signalEvent(self.endFrameEvent, value: UInt64(self.frameIndex))
-        self.frameIndex += 1
-        drawable.present();
-#endif
+        commandBuffer.present(drawable)
+        commandBuffer.commit()
     }
     
     func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {
