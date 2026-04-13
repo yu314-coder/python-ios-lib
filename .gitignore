@@ -1,0 +1,46 @@
+# macOS
+.DS_Store
+._*
+.Spotlight-V100
+.Trashes
+
+# Xcode
+*.xcodeproj/
+*.xcworkspace/
+xcuserdata/
+DerivedData/
+build/
+*.pbxuser
+*.perspectivev3
+*.mode1v3
+*.mode2v3
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+*.whl
+
+# Compiled objects
+*.o
+*.a
+*.dylib
+*.dSYM/
+
+# Build artifacts
+*.framework/
+*.fwork
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Environment
+.env
+.venv/

@@ -1,0 +1,10 @@
+prefix=/tmp/cairo-ios/install
+includedir=${prefix}/include
+libdir=${prefix}/lib
+
+Name: cairo-script-interpreter
+Description: script surface backend for cairo graphics library
+Version: 1.18.2
+Requires: cairo, pixman-1 >=  0.40.0
+Libs: -L${libdir} -lcairo-script-interpreter -lm -ldl -lz -lpng16
+Cflags: -I${includedir}/cairo
