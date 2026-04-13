@@ -51,8 +51,61 @@ import UIKit
         isInitialized = true
         print("[LaTeX] Engine initialized. texmf=\(texmfPath)")
 
+        // Generate format file if needed (first-run only)
+        generateFormatIfNeeded()
+
         // Start watching for Python compile requests
         startSignalWatcher()
+    }
+
+    /// Generate pdflatex.fmt format file on first run (required for \documentclass etc.)
+    private func generateFormatIfNeeded() {
+        let fmtDir = (workDir as NSString).appendingPathComponent("web2c/pdftex")
+        let fmtFile = (fmtDir as NSString).appendingPathComponent("pdflatex.fmt")
+
+        if FileManager.default.fileExists(atPath: fmtFile) {
+            print("[LaTeX] Format file exists: \(fmtFile)")
+            setenv("TEXFORMATS", fmtDir, 1)
+            return
+        }
+
+        print("[LaTeX] Generating pdflatex.fmt (first run)...")
+        try? FileManager.default.createDirectory(atPath: fmtDir, withIntermediateDirectories: true)
+
+        queue.async { [self] in
+            let prevDir = FileManager.default.currentDirectoryPath
+            FileManager.default.changeCurrentDirectoryPath(fmtDir)
+
+            // Set up streams
+            let logFile = (fmtDir as NSString).appendingPathComponent("fmtgen.log")
+            if let fout = fopen(logFile, "w") {
+                thread_stdin = fopen("/dev/null", "r")
+                thread_stdout = fout
+                thread_stderr = fout
+
+                // pdftex -ini -fmt=pdflatex pdflatex.ini
+                var args: [UnsafeMutablePointer<CChar>?] = [
+                    strdup("pdftex"),
+                    strdup("-ini"),
+                    strdup("-interaction=nonstopmode"),
+                    strdup("pdflatex.ini"),
+                    nil
+                ]
+
+                let result = dllpdftexmain(Int32(args.count - 1), &args)
+                for arg in args { if let a = arg { free(a) } }
+                fclose(fout)
+
+                if FileManager.default.fileExists(atPath: fmtFile) {
+                    print("[LaTeX] Format file generated successfully (code \(result))")
+                    setenv("TEXFORMATS", fmtDir, 1)
+                } else {
+                    print("[LaTeX] Format generation failed (code \(result)). Check \(logFile)")
+                }
+            }
+
+            FileManager.default.changeCurrentDirectoryPath(prevDir)
+        }
     }
 
     /// Compile a LaTeX expression to DVI, then return the path to the output.
