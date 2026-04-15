@@ -12,17 +12,38 @@ https://github.com/yu314-coder/python-ios-lib
 
 Then select which packages you need:
 
-| Package | What you get | Requires |
-|---------|-------------|----------|
-| **CInterpreter** | C/C++/Fortran interpreters (compiles from source) | Nothing |
-| **PythonSklearn** | scikit-learn (40 modules, 12K+ lines) | numpy |
-| **PythonScipy** | SciPy (optimize, integrate, signal, stats, linalg) | numpy |
-| **PythonMatplotlib** | matplotlib (64 modules, Plotly backend) | plotly |
-| **PythonManim** | manim + manimpango + offlinai_latex + pathops | numpy, FFmpegPyAV, CairoGraphics |
-| **PythonRequests** | HTTP client (GET, POST, sessions, JSON) | Nothing |
-| **FFmpegPyAV** | FFmpeg (7 dylibs) + PyAV video encoding | Nothing |
-| **CairoGraphics** | Cairo + Pango + HarfBuzz (2D vector graphics) | Nothing |
-| **LaTeXEngine** | pdftex + kpathsea + texmf (local LaTeX) | CairoGraphics |
+### Standalone packages (no dependencies)
+
+| Package | What you get |
+|---------|-------------|
+| **CInterpreter** | C/C++/Fortran interpreters (compiles from source) |
+| **NumPy** | NumPy 2.3.5 — arrays, linalg, FFT, random (native iOS) |
+| **SymPy** | SymPy 1.14 — symbolic math, calculus, solving |
+| **Plotly** | Plotly 6.6 — interactive charts, 3D plots |
+| **NetworkX** | NetworkX 3.6 — graph theory, algorithms |
+| **Pillow** | Pillow 12.2 — image processing (native iOS) |
+| **BeautifulSoup** | BeautifulSoup4 — HTML/XML parsing |
+| **Requests** | HTTP client (GET, POST, sessions, JSON) |
+| **PyYAML** | YAML parser (native iOS) |
+| **Rich** | Rich text, tables, progress bars |
+| **Tqdm** | Progress bars for loops |
+| **Click** | CLI framework |
+| **Pygments** | Syntax highlighting (500+ languages) |
+| **Mpmath** | Arbitrary-precision arithmetic |
+| **Pydub** | Audio manipulation |
+| **JsonSchema** | JSON Schema validation |
+| **CairoGraphics** | Cairo + Pango + HarfBuzz (2D graphics, native iOS) |
+| **FFmpegPyAV** | FFmpeg (7 dylibs) + PyAV video encoding (native iOS) |
+
+### Packages with dependencies (auto-included when you select)
+
+| Package | What you get | Auto-includes |
+|---------|-------------|---------------|
+| **Sklearn** | scikit-learn (40 modules, 12K+ lines) | + NumPy |
+| **SciPy** | SciPy (optimize, integrate, signal, stats) | + NumPy |
+| **Matplotlib** | matplotlib (64 modules, Plotly backend) | + Plotly |
+| **Manim** | manim (145+ mobjects, 73 animations) | + NumPy, Matplotlib, FFmpegPyAV, CairoGraphics |
+| **LaTeXEngine** | pdftex + kpathsea + texmf fonts | + CairoGraphics |
 
 ### After adding the package
 
