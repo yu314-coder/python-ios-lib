@@ -54,13 +54,12 @@ torch_ios/build/
 # tokenizers_ios cloned upstream + Rust target dir (250 MB; users clone fresh)
 tokenizers_ios/tokenizers/
 
-# Oversized binaries that would need Git LFS — users rebuild from torch_ios/ + tokenizers_ios/
-app_packages/site-packages/torch/lib/libtorch_python.dylib
-app_packages/site-packages/torch/lib/libshm.dylib
-app_packages/site-packages/torch/_C.so
-app_packages/site-packages/torch/bin/torch_shm_manager
-app_packages/site-packages/tokenizers/tokenizers.cpython-*.so
-app_packages/site-packages/tokenizers/tokenizers.abi3.so
+# torch_ios build scratch — intermediate .o / .a files (not needed at runtime)
+app_packages/site-packages/torch/lib/*.a
+
+# Runtime binaries ARE shipped so `import torch` works immediately after
+# cloning. libtorch_python.dylib is 99 MB — uses Git LFS (see .gitattributes).
+# Users building from source locally can overwrite via torch_ios/scripts/install_to_app.sh.
 
 # .venv_hf/ used by install_to_app.sh as source for HF deps
 torch_ios/.venv_hf/
