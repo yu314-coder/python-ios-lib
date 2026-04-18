@@ -68,3 +68,11 @@ numpy_ios/build/
 numpy_ios/install/
 numpy_ios/numpy-*.tar.gz
 numpy_ios/numpy-2.*/
+
+# Pillow iOS cross-compile scratch (keep only build script + shipped .so)
+pillow_ios/build_libjpeg/
+pillow_ios/install/
+pillow_ios/libjpeg-turbo-*/
+pillow_ios/libjpeg-turbo*.tar.gz
+pillow_ios/pillow-*.tar.gz
+pillow_ios/pillow-*/
