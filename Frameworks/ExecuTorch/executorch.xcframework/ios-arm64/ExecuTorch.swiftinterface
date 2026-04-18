@@ -1,0 +1,403 @@
+// swift-interface-format-version: 1.0
+// swift-compiler-version: Apple Swift version 5.10 effective-4.1.50 (swiftlang-5.10.0.13 clang-1500.3.9.4)
+// swift-module-flags: -target arm64-apple-ios17.0 -enable-objc-interop -enable-library-evolution -swift-version 4 -enforce-exclusivity=checked -O -enable-bare-slash-regex -module-name ExecuTorch
+@_exported import ExecuTorch
+import Swift
+import _Concurrency
+import _StringProcessing
+import _SwiftConcurrencyShims
+extension ExecuTorch.TensorMetadata {
+  public var shape: [Swift.Int] {
+    get
+  }
+  public var dimensionOrder: [Swift.Int] {
+    get
+  }
+}
+extension ExecuTorch.MethodMetadata {
+  public var inputValueTags: [ExecuTorch.ValueTag] {
+    get
+  }
+  public var outputValueTags: [ExecuTorch.ValueTag] {
+    get
+  }
+  public var inputTensorMetadata: [Swift.Int : ExecuTorch.TensorMetadata] {
+    get
+  }
+  public var outputTensorMetadata: [Swift.Int : ExecuTorch.TensorMetadata] {
+    get
+  }
+  public var memoryPlannedBufferSizes: [Swift.Int] {
+    get
+  }
+}
+extension ExecuTorch.Module {
+  public func execute(_ method: Swift.String, _ inputs: [any ExecuTorch.ValueConvertible]) throws -> [ExecuTorch.Value]
+  public func execute(_ method: Swift.String, _ inputs: any ExecuTorch.ValueConvertible...) throws -> [ExecuTorch.Value]
+  public func forward(_ inputs: [any ExecuTorch.ValueConvertible]) throws -> [ExecuTorch.Value]
+  public func forward(_ inputs: any ExecuTorch.ValueConvertible...) throws -> [ExecuTorch.Value]
+}
+extension ExecuTorch.Module {
+  public func execute<Output>(_ method: Swift.String, _ inputs: [any ExecuTorch.ValueConvertible]) throws -> Output where Output : ExecuTorch.ValueSequenceConstructible
+  public func execute<Output>(_ method: Swift.String, _ inputs: any ExecuTorch.ValueConvertible...) throws -> Output where Output : ExecuTorch.ValueSequenceConstructible
+  public func execute<Output>(_ method: Swift.String, _ input: any ExecuTorch.ValueConvertible) throws -> Output where Output : ExecuTorch.ValueSequenceConstructible
+  public func execute<Output>(_ method: Swift.String) throws -> Output where Output : ExecuTorch.ValueSequenceConstructible
+  public func forward<Output>(_ inputs: [any ExecuTorch.ValueConvertible]) throws -> Output where Output : ExecuTorch.ValueSequenceConstructible
+  public func forward<Output>(_ inputs: any ExecuTorch.ValueConvertible...) throws -> Output where Output : ExecuTorch.ValueSequenceConstructible
+  public func forward<Output>(_ input: any ExecuTorch.ValueConvertible) throws -> Output where Output : ExecuTorch.ValueSequenceConstructible
+  public func forward<Output>() throws -> Output where Output : ExecuTorch.ValueSequenceConstructible
+}
+extension ExecuTorch.Module {
+  public func setInput(_ value: any ExecuTorch.ValueConvertible, for method: Swift.String, at index: Swift.Int) throws
+  public func setInput(_ value: any ExecuTorch.ValueConvertible, for method: Swift.String) throws
+  public func setInput(_ value: any ExecuTorch.ValueConvertible, at index: Swift.Int) throws
+  public func setInput(_ value: any ExecuTorch.ValueConvertible) throws
+  public func setInputs(_ values: [any ExecuTorch.ValueConvertible], for method: Swift.String) throws
+  public func setInputs(_ values: [any ExecuTorch.ValueConvertible]) throws
+  public func setInputs(_ values: any ExecuTorch.ValueConvertible..., for method: Swift.String) throws
+  public func setInputs(_ values: any ExecuTorch.ValueConvertible...) throws
+  public func setOutput(_ value: any ExecuTorch.ValueConvertible, for method: Swift.String, at index: Swift.Int) throws
+  public func setOutput(_ value: any ExecuTorch.ValueConvertible, for method: Swift.String) throws
+  public func setOutput(_ value: any ExecuTorch.ValueConvertible, at index: Swift.Int) throws
+  public func setOutput(_ value: any ExecuTorch.ValueConvertible) throws
+}
+public func elementCount(ofShape shape: [Swift.Int]) -> Swift.Int
+public protocol Scalar {
+  static var dataType: ExecuTorch.DataType { get }
+  func asNSNumber() -> Foundation.NSNumber
+}
+extension Swift.UInt8 : ExecuTorch.Scalar {
+  public static var dataType: ExecuTorch.DataType {
+    get
+  }
+  public func asNSNumber() -> Foundation.NSNumber
+}
+extension Swift.Int8 : ExecuTorch.Scalar {
+  public static var dataType: ExecuTorch.DataType {
+    get
+  }
+  public func asNSNumber() -> Foundation.NSNumber
+}
+extension Swift.Int16 : ExecuTorch.Scalar {
+  public static var dataType: ExecuTorch.DataType {
+    get
+  }
+  public func asNSNumber() -> Foundation.NSNumber
+}
+extension Swift.Int32 : ExecuTorch.Scalar {
+  public static var dataType: ExecuTorch.DataType {
+    get
+  }
+  public func asNSNumber() -> Foundation.NSNumber
+}
+extension Swift.Int64 : ExecuTorch.Scalar {
+  public static var dataType: ExecuTorch.DataType {
+    get
+  }
+  public func asNSNumber() -> Foundation.NSNumber
+}
+extension Swift.Int : ExecuTorch.Scalar {
+  public static var dataType: ExecuTorch.DataType {
+    get
+  }
+  public func asNSNumber() -> Foundation.NSNumber
+}
+extension Swift.Float : ExecuTorch.Scalar {
+  public static var dataType: ExecuTorch.DataType {
+    get
+  }
+  public func asNSNumber() -> Foundation.NSNumber
+}
+extension Swift.Double : ExecuTorch.Scalar {
+  public static var dataType: ExecuTorch.DataType {
+    get
+  }
+  public func asNSNumber() -> Foundation.NSNumber
+}
+extension Swift.Bool : ExecuTorch.Scalar {
+  public static var dataType: ExecuTorch.DataType {
+    get
+  }
+  public func asNSNumber() -> Foundation.NSNumber
+}
+extension Swift.UInt16 : ExecuTorch.Scalar {
+  public static var dataType: ExecuTorch.DataType {
+    get
+  }
+  public func asNSNumber() -> Foundation.NSNumber
+}
+extension Swift.UInt32 : ExecuTorch.Scalar {
+  public static var dataType: ExecuTorch.DataType {
+    get
+  }
+  public func asNSNumber() -> Foundation.NSNumber
+}
+extension Swift.UInt64 : ExecuTorch.Scalar {
+  public static var dataType: ExecuTorch.DataType {
+    get
+  }
+  public func asNSNumber() -> Foundation.NSNumber
+}
+extension Swift.UInt : ExecuTorch.Scalar {
+  public static var dataType: ExecuTorch.DataType {
+    get
+  }
+  public func asNSNumber() -> Foundation.NSNumber
+}
+extension ExecuTorch.AnyTensor {
+  public var shape: [Swift.Int] {
+    get
+  }
+  public var strides: [Swift.Int] {
+    get
+  }
+  public var dimensionOrder: [Swift.Int] {
+    get
+  }
+  public var count: Swift.Int {
+    get
+  }
+  convenience public init(_ tensor: ExecuTorch.AnyTensor, shape: [Swift.Int] = [], dimensionOrder: [Swift.Int] = [], strides: [Swift.Int] = [])
+  convenience public init(bytesNoCopy pointer: Swift.UnsafeMutableRawPointer, shape: [Swift.Int], strides: [Swift.Int] = [], dimensionOrder: [Swift.Int] = [], dataType: ExecuTorch.DataType, shapeDynamism: ExecuTorch.ShapeDynamism = .dynamicBound)
+  convenience public init(bytes pointer: Swift.UnsafeRawPointer, shape: [Swift.Int], strides: [Swift.Int] = [], dimensionOrder: [Swift.Int] = [], dataType: ExecuTorch.DataType, shapeDynamism: ExecuTorch.ShapeDynamism = .dynamicBound)
+  convenience public init(data: Foundation.Data, shape: [Swift.Int], strides: [Swift.Int] = [], dimensionOrder: [Swift.Int] = [], dataType: ExecuTorch.DataType, shapeDynamism: ExecuTorch.ShapeDynamism = .dynamicBound)
+  public func resize(to shape: [Swift.Int]) throws
+  public static func == (lhs: ExecuTorch.AnyTensor, rhs: ExecuTorch.AnyTensor) -> Swift.Bool
+  public func asTensor<T>() -> ExecuTorch.Tensor<T>? where T : ExecuTorch.Scalar
+}
+extension ExecuTorch.AnyTensor {
+  public static func empty(shape: [Swift.Int], strides: [Swift.Int] = [], dataType: ExecuTorch.DataType, shapeDynamism: ExecuTorch.ShapeDynamism = .dynamicBound) -> ExecuTorch.AnyTensor
+  public static func empty(like tensor: ExecuTorch.AnyTensor, dataType: ExecuTorch.DataType = .undefined, shapeDynamism: ExecuTorch.ShapeDynamism = .dynamicBound) -> ExecuTorch.AnyTensor
+}
+extension ExecuTorch.AnyTensor {
+  public static func full<T>(shape: [Swift.Int], scalar: T, strides: [Swift.Int] = [], shapeDynamism: ExecuTorch.ShapeDynamism = .dynamicBound) -> ExecuTorch.AnyTensor where T : ExecuTorch.Scalar
+  public static func full<T>(like tensor: ExecuTorch.AnyTensor, scalar: T, shapeDynamism: ExecuTorch.ShapeDynamism = .dynamicBound) -> ExecuTorch.AnyTensor where T : ExecuTorch.Scalar
+}
+extension ExecuTorch.AnyTensor {
+  public static func ones(shape: [Swift.Int], dataType: ExecuTorch.DataType, shapeDynamism: ExecuTorch.ShapeDynamism = .dynamicBound) -> ExecuTorch.AnyTensor
+  public static func ones(like tensor: ExecuTorch.AnyTensor, dataType: ExecuTorch.DataType = .undefined, shapeDynamism: ExecuTorch.ShapeDynamism = .dynamicBound) -> ExecuTorch.AnyTensor
+}
+extension ExecuTorch.AnyTensor {
+  public static func zeros(shape: [Swift.Int], dataType: ExecuTorch.DataType, shapeDynamism: ExecuTorch.ShapeDynamism = .dynamicBound) -> ExecuTorch.AnyTensor
+  public static func zeros(like tensor: ExecuTorch.AnyTensor, dataType: ExecuTorch.DataType = .undefined, shapeDynamism: ExecuTorch.ShapeDynamism = .dynamicBound) -> ExecuTorch.AnyTensor
+}
+extension ExecuTorch.AnyTensor {
+  public static func rand(shape: [Swift.Int], strides: [Swift.Int] = [], dataType: ExecuTorch.DataType, shapeDynamism: ExecuTorch.ShapeDynamism = .dynamicBound) -> ExecuTorch.AnyTensor
+  public static func rand(like tensor: ExecuTorch.AnyTensor, dataType: ExecuTorch.DataType = .undefined, shapeDynamism: ExecuTorch.ShapeDynamism = .dynamicBound) -> ExecuTorch.AnyTensor
+}
+extension ExecuTorch.AnyTensor {
+  public static func randn(shape: [Swift.Int], strides: [Swift.Int] = [], dataType: ExecuTorch.DataType, shapeDynamism: ExecuTorch.ShapeDynamism = .dynamicBound) -> ExecuTorch.AnyTensor
+  public static func randn(like tensor: ExecuTorch.AnyTensor, dataType: ExecuTorch.DataType = .undefined, shapeDynamism: ExecuTorch.ShapeDynamism = .dynamicBound) -> ExecuTorch.AnyTensor
+}
+extension ExecuTorch.AnyTensor {
+  public static func randint(low: Swift.Int, high: Swift.Int, shape: [Swift.Int], strides: [Swift.Int] = [], dataType: ExecuTorch.DataType, shapeDynamism: ExecuTorch.ShapeDynamism = .dynamicBound) -> ExecuTorch.AnyTensor
+  public static func randint(like tensor: ExecuTorch.AnyTensor, low: Swift.Int, high: Swift.Int, dataType: ExecuTorch.DataType = .undefined, shapeDynamism: ExecuTorch.ShapeDynamism = .dynamicBound) -> ExecuTorch.AnyTensor
+}
+final public class Tensor<T> : Swift.Equatable where T : ExecuTorch.Scalar {
+  final public var dataType: ExecuTorch.DataType {
+    get
+  }
+  final public var shape: [Swift.Int] {
+    get
+  }
+  final public var strides: [Swift.Int] {
+    get
+  }
+  final public var dimensionOrder: [Swift.Int] {
+    get
+  }
+  final public var shapeDynamism: ExecuTorch.ShapeDynamism {
+    get
+  }
+  final public var count: Swift.Int {
+    get
+  }
+  public init(_ tensor: ExecuTorch.AnyTensor)
+  convenience public init(_ tensor: ExecuTorch.Tensor<T>, shape: [Swift.Int] = [], dimensionOrder: [Swift.Int] = [], strides: [Swift.Int] = [])
+  convenience public init(bytesNoCopy pointer: Swift.UnsafeMutableRawPointer, shape: [Swift.Int], strides: [Swift.Int] = [], dimensionOrder: [Swift.Int] = [], shapeDynamism: ExecuTorch.ShapeDynamism = .dynamicBound)
+  convenience public init(bytes pointer: Swift.UnsafeRawPointer, shape: [Swift.Int], strides: [Swift.Int] = [], dimensionOrder: [Swift.Int] = [], shapeDynamism: ExecuTorch.ShapeDynamism = .dynamicBound)
+  convenience public init(data: Foundation.Data, shape: [Swift.Int], strides: [Swift.Int] = [], dimensionOrder: [Swift.Int] = [], shapeDynamism: ExecuTorch.ShapeDynamism = .dynamicBound)
+  convenience public init(_ scalars: inout [T], shape: [Swift.Int] = [], strides: [Swift.Int] = [], dimensionOrder: [Swift.Int] = [], shapeDynamism: ExecuTorch.ShapeDynamism = .dynamicBound)
+  convenience public init(_ scalars: [T], shape: [Swift.Int] = [], strides: [Swift.Int] = [], dimensionOrder: [Swift.Int] = [], shapeDynamism: ExecuTorch.ShapeDynamism = .dynamicBound)
+  convenience public init(_ scalar: T)
+  final public func copy() -> ExecuTorch.Tensor<T>
+  final public func copy<U>(to dataType: U.Type) -> ExecuTorch.Tensor<U> where U : ExecuTorch.Scalar
+  final public func withUnsafeBytes<R>(_ body: (Swift.UnsafeBufferPointer<T>) throws -> R) rethrows -> R
+  final public func withUnsafeMutableBytes<R>(_ body: (Swift.UnsafeMutableBufferPointer<T>) throws -> R) rethrows -> R
+  final public func resize(to shape: [Swift.Int]) throws
+  public static func == (lhs: ExecuTorch.Tensor<T>, rhs: ExecuTorch.Tensor<T>) -> Swift.Bool
+  final public let anyTensor: ExecuTorch.AnyTensor
+  @objc deinit
+}
+extension ExecuTorch.Tensor {
+  final public func scalars() -> [T]
+}
+extension ExecuTorch.Tensor {
+  public static func empty(shape: [Swift.Int], strides: [Swift.Int] = [], shapeDynamism: ExecuTorch.ShapeDynamism = .dynamicBound) -> ExecuTorch.Tensor<T>
+  public static func empty(like tensor: ExecuTorch.Tensor<T>, shapeDynamism: ExecuTorch.ShapeDynamism = .dynamicBound) -> ExecuTorch.Tensor<T>
+}
+extension ExecuTorch.Tensor {
+  public static func full(shape: [Swift.Int], scalar: T, strides: [Swift.Int] = [], shapeDynamism: ExecuTorch.ShapeDynamism = .dynamicBound) -> ExecuTorch.Tensor<T>
+  public static func full(like tensor: ExecuTorch.Tensor<T>, scalar: T, shapeDynamism: ExecuTorch.ShapeDynamism = .dynamicBound) -> ExecuTorch.Tensor<T>
+}
+extension ExecuTorch.Tensor {
+  public static func ones(shape: [Swift.Int], shapeDynamism: ExecuTorch.ShapeDynamism = .dynamicBound) -> ExecuTorch.Tensor<T>
+  public static func ones(like tensor: ExecuTorch.Tensor<T>, shapeDynamism: ExecuTorch.ShapeDynamism = .dynamicBound) -> ExecuTorch.Tensor<T>
+}
+extension ExecuTorch.Tensor {
+  public static func zeros(shape: [Swift.Int], shapeDynamism: ExecuTorch.ShapeDynamism = .dynamicBound) -> ExecuTorch.Tensor<T>
+  public static func zeros(like tensor: ExecuTorch.Tensor<T>, shapeDynamism: ExecuTorch.ShapeDynamism = .dynamicBound) -> ExecuTorch.Tensor<T>
+}
+extension ExecuTorch.Tensor {
+  public static func rand(shape: [Swift.Int], strides: [Swift.Int] = [], shapeDynamism: ExecuTorch.ShapeDynamism = .dynamicBound) -> ExecuTorch.Tensor<T>
+  public static func rand(like tensor: ExecuTorch.Tensor<T>, shapeDynamism: ExecuTorch.ShapeDynamism = .dynamicBound) -> ExecuTorch.Tensor<T>
+}
+extension ExecuTorch.Tensor {
+  public static func randn(shape: [Swift.Int], strides: [Swift.Int] = [], shapeDynamism: ExecuTorch.ShapeDynamism = .dynamicBound) -> ExecuTorch.Tensor<T>
+  public static func randn(like tensor: ExecuTorch.Tensor<T>, shapeDynamism: ExecuTorch.ShapeDynamism = .dynamicBound) -> ExecuTorch.Tensor<T>
+}
+extension ExecuTorch.Tensor {
+  public static func randint(low: Swift.Int, high: Swift.Int, shape: [Swift.Int], strides: [Swift.Int] = [], shapeDynamism: ExecuTorch.ShapeDynamism = .dynamicBound) -> ExecuTorch.Tensor<T>
+  public static func randint(like tensor: ExecuTorch.Tensor<T>, low: Swift.Int, high: Swift.Int, shapeDynamism: ExecuTorch.ShapeDynamism = .dynamicBound) -> ExecuTorch.Tensor<T>
+}
+extension ExecuTorch.Tensor : Swift.CustomStringConvertible {
+  final public var description: Swift.String {
+    get
+  }
+}
+extension ExecuTorch.Value {
+  convenience public init<T>(_ tensor: ExecuTorch.Tensor<T>) where T : ExecuTorch.Scalar
+  public var anyTensor: ExecuTorch.AnyTensor? {
+    get
+  }
+  public func tensor<T>() -> ExecuTorch.Tensor<T>? where T : ExecuTorch.Scalar
+}
+public protocol ValueConvertible {
+  func asValue() -> ExecuTorch.Value
+}
+public protocol ValueConstructible {
+  static func from(_ value: ExecuTorch.Value) throws -> Self
+}
+extension ExecuTorch.ValueConstructible {
+  public init(_ value: ExecuTorch.Value) throws
+}
+public protocol ValueSequenceConstructible {
+  static func from(_ values: [ExecuTorch.Value]) throws -> Self
+}
+extension ExecuTorch.ValueSequenceConstructible where Self : ExecuTorch.ValueConstructible {
+  public static func from(_ values: [ExecuTorch.Value]) throws -> Self
+}
+extension ExecuTorch.ValueSequenceConstructible {
+  public init(_ values: [ExecuTorch.Value]) throws
+}
+extension ExecuTorch.Value : ExecuTorch.ValueConvertible {
+  public func asValue() -> ExecuTorch.Value
+}
+extension ExecuTorch.AnyTensor : ExecuTorch.ValueConvertible {
+  public func asValue() -> ExecuTorch.Value
+}
+extension ExecuTorch.Tensor : ExecuTorch.ValueConvertible {
+  final public func asValue() -> ExecuTorch.Value
+}
+extension Swift.String : ExecuTorch.ValueConvertible {
+  public func asValue() -> ExecuTorch.Value
+}
+extension Foundation.NSNumber : ExecuTorch.ValueConvertible {
+  public func asValue() -> ExecuTorch.Value
+}
+extension Swift.UInt8 : ExecuTorch.ValueConvertible {
+  public func asValue() -> ExecuTorch.Value
+}
+extension Swift.Int8 : ExecuTorch.ValueConvertible {
+  public func asValue() -> ExecuTorch.Value
+}
+extension Swift.Int16 : ExecuTorch.ValueConvertible {
+  public func asValue() -> ExecuTorch.Value
+}
+extension Swift.Int32 : ExecuTorch.ValueConvertible {
+  public func asValue() -> ExecuTorch.Value
+}
+extension Swift.Int64 : ExecuTorch.ValueConvertible {
+  public func asValue() -> ExecuTorch.Value
+}
+extension Swift.Int : ExecuTorch.ValueConvertible {
+  public func asValue() -> ExecuTorch.Value
+}
+extension Swift.Float : ExecuTorch.ValueConvertible {
+  public func asValue() -> ExecuTorch.Value
+}
+extension Swift.Double : ExecuTorch.ValueConvertible {
+  public func asValue() -> ExecuTorch.Value
+}
+extension Swift.Bool : ExecuTorch.ValueConvertible {
+  public func asValue() -> ExecuTorch.Value
+}
+extension Swift.UInt16 : ExecuTorch.ValueConvertible {
+  public func asValue() -> ExecuTorch.Value
+}
+extension Swift.UInt32 : ExecuTorch.ValueConvertible {
+  public func asValue() -> ExecuTorch.Value
+}
+extension Swift.UInt64 : ExecuTorch.ValueConvertible {
+  public func asValue() -> ExecuTorch.Value
+}
+extension Swift.UInt : ExecuTorch.ValueConvertible {
+  public func asValue() -> ExecuTorch.Value
+}
+extension ExecuTorch.Value : ExecuTorch.ValueConstructible, ExecuTorch.ValueSequenceConstructible {
+  public static func from(_ value: ExecuTorch.Value) throws -> Self
+}
+extension ExecuTorch.AnyTensor : ExecuTorch.ValueConstructible, ExecuTorch.ValueSequenceConstructible {
+  public static func from(_ value: ExecuTorch.Value) throws -> Self
+}
+extension ExecuTorch.Tensor : ExecuTorch.ValueConstructible, ExecuTorch.ValueSequenceConstructible {
+  public static func from(_ value: ExecuTorch.Value) throws -> Self
+}
+extension Swift.String : ExecuTorch.ValueConstructible, ExecuTorch.ValueSequenceConstructible {
+  public static func from(_ value: ExecuTorch.Value) throws -> Swift.String
+}
+extension Foundation.NSNumber : ExecuTorch.ValueConstructible, ExecuTorch.ValueSequenceConstructible {
+  public static func from(_ value: ExecuTorch.Value) throws -> Self
+}
+extension Swift.UInt8 : ExecuTorch.ValueConstructible, ExecuTorch.ValueSequenceConstructible {
+  public static func from(_ value: ExecuTorch.Value) throws -> Swift.UInt8
+}
+extension Swift.Int8 : ExecuTorch.ValueConstructible, ExecuTorch.ValueSequenceConstructible {
+  public static func from(_ value: ExecuTorch.Value) throws -> Swift.Int8
+}
+extension Swift.Int16 : ExecuTorch.ValueConstructible, ExecuTorch.ValueSequenceConstructible {
+  public static func from(_ value: ExecuTorch.Value) throws -> Swift.Int16
+}
+extension Swift.Int32 : ExecuTorch.ValueConstructible, ExecuTorch.ValueSequenceConstructible {
+  public static func from(_ value: ExecuTorch.Value) throws -> Swift.Int32
+}
+extension Swift.Int64 : ExecuTorch.ValueConstructible, ExecuTorch.ValueSequenceConstructible {
+  public static func from(_ value: ExecuTorch.Value) throws -> Swift.Int64
+}
+extension Swift.Int : ExecuTorch.ValueConstructible, ExecuTorch.ValueSequenceConstructible {
+  public static func from(_ value: ExecuTorch.Value) throws -> Swift.Int
+}
+extension Swift.Float : ExecuTorch.ValueConstructible, ExecuTorch.ValueSequenceConstructible {
+  public static func from(_ value: ExecuTorch.Value) throws -> Swift.Float
+}
+extension Swift.Double : ExecuTorch.ValueConstructible, ExecuTorch.ValueSequenceConstructible {
+  public static func from(_ value: ExecuTorch.Value) throws -> Swift.Double
+}
+extension Swift.Bool : ExecuTorch.ValueConstructible, ExecuTorch.ValueSequenceConstructible {
+  public static func from(_ value: ExecuTorch.Value) throws -> Swift.Bool
+}
+extension Swift.UInt16 : ExecuTorch.ValueConstructible, ExecuTorch.ValueSequenceConstructible {
+  public static func from(_ value: ExecuTorch.Value) throws -> Swift.UInt16
+}
+extension Swift.UInt32 : ExecuTorch.ValueConstructible, ExecuTorch.ValueSequenceConstructible {
+  public static func from(_ value: ExecuTorch.Value) throws -> Swift.UInt32
+}
+extension Swift.UInt64 : ExecuTorch.ValueConstructible, ExecuTorch.ValueSequenceConstructible {
+  public static func from(_ value: ExecuTorch.Value) throws -> Swift.UInt64
+}
+extension Swift.UInt : ExecuTorch.ValueConstructible, ExecuTorch.ValueSequenceConstructible {
+  public static func from(_ value: ExecuTorch.Value) throws -> Swift.UInt
+}
+extension Swift.Array : ExecuTorch.ValueSequenceConstructible where Element : ExecuTorch.ValueConstructible {
+  public static func from(_ values: [ExecuTorch.Value]) throws -> [Element]
+}

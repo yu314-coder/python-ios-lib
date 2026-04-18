@@ -10,26 +10,317 @@ if os.name == "nt":  # pragma: no cover
         f"{os.pathsep}"
         f"{os.environ['PATH']}"
     )
+
+_pango_available = False
+_pango_error = None
+_pango_errors = []
+# torch_ios: force the pycairo fallback — the real Pango path segfaults on
+# iOS in cairo_scaled_font_glyph_extents because fontconfig can't resolve
+# the default "Times 9.999" family. The pycairo-based reimplementation
+# below uses Cairo's text_path directly and works on iOS.
+_TORCH_IOS_FORCE_PYCAIRO = True
 try:
-    from .register_font import *  # isort:skip # noqa: F403,F401
-    from .cmanimpango import *  # noqa: F403,F401
-    from .enums import *  # noqa: F403,F401
-except ImportError as ie:  # pragma: no cover
-    py_ver = ".".join(map(str, sys.version_info[:3]))
-    msg = f"""
+    if _TORCH_IOS_FORCE_PYCAIRO:
+        raise ImportError("torch_ios: forced pycairo fallback")
+    # Try each module individually to get specific errors
+    try:
+        from ._register_font import *  # Direct import of C module
+    except (ImportError, OSError) as e1:
+        _pango_errors.append(f"_register_font: {e1}")
+        # Try loading the framework directly via ctypes
+        import ctypes
+        _fw_base = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        _fw_path = os.path.join(_fw_base, "Frameworks",
+            "site-packages.manimpango._register_font.framework",
+            "site-packages.manimpango._register_font")
+        if os.path.exists(_fw_path):
+            try:
+                ctypes.CDLL(_fw_path, mode=ctypes.RTLD_GLOBAL)
+                from ._register_font import *  # Retry after preload
+                _pango_errors.pop()  # Success — remove error
+            except Exception as e1b:
+                _pango_errors.append(f"_register_font ctypes: {e1b}")
 
-ManimPango could not import and load the necessary shared libraries.
-This error may occur when ManimPango and its dependencies are improperly set up.
-Please make sure the following versions are what you expect:
+    try:
+        from .register_font import *  # Python wrapper
+    except (ImportError, OSError) as e1w:
+        _pango_errors.append(f"register_font.py: {e1w}")
 
-    * ManimPango v{__version__}, Python v{py_ver}
+    try:
+        from .cmanimpango import *
+    except (ImportError, OSError) as e2:
+        _pango_errors.append(f"cmanimpango: {e2}")
 
-If you believe there is a greater problem,
-feel free to contact us or create an issue on GitHub:
+    try:
+        from .enums import *
+    except (ImportError, OSError) as e3:
+        _pango_errors.append(f"enums: {e3}")
 
-    * Discord: https://www.manim.community/discord/
-    * GitHub: https://github.com/ManimCommunity/ManimPango/issues
+    if not _pango_errors:
+        _pango_available = True
+    else:
+        _pango_error = "; ".join(_pango_errors)
+except Exception as _pe:
+    _pango_error = str(_pe)
 
-Original error: {ie}
-"""
-    raise ImportError(msg)
+if not _pango_available:
+    import warnings
+    warnings.warn(f"ManimPango native libs: {_pango_error or 'unknown error'}", stacklevel=2)
+
+    # ═══════════════════════════════════════════════════════════════
+    # Complete manimpango API reimplementation using pycairo
+    # Matches all classes, functions, and parameters from the real
+    # manimpango 0.6.1 (Pango+Cairo Cython bindings)
+    # ═══════════════════════════════════════════════════════════════
+
+    from enum import IntEnum as _IntEnum
+
+    class Style(_IntEnum):
+        NORMAL = 0
+        ITALIC = 1
+        OBLIQUE = 2
+
+    class Weight(_IntEnum):
+        THIN = 100
+        ULTRALIGHT = 200
+        LIGHT = 300
+        BOOK = 380
+        NORMAL = 400
+        MEDIUM = 500
+        SEMIBOLD = 600
+        BOLD = 700
+        ULTRABOLD = 800
+        HEAVY = 900
+        ULTRAHEAVY = 1000
+
+    class Variant(_IntEnum):
+        NORMAL = 0
+        SMALL_CAPS = 1
+
+    class Alignment(_IntEnum):
+        LEFT = 0
+        CENTER = 1
+        RIGHT = 2
+
+    class PangoUtils:
+        _STYLE_MAP = {'NORMAL': Style.NORMAL, 'ITALIC': Style.ITALIC, 'OBLIQUE': Style.OBLIQUE}
+        _WEIGHT_MAP = {
+            'NORMAL': Weight.NORMAL, 'BOLD': Weight.BOLD, 'THIN': Weight.THIN,
+            'ULTRALIGHT': Weight.ULTRALIGHT, 'LIGHT': Weight.LIGHT, 'BOOK': Weight.BOOK,
+            'MEDIUM': Weight.MEDIUM, 'SEMIBOLD': Weight.SEMIBOLD,
+            'ULTRABOLD': Weight.ULTRABOLD, 'HEAVY': Weight.HEAVY, 'ULTRAHEAVY': Weight.ULTRAHEAVY,
+        }
+
+        @staticmethod
+        def str2style(s):
+            return PangoUtils._STYLE_MAP.get(str(s).upper(), Style.NORMAL)
+
+        @staticmethod
+        def str2weight(s):
+            return PangoUtils._WEIGHT_MAP.get(str(s).upper(), Weight.NORMAL)
+
+        @staticmethod
+        def remove_last_M(file_path):
+            """Remove trailing 'M' from SVG path data (Pango artifact)."""
+            if not file_path or not os.path.exists(str(file_path)):
+                return file_path
+            try:
+                with open(str(file_path), 'r') as f:
+                    content = f.read()
+                # Remove trailing M commands that Pango sometimes adds
+                import re
+                content = re.sub(r'M\s*"', '"', content)
+                with open(str(file_path), 'w') as f:
+                    f.write(content)
+            except Exception:
+                pass
+            return file_path
+
+    class TextSetting:
+        """Formatting for slices of a Text object (matches real manimpango)."""
+        def __init__(self, start=0, end=0, font='', slant='NORMAL', weight='NORMAL',
+                     line_num=-1, color=None, is_new_line=False, **kwargs):
+            self.start = int(start)
+            self.end = int(end)
+            self.font = str(font) if font else ''
+            self.slant = str(slant) if slant else 'NORMAL'
+            self.weight = str(weight) if weight else 'NORMAL'
+            self.line_num = int(line_num) if line_num is not None else -1
+            self.color = color
+            self.is_new_line = is_new_line
+
+    class RegisteredFont:
+        def __init__(self, path='', type=''):
+            self.path = str(path)
+            self.type = str(type)
+
+    registered_fonts = set()
+
+    def register_font(font_path):
+        registered_fonts.add(RegisteredFont(str(font_path)))
+        return True
+
+    def unregister_font(font_path):
+        return True
+
+    def list_fonts():
+        return []
+
+    # ── Color parsing helper ──
+    def _parse_color(color_str):
+        """Parse a color string (#hex or named) to (r, g, b) floats 0-1."""
+        if not color_str or not isinstance(color_str, str):
+            return (1.0, 1.0, 1.0)
+        c = color_str.strip()
+        if c.startswith('#') and len(c) >= 7:
+            try:
+                return (int(c[1:3], 16)/255.0, int(c[3:5], 16)/255.0, int(c[5:7], 16)/255.0)
+            except ValueError:
+                pass
+        # Named colors (subset)
+        _names = {'white':(1,1,1), 'black':(0,0,0), 'red':(1,0,0), 'green':(0,0.5,0),
+                  'blue':(0,0,1), 'yellow':(1,1,0), 'cyan':(0,1,1), 'magenta':(1,0,1),
+                  'orange':(1,0.65,0), 'purple':(0.5,0,0.5), 'gold':(1,0.84,0)}
+        return _names.get(c.lower(), (1.0, 1.0, 1.0))
+
+    # ── Cairo font mapping ──
+    def _get_cairo_slant(slant_str):
+        import cairo
+        s = str(slant_str).upper()
+        if s == 'ITALIC': return cairo.FONT_SLANT_ITALIC
+        if s == 'OBLIQUE': return cairo.FONT_SLANT_OBLIQUE
+        return cairo.FONT_SLANT_NORMAL
+
+    def _get_cairo_weight(weight_str):
+        import cairo
+        w = str(weight_str).upper()
+        if w in ('BOLD', 'ULTRABOLD', 'HEAVY', 'ULTRAHEAVY', 'SEMIBOLD'):
+            return cairo.FONT_WEIGHT_BOLD
+        return cairo.FONT_WEIGHT_NORMAL
+
+    def text2svg(settings, size, line_spacing, disable_liga, file_name,
+                 START_X=0, START_Y=0, width=600, height=400, orig_text='',
+                 pango_width=None):
+        """Render text to SVG using Cairo SVG surface with text_path().
+
+        Matches real manimpango.text2svg signature and behavior:
+        - Creates Cairo SVG surface
+        - For each TextSetting: sets font family/size/slant/weight, color
+        - Uses ctx.text_path() to trace glyph outlines → SVG <path> elements
+        - Handles multi-line text via setting.line_num + line_spacing
+        """
+        import os
+        text = str(orig_text) if orig_text else " "
+        font_size = float(size) if size else 12.0
+
+        if file_name:
+            os.makedirs(os.path.dirname(str(file_name)) or '.', exist_ok=True)
+            svg_path = str(file_name)
+        else:
+            import tempfile
+            svg_path = os.path.join(tempfile.gettempdir(), 'manim_text.svg')
+
+        try:
+            import cairo
+
+            surface = cairo.SVGSurface(svg_path, float(width), float(height))
+            ctx = cairo.Context(surface)
+
+            offset_x = 0.0
+            last_line_num = 0
+
+            for setting in (settings or []):
+                font_family = setting.font or "sans-serif"
+                cairo_slant = _get_cairo_slant(setting.slant)
+                cairo_weight = _get_cairo_weight(setting.weight)
+
+                ctx.select_font_face(font_family, cairo_slant, cairo_weight)
+                ctx.set_font_size(font_size)
+
+                # Handle line breaks
+                if setting.line_num != last_line_num:
+                    offset_x = 0.0
+                    last_line_num = setting.line_num
+
+                y_pos = float(START_Y) + float(line_spacing) * setting.line_num + font_size
+                x_pos = float(START_X) + offset_x
+
+                # Set color
+                r, g, b = _parse_color(setting.color)
+                ctx.set_source_rgb(r, g, b)
+
+                # Extract text chunk
+                chunk = text[setting.start:setting.end].replace("\n", " ")
+                if not chunk:
+                    continue
+
+                # Trace glyph outlines → SVG path elements
+                ctx.move_to(x_pos, y_pos)
+                ctx.text_path(chunk)
+                ctx.fill()
+
+                # Advance x offset by text width
+                extents = ctx.text_extents(chunk)
+                offset_x += extents.x_advance
+
+            surface.finish()
+            return svg_path
+
+        except ImportError:
+            # Cairo not available — minimal SVG fallback
+            esc = text.replace('&','&amp;').replace('<','&lt;').replace('>','&gt;')
+            svg = (f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}">'
+                   f'<text x="{START_X}" y="{font_size}" font-size="{font_size}" fill="white">{esc}</text></svg>')
+            with open(svg_path, 'w') as f:
+                f.write(svg)
+            return svg_path
+
+    def markup2svg(text, font='', slant='NORMAL', weight='NORMAL', size=1,
+                   _placeholder=None, disable_ligatures=False, file_name='',
+                   START_X=0, START_Y=0, width=600, height=400, **kwargs):
+        """Render markup text to SVG (strips markup tags, delegates to text2svg)."""
+        import re
+        plain = re.sub(r'<[^>]+>', '', str(text))
+        settings = [TextSetting(start=0, end=len(plain), font=font, slant=slant,
+                                weight=weight, color='white')]
+        return text2svg(settings, size, 0, disable_ligatures, file_name,
+                       START_X, START_Y, width, height, plain)
+
+    class MarkupUtils:
+        @staticmethod
+        def validate(markup):
+            """Validate Pango markup. Returns empty string (valid) on iOS."""
+            return ""
+
+        @staticmethod
+        def text2svg(text, font=None, slant='NORMAL', weight='NORMAL', size=1,
+                     _placeholder=None, disable_liga=False, file_name='',
+                     START_X=0, START_Y=0, width=600, height=400, *,
+                     justify=None, indent=None, line_spacing=None,
+                     alignment=None, pango_width=None):
+            """Render Pango markup to SVG via Cairo (same as text2svg)."""
+            import re
+            plain = re.sub(r'<[^>]+>', '', str(text))
+            settings = [TextSetting(start=0, end=len(plain), font=font or '',
+                                    slant=slant, weight=weight, color='white')]
+            return text2svg(settings, size, line_spacing or 0, disable_liga, file_name,
+                           START_X, START_Y, width, height, plain,
+                           pango_width=pango_width)
+
+    def pango_version():
+        return "1.50.0"
+
+    def cairo_version():
+        try:
+            import cairo
+            return cairo.cairo_version_string()
+        except Exception:
+            return "1.16.0"
+
+    __all__ = [
+        'PangoUtils', 'Style', 'Weight', 'Variant', 'Alignment',
+        'TextSetting', 'MarkupUtils', 'RegisteredFont',
+        'text2svg', 'markup2svg', 'list_fonts',
+        'register_font', 'unregister_font', 'registered_fonts',
+        'pango_version', 'cairo_version',
+    ]

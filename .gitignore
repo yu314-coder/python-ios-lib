@@ -54,3 +54,17 @@ app_packages/site-packages/torch/lib/*.a
 
 # venvs
 .venv_hf/
+
+# llama.xcframework debug symbols (dSYM is for Xcode crash symbolication;
+# not needed by end users, ~300 MB across 4 platforms)
+Frameworks/llama.xcframework/**/dSYMs/
+
+# __pycache__/ gets regenerated at runtime with runtime-correct paths
+__pycache__/
+
+# numpy cross-compile build scratch (we ship the finished .so files
+# in app_packages; users rebuild from source via numpy_ios/build_numpy_ios.sh)
+numpy_ios/build/
+numpy_ios/install/
+numpy_ios/numpy-*.tar.gz
+numpy_ios/numpy-2.*/
