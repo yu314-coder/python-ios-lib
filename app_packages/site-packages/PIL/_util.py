@@ -1,12 +1,9 @@
 from __future__ import annotations
 
 import os
+from typing import Any, NoReturn
 
-TYPE_CHECKING = False
-if TYPE_CHECKING:
-    from typing import Any, NoReturn, TypeGuard
-
-    from ._typing import StrOrBytesPath
+from ._typing import StrOrBytesPath, TypeGuard
 
 
 def is_path(f: Any) -> TypeGuard[StrOrBytesPath]:

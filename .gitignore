@@ -76,3 +76,8 @@ pillow_ios/libjpeg-turbo-*/
 pillow_ios/libjpeg-turbo*.tar.gz
 pillow_ios/pillow-*.tar.gz
 pillow_ios/pillow-*/
+
+# pandas cross-compile scratch (attempted but pandas 2.0 is not Python 3.14 compatible;
+# keep build script as reference for future attempts)
+pandas_ios/pandas-*/
+pandas_ios/pandas-*.tar.gz
