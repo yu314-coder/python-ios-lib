@@ -1,0 +1,4 @@
+Wheel-Version: 1.0
+Generator: torch_ios (real build from github.com/huggingface/tokenizers v0.19.1)
+Root-Is-Purelib: false
+Tag: cp314-abi3-ios_13_0_arm64_iphoneos

@@ -1,0 +1,13 @@
+diff --git a/torch/_utils_internal.py b/torch/_utils_internal.py
+index 628e4fe..607625d 100644
+--- a/torch/_utils_internal.py
++++ b/torch/_utils_internal.py
+@@ -72,7 +72,7 @@ TEST_MASTER_ADDR = "127.0.0.1"
+ TEST_MASTER_PORT = 29500
+ # USE_GLOBAL_DEPS controls whether __init__.py tries to load
+ # libtorch_global_deps, see Note [Global dependencies]
+-USE_GLOBAL_DEPS = True
++USE_GLOBAL_DEPS = False  # torch_ios: no libtorch_global_deps built — our libtorch_cpu is static inside libtorch_python.dylib
+ # USE_RTLD_GLOBAL_WITH_LIBTORCH controls whether __init__.py tries to load
+ # _C.so with RTLD_GLOBAL during the call to dlopen.
+ USE_RTLD_GLOBAL_WITH_LIBTORCH = False

@@ -1,0 +1,38 @@
+# torch_ios: skip the 94 quantized schemas that reference custom classes
+# (Conv2dPackedParamsBase, LinearPackedParamsBase, EmbeddingPackedParamsBase).
+#
+# Symptom (without patch): torch import crashes inside dyld static-init
+# of libtorch_python.dylib with
+#   torch::jit::ErrorReport: Unknown custom class type
+#     quantized.Conv2dPackedParamsBase. Please ensure it is registered.:
+#   quantized::conv1d(Tensor qx, ... .Conv2dPackedParamsBase ...) -> Tensor
+#                                          ~~~~~~~~~~~~~~~~~~~~~~ <--- HERE
+#
+# Root cause: TORCH_LIBRARY(quantized, m) calls register_conv_params<2/3>()
+# etc. at the top of its body, which register the custom classes via
+# function-local statics. On Linux that ordering is reliable. On iOS dyld 4
+# the static-init handshake doesn't reliably fire before the schema parser
+# inside the same body looks them up — and the resulting ErrorReport
+# bypasses every catch handler we tried (init_priority(101), constructor
+# attribute, noinline + try/catch, even catch(...)) because dyld 4's
+# static-init phase doesn't allow C++ exception unwinding past the
+# initializer boundary — the throw is dispatched directly to
+# std::terminate via __cxa_get_exception_ptr without ever calling the
+# personality function for the wrapper frame.
+#
+# We don't actually call any quantized conv/linear/embedding ops on iPad
+# (those would need fbgemm or qnnpack runtime kernels we haven't tested).
+# So the simplest robust fix is to just drop the schemas that need the
+# custom classes. The C++ implementations stay (TORCH_LIBRARY_IMPL blocks
+# in qconv*.cpp etc.) — they just won't have schemas to attach to. Calls
+# to quantized.conv1d at Python-level get a clean OperatorNotFound error,
+# not a process abort.
+#
+# 94 schemas filtered via:
+#   sed -i '/m\.def(.*PackedParamsBase/s|^|//torch_ios:SKIPPED |' library.cpp
+
+# This patch isn't a unified diff — it's a sed transformation. Apply with:
+#   cd torch_ios/build/pytorch && \
+#     sed -i.bak '/m\.def(.*PackedParamsBase/s|^|//torch_ios:SKIPPED |' \
+#       aten/src/ATen/native/quantized/library.cpp && \
+#     rm aten/src/ATen/native/quantized/library.cpp.bak

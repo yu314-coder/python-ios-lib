@@ -1,0 +1,44 @@
+# torch_ios: change libshm to link against torch_cpu directly instead of
+# the `torch` interface wrapper.
+#
+# Symptom (without patch): after import-torch's other dyld init issues
+# are fixed, the next launch crashes with
+#   "Key already registered with the same priority: C10"
+# in _GLOBAL__sub_I_ParallelThreadPoolNative.cpp during dlopen.
+#
+# Root cause: caffe2_interface_library (in cmake/public/utils.cmake) wraps
+# libtorch_cpu.a with -Wl,-force_load on Apple, so any target linking
+# against the `torch` CMake target gets the ENTIRE libtorch_cpu.a
+# whole-archived in. That's intentional for libtorch_python.dylib (which
+# needs every libtorch_cpu init function to actually fire). But libshm
+# only needs ~3 symbols from libtorch_cpu (at::storage_copy, at::
+# new_shm_fd_storage, at::RefcountedMapAllocator::*), and force_load makes
+# libshm.dylib balloon from 200 KB to 84 MB AND duplicate every static
+# initializer that's already in libtorch_python.dylib. At dlopen time both
+# images run their copies of `_GLOBAL__sub_I_*`, which collide on the C10
+# Registry keys.
+#
+# Linking shm to torch_cpu directly (without the force_load wrapper)
+# means the linker only resolves the symbols actually referenced by
+# libshm/core.cpp. Net effect: libshm.dylib shrinks to 200 KB, no static
+# initializers from torch_cpu run twice.
+
+diff --git a/torch/lib/libshm/CMakeLists.txt b/torch/lib/libshm/CMakeLists.txt
+--- a/torch/lib/libshm/CMakeLists.txt
++++ b/torch/lib/libshm/CMakeLists.txt
+@@ -29,7 +29,16 @@
+   PREFIX "lib"
+   IMPORT_PREFIX "lib"
+   CXX_STANDARD 17)
+-target_link_libraries(shm PUBLIC torch)
++# torch_ios: was `target_link_libraries(shm PUBLIC torch)` — the `torch`
++# wrapper applies -Wl,-force_load on Apple via caffe2_interface_library,
++# pulling the ENTIRE libtorch_cpu.a (incl. every _GLOBAL__sub_I_* init)
++# into libshm.dylib. Result: libshm.dylib ends up at 84MB and runs
++# duplicate static initializers vs libtorch_python.dylib at app dlopen,
++# triggering "Key already registered with the same priority: C10" and
++# similar collisions during torch import.
++#
++# Link to torch_cpu directly (not the force_load wrapper) so the linker
++# only pulls in the few symbols libshm actually references.
++target_link_libraries(shm PUBLIC torch_cpu)

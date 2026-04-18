@@ -1,0 +1,83 @@
+# torch_ios: collection of Python-side patches applied after install.
+# These are file edits on torch/*.py files (not .cpp). Unlike patches 0001-
+# 0017 which patch the pytorch source tree, these target app_packages/
+# site-packages/torch/ directly (OR equivalently the build/pytorch/torch/
+# tree — same files).
+#
+# Apply each edit in the order listed.
+#
+# ───────────────────────────────────────────────────────────────────────
+# 1. torch/_ops.py — return _MissingOverload for unregistered overloads
+# ───────────────────────────────────────────────────────────────────────
+#
+# In OpOverloadPacket.__getattr__, replace the AttributeError on RuntimeError
+# with `return _MissingOverload(self._qualified_op_name, key)`, and append
+# a new _MissingOverload class + _MissingOverloadSchema. See torch/_ops.py
+# for the full class definition.
+#
+# Rationale: many torch source files reference op overloads at module-import
+# time as set/tuple members. On iOS the dispatcher is missing some overloads
+# because the corresponding C++ kernels weren't compiled in. The placeholder
+# is hashable + equality-comparable, has sensible duck-typed attributes
+# (name(), _schema, has_kernel_for_dispatch_key(), etc.), and raises only
+# when actually called.
+#
+# ───────────────────────────────────────────────────────────────────────
+# 2. torch/_decomp/__init__.py — skip _MissingOverload in registry
+# ───────────────────────────────────────────────────────────────────────
+#
+# In _add_op_to_registry, early-return if `op` is _MissingOverload, and
+# filter _MissingOverload instances out of the overloads list for packets.
+#
+# ───────────────────────────────────────────────────────────────────────
+# 3. torch/fx/node.py — lazy-build _side_effectful_functions
+# ───────────────────────────────────────────────────────────────────────
+#
+# Replace the static set literal with a helper that try/except-skips each
+# candidate op. Losing side-effect tracking for a missing op is harmless.
+#
+# ───────────────────────────────────────────────────────────────────────
+# 4. torch/_subclasses/fake_tensor.py — lazy-build _device_not_kwarg_ops
+# ───────────────────────────────────────────────────────────────────────
+#
+# Replace the static tuple with a helper that try/except-skips missing ops.
+#
+# ───────────────────────────────────────────────────────────────────────
+# 5. torch/autograd/profiler.py — graceful profiler context manager
+# ───────────────────────────────────────────────────────────────────────
+#
+# Wrap `__enter__` and `__exit__` of the record_function context manager
+# in try/except — the optimizer calls record_function(zero_grad_name) on
+# every .zero_grad() and the op may or may not be registered. Profiling
+# isn't used on iPad anyway.
+#
+# ───────────────────────────────────────────────────────────────────────
+# 6. torch/ao/quantization/{utils,__init__,fake_quantize,qconfig}.py
+# ───────────────────────────────────────────────────────────────────────
+#
+# Wrap `Foo.__module__ = "..."` assignments in try/except AttributeError.
+# Python 3.11+ made typing.Union immutable and these assignments fail.
+#
+# ───────────────────────────────────────────────────────────────────────
+# 7. torch/utils/weak.py — polyfill _IterationGuard
+# ───────────────────────────────────────────────────────────────────────
+#
+# Python 3.13 removed _IterationGuard from _weakrefset. Polyfill the
+# CPython 3.12 implementation inline:
+#   try: from _weakrefset import _IterationGuard
+#   except ImportError: class _IterationGuard: …
+#
+# ───────────────────────────────────────────────────────────────────────
+# 8. torch/__init__.py — already handled via install_to_app.sh full mode
+# ───────────────────────────────────────────────────────────────────────
+#
+# torchgen/ sibling package: copy pytorch/torchgen/ → app_packages/
+# site-packages/torchgen/. torch._custom_op imports from it.
+#
+# torch/testing/_internal/: include in rsync (install_to_app.sh already
+# updated to NOT exclude this directory).
+#
+# torch/bin/torch_shm_manager: ship the built binary from
+# build/ios-arm64/bin/torch_shm_manager; torch.__init__ errors if missing.
+
+echo "This file is documentation only. See build/pytorch/torch/*.py for actual patches."

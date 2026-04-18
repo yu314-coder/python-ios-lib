@@ -1,0 +1,50 @@
+# torch_ios: compile torch::nn::Module + its serialize deps even under NO_API.
+#
+# INTERN_BUILD_MOBILE sets NO_API=ON which normally hides the whole C++
+# torch::nn API. But the Python bindings in torch_python reference the
+# typeinfo for torch::nn::Module and a handful of its methods (eval,
+# parameters, named_*, etc.) at bind time, so those symbols must exist.
+#
+# We compile just 5 files: nn/module.cpp + nn/init.cpp (the base class)
+# plus the 3 serialize sources that nn::Module::save pulls in. The rest
+# of the nn options/optimizers stay excluded — they're only useful from
+# C++ callers, which there are none of on iOS.
+
+diff --git a/caffe2/CMakeLists.txt b/caffe2/CMakeLists.txt
+--- a/caffe2/CMakeLists.txt
++++ b/caffe2/CMakeLists.txt
+@@ -713,6 +713,20 @@
+   install(TARGETS caffe2_nvrtc DESTINATION "${TORCH_INSTALL_LIB_DIR}")
+ endif()
+
++# torch_ios: INTERN_BUILD_MOBILE sets NO_API=ON which normally hides the
++# whole C++ torch::nn API. But torch/csrc/utils/python_arg_parser.cpp (in
++# torch_python) references typeinfo for torch::nn::Module and a few of its
++# methods via ScriptClass bindings, so the symbols need to exist. Compile
++# module.cpp + init.cpp (small, self-contained) even under NO_API, plus
++# the serialize sources that nn::Module::save depends on.
++if(NO_API AND NOT BUILD_LITE_INTERPRETER)
++  list(APPEND TORCH_SRCS
++    ${TORCH_SRC_DIR}/csrc/api/src/nn/module.cpp
++    ${TORCH_SRC_DIR}/csrc/api/src/nn/init.cpp
++    ${TORCH_SRC_DIR}/csrc/api/src/serialize.cpp
++    ${TORCH_SRC_DIR}/csrc/api/src/serialize/input-archive.cpp
++    ${TORCH_SRC_DIR}/csrc/api/src/serialize/output-archive.cpp
++  )
++endif()
++
+ if(NOT NO_API AND NOT BUILD_LITE_INTERPRETER)
+   list(APPEND TORCH_SRCS
+     ${TORCH_SRC_DIR}/csrc/api/src/cuda.cpp
+@@ -1117,6 +1131,11 @@
+ if(NOT NO_API)
+   target_include_directories(torch_cpu PRIVATE
+     ${TORCH_SRC_DIR}/csrc/api
+     ${TORCH_SRC_DIR}/csrc/api/include)
++elseif(NOT BUILD_LITE_INTERPRETER)
++  # torch_ios: under NO_API we still compile nn/module.cpp + nn/init.cpp
++  # (see comment near line 716), so the include dir is needed.
++  target_include_directories(torch_cpu PRIVATE
++    ${TORCH_SRC_DIR}/csrc/api
++    ${TORCH_SRC_DIR}/csrc/api/include)
+ endif()

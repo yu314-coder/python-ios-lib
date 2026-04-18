@@ -1,0 +1,30 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 3a48eaf..d39609a 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -623,7 +623,11 @@ if(INTERN_BUILD_MOBILE)
+   else()
+     set(INTERN_DISABLE_AUTOGRAD ON)
+   endif()
+-  set(BUILD_PYTHON OFF)
++  if(NOT FORCE_BUILD_PYTHON)
++    set(BUILD_PYTHON OFF)
++  else()
++    message(STATUS "torch_ios: FORCE_BUILD_PYTHON — keeping BUILD_PYTHON ON under mobile")
++  endif()
+   set(BUILD_FUNCTORCH OFF)
+   set(BUILD_CAFFE2_OPS OFF)
+   set(USE_DISTRIBUTED OFF)
+@@ -918,7 +922,12 @@ if(NOT MSVC)
+   append_cxx_flag_if_supported("-fno-math-errno" CMAKE_CXX_FLAGS)
+   append_cxx_flag_if_supported("-fno-trapping-math" CMAKE_CXX_FLAGS)
+   append_cxx_flag_if_supported("-Werror=format" CMAKE_CXX_FLAGS)
++  # torch_ios: modern AppleClang 17 promoted cast-function-type-strict, which
++  # torch 2.1.2's generated autograd python bindings trip (THPCppFunction
++  # getter → generic PyObject getter cast). Downgrade to warning for that
++  # specific strict variant only.
+   append_cxx_flag_if_supported("-Werror=cast-function-type" CMAKE_CXX_FLAGS)
++  append_cxx_flag_if_supported("-Wno-error=cast-function-type-strict" CMAKE_CXX_FLAGS)
+ else()
+   # skip unwanted includes from windows.h
+   add_compile_definitions(WIN32_LEAN_AND_MEAN)

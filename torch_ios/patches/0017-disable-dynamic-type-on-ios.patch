@@ -1,0 +1,46 @@
+# torch_ios: don't use c10::DynamicType as the platform TypeFactory on iOS.
+#
+# Symptom (without patch): runtime calls to torch.ops.profiler.* (and
+# any other op registered via TORCH_LIBRARY at runtime) fail with
+#   RuntimeError: profiler::_record_function_enter_new() Expected a value
+#     of type 'Dynamic<64>' for argument 'name' but instead found type 'str'.
+#   Cast error details: toIValue() cannot handle converting to type:
+#     Dynamic<64>
+#
+# Root cause: c10::DynamicType is a low-binary-size, low-dep type system
+# designed for AOT-compiled mobile inference (where you ship .ptl files
+# precompiled on desktop and only need a tiny runtime to execute them).
+# Under C10_MOBILE, type_factory.h selects DynamicType as the platform
+# TypeFactory — so m.def("...str name...") registers the param as
+# DynamicType::String (which prints as Dynamic<64> because its bit value
+# is 1<<6=64).
+#
+# But our build hosts a full CPython interpreter that converts Python str
+# values via the regular c10::StringType. The two systems are incompatible
+# — runtime calls produce a regular StringType IValue, schema expects
+# DynamicType::String, cast fails.
+#
+# Fix: exclude iOS from the DynamicType branch. We have a real Python
+# interpreter; we want the regular Type system regardless of C10_MOBILE.
+
+diff --git a/aten/src/ATen/core/type_factory.h b/aten/src/ATen/core/type_factory.h
+--- a/aten/src/ATen/core/type_factory.h
++++ b/aten/src/ATen/core/type_factory.h
+@@ -96,8 +96,15 @@
+ using DefaultTypeFactory = TypeFactoryBase<c10::Type>;
+
++// torch_ios: was `#ifdef C10_MOBILE → DynamicType`, but our build also
++// hosts a full CPython interpreter that converts Python str/int/etc. via
++// the regular Type system (StringType/IntType/...). Mixing the two
++// systems means schema-registered DynamicType::String (Dynamic<64>) won't
++// accept a regular StringType from Python — runtime calls fail with
++// "Expected a value of type 'Dynamic<64>' for argument ... but found type
++// 'str'." Force the regular Type for the platform factory on iOS.
+ using PlatformType =
+-#ifdef C10_MOBILE
++#if defined(C10_MOBILE) && !defined(C10_IOS)
+     c10::DynamicType
+ #else
+     c10::Type
+ #endif
+     ;

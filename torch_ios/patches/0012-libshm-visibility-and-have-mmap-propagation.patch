@@ -1,0 +1,56 @@
+# torch_ios: two related fixes for the shared-memory path.
+#
+# (1) aten/src/ATen/CMakeLists.txt detects HAVE_MMAP / HAVE_SHM_OPEN /
+#     HAVE_SHM_UNLINK via CHECK_FUNCTION_EXISTS and calls add_definitions
+#     on each. But add_definitions operates at directory scope, while
+#     torch_cpu is declared up in caffe2/CMakeLists.txt, so the flags
+#     never reach MapAllocator.cpp. Result: the incref/decref path (gated
+#     on `(_WIN32 || HAVE_MMAP) && AT_ATOMIC_IPC_REFCOUNT`) doesn't compile
+#     and at::RefcountedMapAllocator::{incref,decref} end up undefined.
+#
+# (2) libshm/CMakeLists.txt inherits torch_cpu's -fvisibility=hidden
+#     propagation but libshm.h declares `void libshm_init(...)` and the
+#     THManagedMapAllocator class WITHOUT TORCH_API. So on iOS those
+#     symbols ended up local in libshm.dylib and torch_python couldn't
+#     resolve them at dlopen time. Force default visibility on the shm
+#     target.
+
+diff --git a/caffe2/CMakeLists.txt b/caffe2/CMakeLists.txt
+--- a/caffe2/CMakeLists.txt
++++ b/caffe2/CMakeLists.txt
+@@ -1411,6 +1411,22 @@
+ target_compile_definitions(torch_cpu PRIVATE CAFFE2_BUILD_MAIN_LIB)
++
++# torch_ios: aten/src/ATen/CMakeLists.txt detects HAVE_MMAP etc. via
++# CHECK_FUNCTION_EXISTS and calls add_definitions(-DHAVE_MMAP=1), but that
++# directory-level define doesn't flow down to targets declared up here in
++# caffe2/CMakeLists.txt. Force-propagate the flags so MapAllocator.cpp
++# compiles its incref/decref path (needed so at::RefcountedMapAllocator
++# resolves at dlopen time from torch_python).
++if(HAVE_MMAP)
++  target_compile_definitions(torch_cpu PRIVATE HAVE_MMAP=1)
++endif()
++if(HAVE_SHM_OPEN)
++  target_compile_definitions(torch_cpu PRIVATE HAVE_SHM_OPEN=1)
++endif()
++if(HAVE_SHM_UNLINK)
++  target_compile_definitions(torch_cpu PRIVATE HAVE_SHM_UNLINK=1)
++endif()
++
+ if(USE_CUDA)
+
+diff --git a/torch/lib/libshm/CMakeLists.txt b/torch/lib/libshm/CMakeLists.txt
+--- a/torch/lib/libshm/CMakeLists.txt
++++ b/torch/lib/libshm/CMakeLists.txt
+@@ -29,6 +29,14 @@
+   IMPORT_PREFIX "lib"
+   CXX_STANDARD 17)
+ target_link_libraries(shm PUBLIC torch)
++
++# torch_ios: libshm's core.cpp declares libshm_init and THManagedMapAllocator
++# without TORCH_API. Under iOS (-fvisibility=hidden via torch_cpu propagation)
++# those end up as LOCAL symbols in libshm.dylib, so torch_python can't
++# resolve them at dlopen time. Force default visibility on this target.
++set_target_properties(shm PROPERTIES
++  CXX_VISIBILITY_PRESET default
++  VISIBILITY_INLINES_HIDDEN OFF)
