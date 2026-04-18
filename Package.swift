@@ -12,8 +12,10 @@ let package = Package(
     name: "python-ios-lib",
     platforms: [.iOS(.v17)],
     products: [
-        // ── Standalone (no dependencies) ──
+        // ── Language interpreters (standalone, no Python runtime needed) ──
         .library(name: "CInterpreter", targets: ["CInterpreter"]),
+        .library(name: "CppInterpreter", targets: ["CppInterpreter"]),
+        .library(name: "FortranInterpreter", targets: ["FortranInterpreter"]),
         .library(name: "NumPy", targets: ["NumPy"]),
         .library(name: "SymPy", targets: ["SymPy"]),
         .library(name: "Plotly", targets: ["Plotly"]),
@@ -53,8 +55,31 @@ let package = Package(
         //  STANDALONE — No dependencies
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-        // C/C++/Fortran interpreters — compiles from source
-        .target(name: "CInterpreter", path: "gcc", sources: ["offlinai_cc.c"], publicHeadersPath: "."),
+        // C interpreter (~3,661-line tree-walking interpreter, single C file).
+        // C89/C99/C23, 48 operators, structs, pointers, full preprocessor.
+        .target(
+            name: "CInterpreter",
+            path: "gcc",
+            sources: ["offlinai_cc.c"],
+            publicHeadersPath: "."
+        ),
+
+        // C++ interpreter (~4,287 lines). Classes, STL, templates, inheritance.
+        .target(
+            name: "CppInterpreter",
+            path: "cpp",
+            sources: ["offlinai_cpp.c"],
+            publicHeadersPath: "."
+        ),
+
+        // Fortran interpreter (~3,876 lines). Modules, allocatable arrays,
+        // 45+ intrinsics, subroutines, functions.
+        .target(
+            name: "FortranInterpreter",
+            path: "fortran",
+            sources: ["offlinai_fortran.c"],
+            publicHeadersPath: "."
+        ),
 
         // NumPy 2.3.5 — native iOS build (arrays, linalg, FFT, random)
         .target(name: "NumPy", path: "Sources/NumPy", resources: [.copy("numpy")]),

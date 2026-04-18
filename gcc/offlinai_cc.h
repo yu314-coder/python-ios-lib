@@ -1,8 +1,9 @@
 /*
  * OfflinAi C Interpreter — a lightweight C89 interpreter for iOS.
  * No JIT, no code generation, pure interpretation.
- * Supports: int, float, double, char, arrays, pointers, structs,
- *           if/else, for, while, do-while, switch, functions, printf, math.
+ * Supports: int, float, double, char, arrays, pointers, structs, unions,
+ *           if/else, for, while, do-while, switch, goto, functions,
+ *           function pointers, static variables, printf, math.
  */
 
 #ifndef OFFLINAI_CC_H
@@ -22,6 +23,7 @@ extern "C" {
 #define OCC_MAX_STRLEN    4096
 #define OCC_MAX_ARRAY     10000
 #define OCC_MAX_TOKENS    32768
+#define OCC_VMEM_SIZE     32768
 
 /* ── Token types ────────────────────────────── */
 typedef enum {
@@ -38,6 +40,9 @@ typedef enum {
     TOK_SWITCH, TOK_CASE, TOK_DEFAULT,
     TOK_STRUCT, TOK_TYPEDEF, TOK_SIZEOF, TOK_ENUM,
     TOK_INCLUDE, TOK_DEFINE,
+    TOK_STATIC, TOK_UNION, TOK_GOTO,
+    /* C11/C23 keywords */
+    TOK_STATIC_ASSERT, TOK_GENERIC, TOK_ALIGNOF, TOK_TYPEOF, TOK_CONSTEXPR, TOK_AUTO_TYPE,
     /* operators */
     TOK_PLUS, TOK_MINUS, TOK_STAR, TOK_SLASH, TOK_PERCENT,
     TOK_AMP, TOK_PIPE, TOK_CARET, TOK_TILDE, TOK_BANG,
@@ -46,6 +51,8 @@ typedef enum {
     TOK_LSHIFT, TOK_RSHIFT,
     TOK_ASSIGN, TOK_PLUS_ASSIGN, TOK_MINUS_ASSIGN,
     TOK_STAR_ASSIGN, TOK_SLASH_ASSIGN, TOK_PERCENT_ASSIGN,
+    TOK_AMP_ASSIGN, TOK_PIPE_ASSIGN, TOK_CARET_ASSIGN,
+    TOK_LSHIFT_ASSIGN, TOK_RSHIFT_ASSIGN,
     TOK_INC, TOK_DEC,
     /* punctuation */
     TOK_LPAREN, TOK_RPAREN, TOK_LBRACE, TOK_RBRACE,
@@ -73,6 +80,9 @@ typedef enum {
     VAL_ARRAY,
     VAL_VOID,
     VAL_PTR,
+    VAL_STRUCT,
+    VAL_FUNCPTR,
+    VAL_UNION,
 } OccValType;
 
 typedef struct OccValue {
@@ -87,8 +97,20 @@ typedef struct OccValue {
             int len;
             int cap;
             OccValType elem_type;
+            int dims[4];
+            int n_dims;
         } arr;
-        struct OccValue *ptr;  /* pointer to another value */
+        struct {
+            int addr;
+            OccValType pointee_type;
+            int stride;
+        } ptr;
+        struct {
+            struct OccValue *fields;
+            char (*field_names)[64];
+            int n_fields;
+            char type_name[64];
+        } st;
     } v;
 } OccValue;
 
@@ -116,6 +138,11 @@ typedef enum {
     ND_IDENT,
     ND_ARRAY_INIT,
     ND_COMMA,
+    ND_STRUCT_DECL,
+    ND_STRUCT_INIT,
+    ND_GOTO, ND_LABEL, ND_COMPOUND_LITERAL,
+    /* C11/C23 nodes */
+    ND_STATIC_ASSERT, ND_GENERIC, ND_ALIGNOF,
 } OccNodeType;
 
 typedef struct OccNode {
@@ -128,6 +155,8 @@ typedef struct OccNode {
     int is_array;
     int array_size;
     int op;                    /* for compound assign */
+    int is_static;             /* static variable flag */
+    char label[64];            /* for goto/label */
     /* children */
     struct OccNode *children[8]; /* up to 8 children */
     int n_children;

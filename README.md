@@ -18,7 +18,9 @@ Then select which packages you need:
 
 | Package | What you get |
 |---------|-------------|
-| **CInterpreter** | C/C++/Fortran interpreters (compiles from source) |
+| **CInterpreter** | C89/C99/C23 tree-walking interpreter (~3,661 lines) |
+| **CppInterpreter** | C++ interpreter — classes, STL, templates, inheritance (~4,287 lines) |
+| **FortranInterpreter** | Fortran — modules, allocatable arrays, 45+ intrinsics (~3,876 lines) |
 | **NumPy** | NumPy 2.3.5 — arrays, linalg, FFT, random (native iOS) |
 | **SymPy** | SymPy 1.14 — symbolic math, calculus, solving |
 | **Plotly** | Plotly 6.6 — interactive charts, 3D plots |
