@@ -144,10 +144,17 @@ let package = Package(
         // PyTorch 2.1.2 — full `import torch` on iPad (tensors, autograd,
         // nn, optim, JIT). 95/95 numerical + training correctness asserts.
         // libtorch_python.dylib (99 MB) ships via Git LFS.
+        // typing_extensions.py: `torch.serialization`, `torch.optim`, onnx
+        // exporter, etc. all `from typing_extensions import ...` at module
+        // load — BeeWare's stdlib doesn't ship it so we bundle it alongside.
         .target(
             name: "PyTorch",
             path: "Sources/PyTorch",
-            resources: [.copy("torch"), .copy("regex")]
+            resources: [
+                .copy("torch"),
+                .copy("regex"),
+                .copy("typing_extensions.py"),
+            ]
         ),
 
         // tokenizers 0.19.1 — HuggingFace's Rust tokenizers, cross-compiled
