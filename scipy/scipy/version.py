@@ -1,5 +1,0 @@
-version = "1.15.0"
-full_version = version
-short_version = version.split('.dev')[0]
-git_revision = "none"
-release = True
