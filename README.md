@@ -1,6 +1,8 @@
 # python-ios-lib
 
-Full Python 3.14 runtime for iOS/iPadOS with **30+ offline libraries**. No JIT, App Store safe.
+Full Python 3.14 runtime for iOS/iPadOS with **30+ offline libraries including real PyTorch + HuggingFace transformers + Rust tokenizers**. No JIT, App Store safe.
+
+> **New:** Full `import torch` (v2.1), `import transformers` (v4.41), and `import tokenizers` (v0.19, real Rust cross-compile) all work on-device. Train and fine-tune transformer models on an iPad with zero network. [Full integration test: 24/24 passing.](docs/libs/transformers.md#test-coverage)
 
 ## Quick Start — Add via Xcode
 
@@ -114,10 +116,12 @@ PythonRequests → (standalone)
 
 ### Machine Learning
 
-| Library | Type | Description |
-|---------|------|-------------|
-| **PyTorch** | Native cross-compile (v2.1.2) | **Full `import torch`** — C++ JIT, autograd, nn, training, LAPACK via Accelerate. **57/57 acceptance tests pass.** First public native PyTorch on iOS. |
-| **scikit-learn** | Pure NumPy (40 modules) | Classification, regression, clustering, preprocessing, metrics |
+| Library | Version | Type | Description |
+|---------|---------|------|-------------|
+| **PyTorch** | 2.1.2 (patched) | Native iOS (arm64) | Full `import torch`: tensors, autograd, nn, optim, JIT, LAPACK via Accelerate. **95/95 correctness asserts.** First public native PyTorch on iOS. [Details →](docs/libs/pytorch.md) |
+| **transformers** | 4.41.2 | Pure Python | HuggingFace: BERT, GPT-2, T5, BART — train + `generate()` on-device. [Details →](docs/libs/transformers.md) |
+| **tokenizers** | 0.19.1 | Native iOS (Rust) | **First public iOS build.** Real BPE/WordPiece/Unigram trainers via PyO3. [Details →](docs/libs/tokenizers.md) |
+| **scikit-learn** | — | Pure NumPy (40 modules) | Classification, regression, clustering, preprocessing, metrics |
 
 ### Visualization
 
@@ -157,10 +161,19 @@ PythonRequests → (standalone)
 
 ## Detailed Docs
 
-- [**PyTorch**](docs/libs/pytorch.md) — native iOS build with full `import torch`
-- [NumPy](docs/libs/numpy.md) | [SciPy](docs/libs/scipy.md) | [scikit-learn](docs/libs/sklearn.md)
-- [matplotlib](docs/libs/matplotlib.md) | [SymPy](docs/libs/sympy.md) | [manim](docs/libs/manim.md)
-- [Media & Rendering](docs/libs/media.md) | [Interpreters](docs/libs/interpreters.md)
+### Machine Learning
+- [**PyTorch**](docs/libs/pytorch.md) — native iOS build with full `import torch` (95/95 asserts)
+- [**transformers**](docs/libs/transformers.md) — HuggingFace models, on-device train + generate
+- [**tokenizers**](docs/libs/tokenizers.md) — Rust BPE/WordPiece/Unigram trainers
+- [scikit-learn](docs/libs/sklearn.md) — 40 modules, common ML workflows
+
+### Scientific + Viz + Media
+- [NumPy](docs/libs/numpy.md) | [SciPy](docs/libs/scipy.md) | [SymPy](docs/libs/sympy.md)
+- [matplotlib](docs/libs/matplotlib.md) | [manim](docs/libs/manim.md)
+- [Media & Rendering](docs/libs/media.md) — PyAV, FFmpeg, Cairo, Pillow, LaTeX
+
+### Interpreters
+- [C / C++ / Fortran](docs/libs/interpreters.md) — 11,800 lines, full language support
 
 ## Requirements
 

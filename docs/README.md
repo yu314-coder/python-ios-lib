@@ -28,9 +28,12 @@ Full Python 3.14 runtime for iOS/iPadOS with 30+ offline libraries. Everything r
 
 ### Machine Learning
 
-| Library | Type | Description |
-|---------|------|-------------|
-| **scikit-learn** | Pure NumPy (12K+ lines, 40 modules) | Classification, regression, clustering, preprocessing, model selection, 38 metrics |
+| Library | Version | Type | Description |
+|---------|---------|------|-------------|
+| **PyTorch** | 2.1.0 (patched) | Native iOS (arm64) | Full `import torch` — tensors, autograd, nn, optim, JIT, FFT, distributions. 95/95 correctness asserts. Apple Accelerate for linalg |
+| **transformers** | 4.41.2 | Pure Python | HuggingFace models: BERT, GPT-2, T5, BART, etc. Construct from config, train, generate, save/load — all on-device |
+| **tokenizers** | 0.19.1 | Native iOS (Rust) | **First public iOS build.** Real Rust BPE/WordPiece/Unigram trainers. PyO3 bindings, full speed |
+| **scikit-learn** | — | Pure NumPy (12K+ lines, 40 modules) | Classification, regression, clustering, preprocessing, model selection, 38 metrics |
 
 ### Visualization
 
@@ -80,13 +83,23 @@ Full Python 3.14 runtime for iOS/iPadOS with 30+ offline libraries. Everything r
 
 ## Detailed Documentation
 
+### Machine Learning
+- [**PyTorch**](libs/pytorch.md) — Full `import torch` on iPad. 95/95 numerical + training asserts
+- [**transformers**](libs/transformers.md) — HuggingFace models: BERT, GPT-2, train + generate on-device
+- [**tokenizers**](libs/tokenizers.md) — First public iOS build of HuggingFace's Rust tokenizers
+- [scikit-learn](libs/sklearn.md) — 40 modules, 85%+ of common ML workflows
+
+### Scientific
 - [NumPy](libs/numpy.md) — Arrays, linear algebra, FFT, random
 - [SciPy](libs/scipy.md) — 13 submodules: optimize, integrate, signal, stats, ...
-- [scikit-learn](libs/sklearn.md) — 40 modules, 85%+ of common ML workflows
-- [matplotlib](libs/matplotlib.md) — 64 modules, Plotly backend
 - [SymPy](libs/sympy.md) — Computer algebra system
+
+### Visualization & Media
+- [matplotlib](libs/matplotlib.md) — 64 modules, Plotly backend
 - [**manim**](libs/manim.md) — 145+ mobjects, 73 animations, full rendering pipeline
 - [**Media & Rendering**](libs/media.md) — PyAV, FFmpeg (7 libs), Cairo, Pillow, ManimPango, LaTeX
+
+### Interpreters
 - [C/C++/Fortran Interpreters](libs/interpreters.md) — 11,800 lines, full language support
 
 ---
@@ -101,15 +114,23 @@ Full Python 3.14 runtime for iOS/iPadOS with 30+ offline libraries. Everything r
 │  (code)  │ (browse) │  (ref)   │  (LLM assist)  │
 ├──────────┴──────────┴──────────┴────────────────┤
 │              Python 3.14 Runtime                 │
+│  ┌─────────┬───────────┬─────────────┐          │
+│  │ PyTorch │transformers│ tokenizers  │  ← ML    │
+│  │ 2.1 iOS │   4.41     │ 0.19 (Rust) │          │
+│  └─────────┴───────────┴─────────────┘          │
 │  ┌────────┬────────┬────────┬────────┐          │
 │  │ NumPy  │ SciPy  │ manim  │sklearn │   ...    │
 │  └────────┴────────┴────────┴────────┘          │
 ├─────────────────────────────────────────────────┤
 │  Native Frameworks (arm64)                       │
-│  ┌────────┬────────┬────────┬────────┐          │
-│  │ FFmpeg │ Cairo  │Pillow  │pdftex  │          │
-│  │(7 libs)│        │        │        │          │
-│  └────────┴────────┴────────┴────────┘          │
+│  ┌──────────┬────────┬────────┬────────┐        │
+│  │ libtorch │ FFmpeg │ Cairo  │pdftex  │        │
+│  │ (185 MB) │(7 libs)│        │        │        │
+│  └──────────┴────────┴────────┴────────┘        │
+│  ┌─────────────────────┬──────────────┐         │
+│  │ Apple Accelerate    │ Pillow       │         │
+│  │ (BLAS/LAPACK/FFT)   │              │         │
+│  └─────────────────────┴──────────────┘         │
 ├──────────┬──────────┬───────────────────────────┤
 │ C interp │ C++ int  │ Fortran interpreter       │
 │ (Swift)  │ (Swift)  │ (Swift)                   │

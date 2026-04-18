@@ -1,8 +1,10 @@
 # PyTorch
 
-**Native cross-compile + 18 patches** | v2.1.2 | **57/57 acceptance tests pass on iPad**
+**Native cross-compile + 18 patches** | v2.1.2 | **95/95 deep asserts + 24/24 full-integration (with transformers + tokenizers)**
 
 > Full `import torch` — C++ JIT, autograd, nn, LAPACK, end-to-end training, `torch.save` — running in-process on iPad. As far as I know, the **first public native-PyTorch build on iOS** that exposes the complete `import torch` Python API on device.
+>
+> See [transformers.md](transformers.md) + [tokenizers.md](tokenizers.md) for the HuggingFace stack on top.
 
 ---
 
