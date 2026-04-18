@@ -39,6 +39,7 @@ Then select which packages you need:
 
 | Package | What you get | Auto-includes |
 |---------|-------------|---------------|
+| **PyTorch** | [Native PyTorch 2.1.2](docs/libs/pytorch.md) — full `import torch` (JIT, LAPACK, autograd, nn, training). **57/57 tests pass on iPad.** 98 MB dylib. | + NumPy |
 | **Sklearn** | scikit-learn (40 modules, 12K+ lines) | + NumPy |
 | **SciPy** | SciPy (optimize, integrate, signal, stats) | + NumPy |
 | **Matplotlib** | matplotlib (64 modules, Plotly backend) | + Plotly |
@@ -115,6 +116,7 @@ PythonRequests → (standalone)
 
 | Library | Type | Description |
 |---------|------|-------------|
+| **PyTorch** | Native cross-compile (v2.1.2) | **Full `import torch`** — C++ JIT, autograd, nn, training, LAPACK via Accelerate. **57/57 acceptance tests pass.** First public native PyTorch on iOS. |
 | **scikit-learn** | Pure NumPy (40 modules) | Classification, regression, clustering, preprocessing, metrics |
 
 ### Visualization
@@ -155,6 +157,7 @@ PythonRequests → (standalone)
 
 ## Detailed Docs
 
+- [**PyTorch**](docs/libs/pytorch.md) — native iOS build with full `import torch`
 - [NumPy](docs/libs/numpy.md) | [SciPy](docs/libs/scipy.md) | [scikit-learn](docs/libs/sklearn.md)
 - [matplotlib](docs/libs/matplotlib.md) | [SymPy](docs/libs/sympy.md) | [manim](docs/libs/manim.md)
 - [Media & Rendering](docs/libs/media.md) | [Interpreters](docs/libs/interpreters.md)
