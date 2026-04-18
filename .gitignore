@@ -48,19 +48,9 @@ dist/
 .env
 .venv/
 
-# torch_ios build artifacts (1.7 GB of CMake + object files + huge static libs)
-torch_ios/build/
-
-# tokenizers_ios cloned upstream + Rust target dir (250 MB; users clone fresh)
-tokenizers_ios/tokenizers/
-
-# torch_ios build scratch — intermediate .o / .a files (not needed at runtime)
+# Build artifacts not shipped (we removed torch_ios/ + tokenizers_ios/;
+# rebuild from upstream pytorch@v2.1.2 + tokenizers@v0.19.1 if you need to)
 app_packages/site-packages/torch/lib/*.a
 
-# Runtime binaries ARE shipped so `import torch` works immediately after
-# cloning. libtorch_python.dylib is 99 MB — uses Git LFS (see .gitattributes).
-# Users building from source locally can overwrite via torch_ios/scripts/install_to_app.sh.
-
-# .venv_hf/ used by install_to_app.sh as source for HF deps
-torch_ios/.venv_hf/
+# venvs
 .venv_hf/

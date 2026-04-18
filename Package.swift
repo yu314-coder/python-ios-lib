@@ -42,6 +42,11 @@ let package = Package(
         // ── Requires multiple deps ──
         .library(name: "Manim", targets: ["Manim"]),
         .library(name: "LaTeXEngine", targets: ["LaTeXEngine"]),
+
+        // ── Machine Learning: PyTorch + HuggingFace stack ──
+        .library(name: "PyTorch", targets: ["PyTorch"]),
+        .library(name: "Tokenizers", targets: ["Tokenizers"]),
+        .library(name: "Transformers", targets: ["Transformers"]),
     ],
     targets: [
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -130,5 +135,42 @@ let package = Package(
 
         // LaTeX engine — pdftex + texmf. Needs: Cairo
         .target(name: "LaTeXEngine", dependencies: ["CairoGraphics"], path: "Sources/LaTeXEngine", resources: [.copy("latex")]),
+
+        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        //  MACHINE LEARNING — PyTorch + HuggingFace stack
+        //  (native iOS arm64 — first public build of each on iOS)
+        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+        // PyTorch 2.1.2 — full `import torch` on iPad (tensors, autograd,
+        // nn, optim, JIT). 95/95 numerical + training correctness asserts.
+        // libtorch_python.dylib (99 MB) ships via Git LFS.
+        .target(
+            name: "PyTorch",
+            path: "Sources/PyTorch",
+            resources: [.copy("torch"), .copy("regex")]
+        ),
+
+        // tokenizers 0.19.1 — HuggingFace's Rust tokenizers, cross-compiled
+        // for iOS arm64 (first public iOS build). BPE/WordPiece/Unigram
+        // trainers + fast tokenizers via PyO3.
+        .target(
+            name: "Tokenizers",
+            path: "Sources/Tokenizers",
+            resources: [.copy("tokenizers")]
+        ),
+
+        // transformers 4.41.2 — HuggingFace models (BERT, GPT-2, T5, BART).
+        // Construct + train + generate + save/load on-device. Needs: PyTorch + Tokenizers.
+        .target(
+            name: "Transformers",
+            dependencies: ["PyTorch", "Tokenizers"],
+            path: "Sources/Transformers",
+            resources: [
+                .copy("transformers"),
+                .copy("huggingface_hub"),
+                .copy("filelock"),
+                .copy("safetensors"),
+            ]
+        ),
     ]
 )

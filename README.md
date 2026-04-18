@@ -41,12 +41,23 @@ Then select which packages you need:
 
 | Package | What you get | Auto-includes |
 |---------|-------------|---------------|
-| **PyTorch** | [Native PyTorch 2.1.2](docs/libs/pytorch.md) — full `import torch` (JIT, LAPACK, autograd, nn, training). **57/57 tests pass on iPad.** 98 MB dylib. | + NumPy |
 | **Sklearn** | scikit-learn (40 modules, 12K+ lines) | + NumPy |
 | **SciPy** | SciPy (optimize, integrate, signal, stats) | + NumPy |
 | **Matplotlib** | matplotlib (64 modules, Plotly backend) | + Plotly |
 | **Manim** | manim (145+ mobjects, 73 animations) | + NumPy, Matplotlib, FFmpegPyAV, CairoGraphics |
 | **LaTeXEngine** | pdftex + kpathsea + texmf fonts | + CairoGraphics |
+
+### Machine Learning stack (PyTorch + HuggingFace)
+
+First public iOS builds of each. Once added, `import torch`, `import transformers`, `import tokenizers` all work on-device with no extra setup.
+
+| Package | What you get | Auto-includes |
+|---------|-------------|---------------|
+| **PyTorch** | [PyTorch 2.1.2](docs/libs/pytorch.md) native iOS — tensors, autograd, nn, optim, JIT, FFT, LAPACK via Accelerate. **95/95 correctness asserts.** Ships `libtorch_python.dylib` (99 MB) via Git LFS. | regex shim |
+| **Tokenizers** | [HuggingFace tokenizers 0.19.1](docs/libs/tokenizers.md) — real Rust BPE/WordPiece/Unigram trainers cross-compiled for iOS arm64 (PyO3). First public iOS build. | (none) |
+| **Transformers** | [HuggingFace transformers 4.41.2](docs/libs/transformers.md) — BERT, GPT-2, T5, BART. Construct + train + `.generate()` + save/load on-device. | + PyTorch, Tokenizers, `huggingface_hub`, `filelock`, `safetensors` |
+
+> **Requires Git LFS** — install `brew install git-lfs && git lfs install` before cloning so the 99 MB PyTorch binary pulls correctly. Without it, `libtorch_python.dylib` arrives as a 134-byte LFS pointer stub and `import torch` crashes at load.
 
 ### After adding the package
 
@@ -99,6 +110,12 @@ PythonScipy → numpy (iOS wheel)
 PythonMatplotlib → plotly (pure Python)
 CInterpreter → (standalone)
 PythonRequests → (standalone)
+
+Transformers
+  ├── PyTorch (99 MB dylib via Git LFS)
+  │     └── regex (shim)
+  └── Tokenizers (5 MB Rust .so)
+Transformers also bundles huggingface_hub, filelock, safetensors
 ```
 
 ---
