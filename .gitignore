@@ -81,3 +81,7 @@ pillow_ios/pillow-*/
 # keep build script as reference for future attempts)
 pandas_ios/pandas-*/
 pandas_ios/pandas-*.tar.gz
+
+# psutil cross-compile scratch (keep build script + shim_include, skip source tree)
+psutil_ios/psutil-*/
+psutil_ios/psutil-*.tar.gz
