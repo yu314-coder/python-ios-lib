@@ -36,6 +36,21 @@ export PYTHONDONTWRITEBYTECODE=1
 cd "$PSUTIL_SRC"
 rm -rf build
 python3 setup.py build_ext --inplace 2>&1 | tee /tmp/psutil_build.log | tail -30
+
+# Strip debug symbols so the shipped .so files don't carry N_OSO entries
+# pointing to build-tree .o files (lldb on-device would otherwise print
+# "debug map object file … changed" warnings every time the module loads).
+echo ""
+echo "=== stripping debug info ==="
+STRIP=$(xcrun --sdk iphoneos --find strip)
+for so in "$PSUTIL_SRC"/psutil/*.so; do
+    [ -f "$so" ] || continue
+    before=$(stat -f%z "$so")
+    "$STRIP" -S -x "$so"
+    after=$(stat -f%z "$so")
+    echo "  $(basename "$so"): $before → $after bytes"
+done
+
 echo ""
 echo "=== .so files ==="
 find psutil -name "*.so" | head

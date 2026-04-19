@@ -63,6 +63,20 @@ echo ""
 echo "=== ld errors ==="
 grep -E "^ld:|error:|undefined" /tmp/pillow_build.log | head -30 || true
 
+# Strip debug symbols so the shipped .so files don't carry N_OSO entries
+# pointing to build-tree .o files (lldb on-device prints noisy "debug map
+# object file … changed" warnings otherwise, and it bloats the binary).
+echo ""
+echo "=== stripping debug info ==="
+STRIP=$(xcrun --sdk iphoneos --find strip)
+for so in "$PILLOW_SRC"/src/PIL/*.so; do
+    [ -f "$so" ] || continue
+    before=$(stat -f%z "$so")
+    "$STRIP" -S -x "$so"
+    after=$(stat -f%z "$so")
+    echo "  $(basename "$so"): $before → $after bytes"
+done
+
 echo ""
 echo "=== compiled .so files ==="
 find . -name "*.so" -maxdepth 3 2>/dev/null
