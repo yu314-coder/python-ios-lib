@@ -325,31 +325,121 @@ Text string → Font selection → Cairo text_path() → SVG vector outlines →
 
 ## offlinai_latex — Local LaTeX Engine
 
-**pdftex C library** | texmf bundle (9 MB, 302 files)
+**pdftex C library** | **texmf bundle: 33 MB, ~2,000 files** | Zero network
 
-### Pipeline
+### Two rendering paths
+
+Different consumers need different LaTeX semantics, so the engine has two code paths:
+
+1. **`tex_to_svg(expression, svg_path)`** — math formula only, for manim `MathTex` /
+   editor preview. Routes through **SwiftMath** via a signal file in
+   `$TMPDIR/latex_signals/compile_request.txt`. Swift parses the LaTeX with
+   SwiftMath, lays it out with Latin Modern Math glyphs, extracts CoreText
+   paths, writes an SVG with real `<path>` elements. Unlimited calls per
+   session (SwiftMath is pure Swift, in-process, reentrant).
+
+2. **`compile_tex(tex_source, output_dir, engine)`** — full document, for the
+   shell `pdflatex` / `latex` / `tex` / `xelatex` builtins. Invokes the
+   bundled pdftex C library (`dllpdftexmain` via ctypes on a dedicated
+   `threading.Thread` — mirrors a-Shell's pthread isolation). **Limited to
+   one successful compile per app session** (pdftex's file-scope C globals
+   are not reentrancy-safe).
+
+### Shell builtins
+
 ```
-LaTeX expression
-  → pdftex (C library via ctypes, dllpdftexmain)
-    → PDF output
-      → Core Graphics render (4x resolution)
-        → PNG bitmap
-          → SVG with embedded image
-            → manim SVGMobject
+pdflatex foo.tex   →  foo.pdf  (PDF output, default for docs)
+latex    foo.tex   →  foo.dvi  (DVI output, traditional pipeline)
+tex      foo.tex   →  foo.dvi  (plain TeX, no LaTeX kernel)
+pdftex   foo.tex   →  foo.pdf  (plain TeX, PDF output)
+xelatex  foo.tex   →  foo.pdf  (falls back to pdflatex — XeTeX not bundled)
+latex-diagnose     →  prints bundle status + prerequisite checklist
 ```
 
-### API
+### Ini-mode wrapper technique
+
+The bundled pdftex is v1.40.20 but latex.ltx is from TeX Live 2024, so a
+pre-built `.fmt` file would be version-incompatible. Instead each compile
+runs in ini mode against a tiny wrapper that neutralises `\dump` so
+processing continues into the user's document in a single pdftex call:
+
+```latex
+\let\dump\relax              % don't terminate after loading the kernel
+\pdfoutput=1                 % PDF (vs DVI)
+\input latex.ltx\relax       % load the LaTeX kernel from source (~5-10 s)
+\nonstopmode                 % kernel sets errorstopmode at end — reset
+\RequirePackage{lmodern}     % avoid cm-super (not bundled); Latin Modern
+                             %   has full TS1/T1 coverage in Type 1
+\input {foo.tex}
+\end
+```
+
+The wrapper + `texsys.aux` scratch files are cleaned up after compile so
+only `foo.pdf` / `foo.aux` / `foo.log` remain next to the input.
+
+### Bundle contents
+
+| Section | What's included |
+|---------|-----------------|
+| **LaTeX kernel** | `latex.ltx` (2024-11-01), `hyphen.ltx` + US-English patterns, `expl3.ltx` + `expl3-code.tex` + `expl3.lua`, `firstaid/latex2e-first-aid-for-external-files.ltx` |
+| **Classes** | `article`, `book`, `report`, `letter`, AMS classes |
+| **Math** | `amsmath`, `amssymb`, `amsfonts`, `amsthm`, `mathtools` (+ `mhsetup`), `eucal`, `eufrak`, `latexsym` |
+| **Tables** | `array`, `tabular`, `booktabs`, `float`, `tabularx` |
+| **Lists** | `enumitem`, `enumerate` |
+| **Graphics** | `graphicx`, `xcolor`, `graphics` with `pdftex.def`, `epstopdf-base` |
+| **Layout** | `geometry`, `caption`, `subcaption`, `fleqn`, `leqno`, `fancyhdr` |
+| **Refs / links** | `hyperref` full, `cleveref`, `url`, `nameref`, `refcount` |
+| **Listings** | `listings`, `microtype` |
+| **Plumbing** | `etoolbox`, `kvoptions`, `kvsetkeys`, `ltxcmds`, `iftex`, `atbegshi`, `atveryend`, `rerunfilecheck`, `pdftexcmds`, `infwarerr`, `kvdefinekeys`, `intcalc`, `pdfescape`, `bitset`, `bigintcalc`, `gettitlestring`, `hycolor`, `letltxmacro`, `auxhook`, `etexcmds`, `uniquecounter`, `stringenc` |
+| **Base** | `inputenc`, `fontenc`, `textcomp`, `ifthen`, `makeidx`, `l3kernel`, `l3backend` (dvipdfmx / dvips / dvisvgm / luatex / pdftex / xetex) |
+| **Unicode data** | `UnicodeData.txt`, `CaseFolding.txt`, `GraphemeBreakProperty.txt`, etc. |
+| **Fonts — Type 1** | Computer Modern (full set), Latin Modern (92 .pfb files, the default), AMS extras |
+| **Fonts — TFM** | 596 Latin Modern + 75 CM + 41 CM font-definition (`.fd`) files |
+| **Font map** | `pdftex.map` (1,165 entries) for PDF font embedding |
+
+### Not bundled
+
+- `tikz` / `pgf` (would add ~60 MB), `beamer` (needs tikz), `babel`
+  (non-English hyphenation), `fontspec` / real `xelatex`, `biblatex` + `biber`
+  (biber needs subprocess — blocked on iOS), `cm-super` (superseded by lmodern)
+
+If your doc needs one of these, `pdflatex` will print the missing `.sty` name
+and a hint that it's not in the bundle.
+
+### Diagnostic on failure
+
+When `pdflatex` fails, the shell builtin prints:
+- The first `! TeX error` verbatim from the log (plus ~5 lines of context)
+- Every missing `.sty` / `.cls` / `.def` / `.fd` / `.tex` / `.cfg`
+- A hint if the error is "Undefined control sequence ... \pdf*" (= the
+  bundled pdftex 1.40.20 is missing a primitive added in a later version)
+
+Run `latex-diagnose` any time to see which critical files are present,
+how many `.sty` / `.def` / `.cls` / `.tfm` / `.pfb` files are bundled, and
+whether a compile slot is still available this session.
+
+### Reentrancy & session limit
+
+`dllpdftexmain` has known unresolved issue
+[holzschu/lib-tex#1](https://github.com/holzschu/lib-tex/issues/1):
+calling it a second time in the same process corrupts the heap. The
+compile_tex function sets a module-level flag on first use and
+short-circuits any further calls with a clear "restart the app to
+compile again" message. Each Python thread gets its own pthread, which
+is what a-Shell's ios_system wrapper relies on — so the compile itself
+runs on a dedicated thread for TLS/stack isolation.
+
+### Python API
 
 | Function | Description |
 |----------|-------------|
-| `tex_to_svg(expression, svg_path)` | Full pipeline: LaTeX → SVG |
-| `compile_tex(tex_source, output_dir)` | Compile .tex to DVI/PDF |
+| `tex_to_svg(expression, svg_path=None)` | Render a math expression via SwiftMath (unlimited calls) |
+| `compile_tex(tex_source, output_dir=None, engine="pdflatex")` | Compile a full document via pdftex (one call per session); engine is one of `"pdflatex"`, `"latex"`, `"tex"`, `"pdftex"`, `"xelatex"` |
+| `_render_with_cairo(expression, svg_path)` | Last-resort fallback: LaTeX → Unicode → Cairo `text_path()` → SVG paths |
 
-### TeX Packages Included
+### Fallback chain for `tex_to_svg`
 
-`article.cls`, `amsmath.sty`, `amssymb.sty`, `amsfonts.sty`, Computer Modern fonts (TFM + Type1), LaTeX3 kernel
-
-### Fallback Chain
-1. **pdftex** (real LaTeX typesetting) → PDF → SVG
-2. **Cairo text_path** (LaTeX → Unicode conversion → vector text)
-3. **Plain SVG text** (minimal `<text>` element)
+1. **SwiftMath** (vector math with Latin Modern Math fonts) — default
+2. **Cairo text_path** (LaTeX → Unicode → vector glyphs, sans-serif) — when
+   SwiftMath's signal watcher isn't running or times out
+3. **Plain SVG `<text>`** — minimal placeholder if even Cairo fails

@@ -4,6 +4,8 @@
 
 A self-contained C++17 interpreter that extends the C interpreter with classes, templates, namespaces, STL containers, RAII, and modern C++ features. Lexes, parses, and interprets C++ code at runtime. No JIT, no code generation, no external compiler needed.
 
+Edits `.cpp` / `.cc` / `.cxx` / `.hpp` / `.h` files in the shared Monaco-powered editor with C++-mode syntax highlighting and auto-save (debounced ~600 ms; also flushed on run, tab switch, view disappear, and app backgrounding).
+
 ---
 
 ## Quick Start

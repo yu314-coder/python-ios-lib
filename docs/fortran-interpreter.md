@@ -4,6 +4,8 @@
 
 A self-contained Fortran interpreter that lexes, parses, and executes Fortran code at runtime. Supports free-form source, modules, allocatable arrays up to 7 dimensions, 45+ intrinsic functions, and formatted I/O. Case-insensitive as per the Fortran standard. No JIT, no compilation, no external tools needed.
 
+Edits `.f90` / `.f95` / `.f03` / `.f` / `.for` files in the shared Monaco-powered editor with Fortran syntax highlighting and auto-save (debounced ~600 ms; also flushed on run, tab switch, view disappear, and app backgrounding).
+
 ---
 
 ## Quick Start

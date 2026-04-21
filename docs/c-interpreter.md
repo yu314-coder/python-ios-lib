@@ -6,6 +6,8 @@ A self-contained C interpreter with virtual memory, real pointer arithmetic, str
 
 Supports C89, C99, and select C23 features.
 
+Edits `.c` / `.h` files in the shared Monaco-powered editor with C-mode syntax highlighting and auto-save — changes persist on every keystroke (~600 ms debounce) plus on run, tab switch, view disappear, and app backgrounding.
+
 ---
 
 ## Quick Start

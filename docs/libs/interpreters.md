@@ -4,6 +4,15 @@
 
 > Write and run C, C++, and Fortran code directly on iPad. No compilation step — code is parsed and interpreted in real-time.
 
+### Editor integration
+
+All three languages are editable in the same Monaco-powered code editor (WKWebView-hosted) used for Python. Features that carry over from the Python editing experience:
+
+- Monaco syntax highlighting for `c`, `cpp`, `fortran` modes (auto-picked from the file extension — `.c` / `.cpp` / `.cxx` / `.h` / `.hpp` / `.f90` / `.f95` / `.for` etc.)
+- Debounced auto-save (~600 ms after the last keystroke) so edits persist across app launches without a manual save step
+- Synchronous flush on run, tab switch, view disappear, and app background — "Run" always saves first
+- Tombstone-aware file browser: deleting a `.c` / `.cpp` / `.f90` that was auto-generated as a starter script keeps it deleted across relaunches
+
 ---
 
 ## C Interpreter

@@ -4,6 +4,14 @@ Full Python 3.14 runtime for iOS/iPadOS with **30+ offline libraries including r
 
 > **New:** Full `import torch` (v2.1), `import transformers` (v4.41), and `import tokenizers` (v0.19, real Rust cross-compile) all work on-device. Train and fine-tune transformer models on an iPad with zero network. [Full integration test: 24/24 passing.](docs/libs/transformers.md#test-coverage)
 
+### Recent app-side changes
+
+- **Monaco code editor with IntelliSense** running in a WKWebView — Python keyword snippets, signature help (~70-entry SIG_DB), hover docs, and resolve-from-Python for numpy / scipy / sklearn / matplotlib / sympy completions. See `OfflinAi/MonacoEditorView.swift`.
+- **Auto-save**: edits persist to disk on every keystroke (debounced ~600 ms) plus on run, tab-switch, view-disappear, and app-backgrounding. Fixes the "edit `a.tex`, reopen, 0 B" bug.
+- **Tombstone system** — files deleted via the file browser trash icon, `rm` / `rmdir` in the shell, or ncdu's `d` key are recorded in `<Workspace>/.offlinai_deleted` so the starter-script seeder (`pip_demo.py`, `torch_test_all.py`, etc.) no longer re-creates them on next launch.
+- **LaTeX bundle expanded** — 33 MB texmf tree now ships with full Latin Modern Type 1 fonts, expl3 code (1.3 MB), firstaid, graphics-def, hyphenation, stringenc, unicode-data, and pdftex.map. Math-mode rendering via SwiftMath is unlimited and reliable; the native `pdflatex` builtin is gated off pending replacement of the 2019-era `pdftex.xcframework` (see [Media docs](docs/libs/media.md#offlinai_latex--local-latex-engine)).
+- **Shell builtins**: `pdflatex` / `latex` / `tex` / `pdftex` / `xelatex` / `latex-diagnose`, `ncdu` with raw arrow-key navigation and real-ncdu styling, `top` with Apple-chip detection, `git clone` via zipball fetch, and universal `--help` / `-h` interception.
+
 ## Quick Start — Add via Xcode
 
 In Xcode: **File → Add Package Dependencies** → paste:
@@ -47,7 +55,7 @@ Then select which packages you need:
 | **SciPy** | SciPy (optimize, integrate, signal, stats) | + NumPy |
 | **Matplotlib** | matplotlib (64 modules, Plotly backend) | + Plotly |
 | **Manim** | manim (145+ mobjects, 73 animations) | + NumPy, Matplotlib, FFmpegPyAV, CairoGraphics |
-| **LaTeXEngine** | pdftex + kpathsea + texmf fonts | + CairoGraphics |
+| **LaTeXEngine** | SwiftMath-based math renderer + 33 MB bundled texmf tree (134 .sty, 596 tfm, 92 Latin Modern pfb, LaTeX3 kernel). Full-document `pdflatex` via bundled lib-tex is currently gated off (crashes) — math-mode rendering is unaffected. | + CairoGraphics |
 
 ### Machine Learning stack (PyTorch + HuggingFace)
 
@@ -157,7 +165,7 @@ Transformers also bundles huggingface_hub, filelock, safetensors
 | **PyAV + FFmpeg** | Video encoding (H.264 hardware), 7 native dylibs |
 | **Cairo + Pango** | 2D vector graphics, text rendering |
 | **Pillow** | Image processing |
-| **offlinai_latex** | Local LaTeX via pdftex |
+| **offlinai_latex** | Math-mode LaTeX via SwiftMath (unlimited calls). Full-document `pdflatex` gated off — the bundled `pdftex.xcframework` v1.40.20 crashes on modern latex.ltx; see [Media docs](docs/libs/media.md#offlinai_latex--local-latex-engine) for the SwiftLaTeX-WASM migration path |
 
 ### Data & Web
 
