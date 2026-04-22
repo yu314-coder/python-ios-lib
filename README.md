@@ -6,7 +6,7 @@ Full Python 3.14 runtime for iOS/iPadOS with **30+ offline libraries including r
 
 ### Recent app-side changes
 
-- **Monaco code editor with IntelliSense** running in a WKWebView — Python keyword snippets, signature help (~70-entry SIG_DB), hover docs, and resolve-from-Python for numpy / scipy / sklearn / matplotlib / sympy completions. See `OfflinAi/MonacoEditorView.swift`.
+- **Monaco code editor with IntelliSense** running in a WKWebView — Python keyword snippets, signature help (~70-entry SIG_DB), hover docs, and resolve-from-Python for numpy / scipy / sklearn / matplotlib / sympy completions. See `CodeBench/MonacoEditorView.swift`.
 - **Auto-save**: edits persist to disk on every keystroke (debounced ~600 ms) plus on run, tab-switch, view-disappear, and app-backgrounding. Fixes the "edit `a.tex`, reopen, 0 B" bug.
 - **Tombstone system** — files deleted via the file browser trash icon, `rm` / `rmdir` in the shell, or ncdu's `d` key are recorded in `<Workspace>/.offlinai_deleted` so the starter-script seeder (`pip_demo.py`, `torch_test_all.py`, etc.) no longer re-creates them on next launch.
 - **LaTeX bundle expanded** — 33 MB texmf tree now ships with full Latin Modern Type 1 fonts, expl3 code (1.3 MB), firstaid, graphics-def, hyphenation, stringenc, unicode-data, and pdftex.map. Math-mode rendering via SwiftMath is unlimited and reliable; the native `pdflatex` builtin is gated off pending replacement of the 2019-era `pdftex.xcframework` (see [Media docs](docs/libs/media.md#offlinai_latex--local-latex-engine)).

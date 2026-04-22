@@ -246,7 +246,7 @@ To get `import torch` working in a Python-on-iOS app you need all of:
 
 ## Patches
 
-Lives at [torch_ios/](https://github.com/yu314-coder/OfflinAi/tree/main/torch_ios) in the OfflinAi repo. **18 patches** (`patches/0001-0018`) cover:
+Lives at [torch_ios/](https://github.com/yu314-coder/CodeBench/tree/main/torch_ios) in the CodeBench repo. **18 patches** (`patches/0001-0018`) cover:
 
 - Honor `FORCE_BUILD_PYTHON` under INTERN_BUILD_MOBILE (0001)
 - Stub dynamo CPython internals (0002)
@@ -259,10 +259,10 @@ Lives at [torch_ios/](https://github.com/yu314-coder/OfflinAi/tree/main/torch_io
 - Force regular Type system over DynamicType (0017)
 - Python-side compat: `_MissingOverload` placeholder, profiler graceful-degrade, Union `__module__` try/except, `_IterationGuard` polyfill, torchgen shipping (0018)
 
-See [`BUILD_NOTES.md`](https://github.com/yu314-coder/OfflinAi/blob/main/torch_ios/BUILD_NOTES.md) for the full wedge archaeology.
+See [`BUILD_NOTES.md`](https://github.com/yu314-coder/CodeBench/blob/main/torch_ios/BUILD_NOTES.md) for the full wedge archaeology.
 
 ## Alternative: ExecuTorch
 
-If all you want is **inference** (not training, not dynamic graph construction, not arbitrary Python), use [ExecuTorch](https://pytorch.org/executorch/) instead. Precompile your model to `.pte` on desktop, ship 5 MB of ExecuTorch runtime, call it from Swift or the [offlinai_torch](https://github.com/yu314-coder/OfflinAi/tree/main/app_packages/site-packages/offlinai_torch) Python bridge.
+If all you want is **inference** (not training, not dynamic graph construction, not arbitrary Python), use [ExecuTorch](https://pytorch.org/executorch/) instead. Precompile your model to `.pte` on desktop, ship 5 MB of ExecuTorch runtime, call it from Swift or the [offlinai_torch](https://github.com/yu314-coder/CodeBench/tree/main/app_packages/site-packages/offlinai_torch) Python bridge.
 
 ExecuTorch covers ~95% of "I need torch on iPad" use cases. This native build exists for the other 5% — research workflows, on-device fine-tuning, dynamic-graph user code.

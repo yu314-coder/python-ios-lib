@@ -12,7 +12,7 @@ YAML parser and emitter for Python.
 import yaml
 
 data = yaml.safe_load("""
-name: OfflinAi
+name: CodeBench
 version: 1.0
 features:
   - local LLM
@@ -22,7 +22,7 @@ settings:
   temperature: 0.7
   max_tokens: 2048
 """)
-print(data['name'])           # OfflinAi
+print(data['name'])           # CodeBench
 print(data['features'][0])    # local LLM
 ```
 

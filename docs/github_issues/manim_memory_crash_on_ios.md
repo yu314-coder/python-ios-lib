@@ -1,6 +1,6 @@
 # Manim scenes crash on iOS when they exceed the ~8 GB jetsam memory limit
 
-**Target repo**: `python-ios-lib` (the one hosting the iOS-specific patches to manim / cairo / pango / sklearn used by OfflinAi)
+**Target repo**: `python-ios-lib` (the one hosting the iOS-specific patches to manim / cairo / pango / sklearn used by CodeBench)
 **Component**: `manim` (bundled at 0.19.x in the iOS app_packages)
 **iOS build target**: iPad / iPhone, arm64, sandboxed App Store distribution
 **Memory ceiling**: hard jetsam limit of ≈ 50% of device RAM (≈ 8 GB on a 16 GB iPad Pro) for apps **without** the `com.apple.developer.kernel.increased-memory-limit` entitlement — which isn't available to free/personal Apple Developer accounts.
@@ -49,7 +49,7 @@ class LongTSNEStyle(ThreeDScene):
 Tracked upstream in [ManimCommunity/manim#4327](https://github.com/ManimCommunity/manim/issues/4327).
 `manim/mobject/svg/svg_mobject.py:29` declares a module-level `SVG_HASH_TO_MOB_MAP: dict[int, SVGMobject]` that stores a **deep copy** of every parsed SVGMobject / MathTex / Text forever. Each cached MathTex holds every glyph's full bezier point array. On iOS, 20 unique equations = hundreds of MB permanently locked into this dict.
 
-**Fix applied in OfflinAi's bundled manim**:
+**Fix applied in CodeBench's bundled manim**:
 - Force `use_svg_cache=False` on iOS in `SVGMobject.init_svg_mobject`
 - Clear `SVG_HASH_TO_MOB_MAP` between animations in `SceneFileWriter.close_partial_movie_stream`
 
@@ -91,7 +91,7 @@ The scene method itself is often a 300–500 line function that binds `all_image
 
 ### 8. `text2svg` shape mismatch (pango stub)
 
-OfflinAi's pango stub (for the iOS pycairo fallback path) originally emitted a single giant `<path>` containing all glyphs as bezier data. manim's `VMobjectFromSVGPath` then created one enormous VMobject per `Text(...)`. Desktop Pango produces `<defs>` + `<use>` (each glyph defined once, referenced N times → N small VMobjects), which is much friendlier to both parse-time memory and per-frame interpolation cost.
+CodeBench's pango stub (for the iOS pycairo fallback path) originally emitted a single giant `<path>` containing all glyphs as bezier data. manim's `VMobjectFromSVGPath` then created one enormous VMobject per `Text(...)`. Desktop Pango produces `<defs>` + `<use>` (each glyph defined once, referenced N times → N small VMobjects), which is much friendlier to both parse-time memory and per-frame interpolation cost.
 
 **Fix applied**: Rewrote the stub `text2svg` to emit `<defs>` + `<use>` matching real Pango's structure.
 
@@ -107,7 +107,7 @@ Scenes that genuinely create > ~5000 simultaneous VMobjects (e.g., pixel-accurat
 1. Split large scene methods into smaller helper methods so Python can reclaim locals between them.
 2. Avoid `add_fixed_in_frame_mobjects(*big_vgroup)` — it adds every submobject to the camera's set recursively.
 3. Call `self.clear()` between logical scene sections.
-4. Render at 720p instead of 1080p (the iOS defaults in OfflinAi's bundled manim are already `pixel_width=1280, pixel_height=720, frame_rate=30`).
+4. Render at 720p instead of 1080p (the iOS defaults in CodeBench's bundled manim are already `pixel_width=1280, pixel_height=720, frame_rate=30`).
 5. For distribution: join the paid Apple Developer Program and enable `com.apple.developer.kernel.increased-memory-limit` + `com.apple.developer.kernel.extended-virtual-addressing` in the app's `.entitlements` — this roughly doubles the jetsam ceiling.
 
 ## References
@@ -115,4 +115,4 @@ Scenes that genuinely create > ~5000 simultaneous VMobjects (e.g., pixel-accurat
 - ManimCommunity/manim#4327 — SVGMobject/MathTex caching issues
 - ManimCommunity/manim#3743 — unbounded memory allocation in scene.play
 - Apple docs: [Increased Memory Limit entitlement](https://developer.apple.com/documentation/bundleresources/entitlements/com.apple.developer.kernel.increased-memory-limit)
-- OfflinAi's iOS patch stack: `app_packages/site-packages/manim/{_config,scene,mobject,animation,camera}/…`
+- CodeBench's iOS patch stack: `app_packages/site-packages/manim/{_config,scene,mobject,animation,camera}/…`
