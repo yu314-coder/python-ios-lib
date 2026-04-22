@@ -4,26 +4,25 @@
 %%
 %% The original source files were:
 %%
-%% microtype.dtx  (with options: `pdf-')
+%% microtype.dtx  (with options: `pdftex-def')
 %% 
 %% ------------------------------------------------------------------------
 %% 
 %%                       The `microtype' package
 %%         Subliminal refinements towards typographical perfection
-%%           Copyright (c) 2004--2025 R Schlicht <w.m.l@gmx.net>
+%%           Copyright (c) 2004--2019 R Schlicht <w.m.l@gmx.net>
 %% 
 %% This work may be distributed and/or modified under the conditions of the
 %% LaTeX Project Public License, either version 1.3c of this license or (at
 %% your option) any later version. The latest version of this license is in:
-%% https://www.latex-project.org/lppl.txt, and version 1.3c or later is part
+%% http://www.latex-project.org/lppl.txt, and version 1.3c or later is part
 %% of all distributions of LaTeX version 2005/12/01 or later.
 %% 
-%% This work has the LPPL maintenance status `maintained'.
+%% This work has the LPPL maintenance status `author-maintained'.
 %% 
-%% This work consists of the files microtype.dtx, microtype-utf.dtx and
-%% microtype.ins and the derived files microtype.sty, microtype-pdftex.def,
-%% microtype-luatex.def, microtype-xetex.def, microtype.lua, letterspace.sty
-%% and microtype-show.sty.
+%% This work consists of the files microtype.dtx and microtype.ins and the
+%% derived files microtype.sty, microtype-pdftex.def, microtype-luatex.def,
+%% microtype-xetex.def, microtype.lua and letterspace.sty.
 %% 
 %% ------------------------------------------------------------------------
 %%   This file contains enginge-specific definitions.
@@ -31,17 +30,14 @@
 %%
 \ProvidesFile
   {microtype-pdftex.def}
-  [2025/02/11 v3.2a
+  [2019/11/18 v2.7d
    Definitions specific to
    pdftex
    (RS)]
-\def\MT@pdftex@no{8}
+\def\MT@pdftex@no{7}
 \ifnum\pdftexversion = 140
-  \ifnum\pdftexrevision < 23
-    \def\MT@pdftex@no{7}
-    \ifnum\pdftexrevision < 4
-      \def\MT@pdftex@no{6}
-    \fi
+  \ifnum\pdftexrevision < 4
+    \def\MT@pdftex@no{6}
   \fi
 \else
   \ifnum\pdftexversion < 140
@@ -53,12 +49,30 @@
         \ifnum\pdftexversion = 14
           \ifnum \expandafter`\pdftexrevision < `h
             \def\MT@pdftex@no{2}
+            \ifnum \expandafter`\pdftexrevision < `f
+              \def\MT@pdftex@no{1}
+            \fi
+          \fi
+        \else
+          \ifnum\pdftexversion < 14
+            \def\MT@pdftex@no{1}
           \fi
         \fi
       \fi
     \fi
   \fi
 \fi
+\ifnum
+  \csname MT@\MT@engine tex@no\endcsname < 2
+  \MT@warning@nl{You
+      are using a \MT@engine tex version older than
+      0.14f%
+      .\MessageBreak
+      `\MT@MT' does not work with this version.\MessageBreak
+      Please install a newer version of \MT@engine tex%
+      .\MessageBreak I will quit now}
+  \MT@clear@options
+\endinput\fi
 \def
   \MT@requires@pdftex%
   #1{\ifnum
@@ -104,9 +118,7 @@
 }
 \MT@requires@pdftex5{
 \def\MT@ifstreq#1#2{%
-  \ifnum
-      \pdfstrcmp
-      {#1}{#2}=\z@
+  \ifcase\pdfstrcmp{#1}{#2}\relax
     \expandafter\@firstoftwo
   \else
     \expandafter\@secondoftwo
@@ -156,34 +168,6 @@
     \fi
   }
 }
-\MT@requires@pdftex5{
-  \def\MT@varwidth@setup{%
-    \ifMT@protrusion
-^^Q      \MT@warning@nl{Cannot patch varwidth without etex extensions}%
-^^X      \MT@info@nl{Patching varwidth to enable character protrusion}%
-^^X      \newdimen\MT@vwid@leftmargin
-^^X      \newdimen\MT@vwid@rightmargin
-^^X      \patchcmd\@vwid@sift{\sift@deathcycles\z@}
-^^X        {\ifhbox\z@ \MT@vwid@leftmargin\leftmarginkern\z@
-^^X         \MT@vwid@rightmargin\rightmarginkern\z@\fi \sift@deathcycles\z@}{}{}%
-^^X      \patchcmd\@vwid@resetb{\kern\@vwid@loff \unhbox\z@}
-^^X        {\kern\@vwid@loff \ifdim\MT@vwid@leftmargin=\z@\else\kern\MT@vwid@leftmargin\fi
-^^X         \unhbox\z@ \ifdim\MT@vwid@rightmargin=\z@\else\kern\MT@vwid@rightmargin\fi}{}{}%
-^^X      \patchcmd\@vwid@measure{\kern\@vwid@loff \unhbox\z@}
-^^X        {\kern\@vwid@loff \ifdim\MT@vwid@leftmargin=\z@\else\kern\MT@vwid@leftmargin\fi
-^^X         \unhbox\z@ \ifdim\MT@vwid@rightmargin=\z@\else\kern\MT@vwid@rightmargin\fi}{}{}%
-    \fi
-  }
-}{
-  \def\MT@varwidth@setup{%
-    \ifMT@protrusion
-      \MT@warning@nl{%
-        The pdftex version you are using does not allow\MessageBreak
-        character protrusion in varwidth environments.\MessageBreak
-        Upgrade pdftex to version 1.30 or later}%
-    \fi
-  }
-}
 \def\MT@setupfont{%
   \MT@setupfont@hook}
 \MT@requires@pdftex7{
@@ -196,9 +180,7 @@
     \MT@exp@one@n\MT@find@file\MT@familyalias\fi
 }
 \MT@requires@pdftex6
-{
-  \g@addto@macro\MT@setupfont\MT@tracking
-}\relax
+  {\g@addto@macro\MT@setupfont\MT@tracking}\relax
 \g@addto@macro\MT@setupfont{%
   \MT@check@font
   \ifMT@inlist@
@@ -248,19 +230,9 @@
   \fi
 }
 }\relax
-\def\MT@fix@fontdimen@six{%
-  \ifnum\fontdimen6\MT@font=\z@
-    \fontdimen6\MT@font=%
-      \pdffontsize\MT@font
-    \MT@info{Fixing zero \@backslashchar fontdimen 6 for font `\MT@@font'\MessageBreak
-             (new value: \the\fontdimen6\MT@font)}%
-    \MT@requires@pdftex8\relax{\MT@glet@nc{\MT@@font-fake6}\@empty}%
-  \fi
-  \edef\MT@dimen@six{\number\fontdimen6\MT@font}%
-}
-\def\MT@set@pr@codes
-  {%
- \MT@nofamilyfalse
+\def\MT@protrusion{\MT@maybe@do{pr}}
+\def\MT@set@pr@codes{%
+  \MT@nofamilyfalse
   \MT@if@list@exists{%
     \ifMT@nofamily
       \MT@ifdefined@n@TF{\MT@encoding-\MT@family-settings}\relax{%
@@ -271,17 +243,28 @@
         \MT@glet@nc{\MT@encoding-\MT@family-settings}\@empty
       }%
     \fi
-    \MT@get@opt
-    \MT@reset@pr@codes
-    \MT@get@inh@list
-    \MT@set@inputenc{c}%
-    \MT@load@list\MT@pr@c@name
-    \MT@set@listname
-    \MT@let@cn\@tempc{MT@pr@c@\MT@pr@c@name}%
-    \expandafter\MT@set@codes\@tempc,\relax,%
-    \MT@set@pr@prefixheirs
-  }%
-  \MT@reset@pr@codes
+    \MT@get@font@dimen@six{%
+      \MT@get@opt
+      \MT@reset@pr@codes
+      \MT@get@inh@list
+      \MT@set@inputenc{c}%
+      \MT@load@list\MT@pr@c@name
+      \MT@set@listname
+      \MT@let@cn\@tempc{MT@pr@c@\MT@pr@c@name}%
+      \expandafter\MT@set@codes\@tempc,\relax,}%
+  }\MT@reset@pr@codes
+}
+\def\MT@get@font@dimen@six{%
+  \ifnum\fontdimen6\MT@font=\z@
+    \MT@warning@nl{%
+      Font `\MT@@font' does not specify its\MessageBreak
+      \@backslashchar fontdimen 6 (width of an `em')! Therefore,\MessageBreak
+      \@nameuse{MT@abbr@\MT@feat} will not work with this font}%
+    \expandafter\@gobble
+  \else
+    \edef\MT@dimen@six{\number\fontdimen6\MT@font}%
+    \expandafter\@firstofone
+  \fi
 }
 \def\MT@set@all@pr#1#2{%
   \let\MT@temp\@empty
@@ -313,17 +296,15 @@
     \fi
   \fi
 }
-\def\MT@pr@split@val#1,#2\relax
-  {\def\@tempb{#1}%
-  \MT@ifempty\@tempb
-    \relax
-  {\MT@scale@to@em
+\def\MT@pr@split@val#1,#2\relax{%
+  \def\@tempb{#1}%
+  \MT@ifempty\@tempb\relax{%
+    \MT@scale@to@em
     \lpcode\MT@font\MT@char=\MT@the@pr@code
   }%
   \def\@tempb{#2}%
-  \MT@ifempty\@tempb
-    \relax
-  {\MT@scale@to@em
+  \MT@ifempty\@tempb\relax{%
+    \MT@scale@to@em
     \rpcode\MT@font\MT@char=\MT@the@pr@code
   }%
   \MT@ifdefined@c@T\MT@pr@inh@name{%
@@ -363,35 +344,41 @@
 }
 \def\MT@get@charwd{\MT@count=\MT@dimen@six}
 }
-\def\MT@set@pr@prefixes#1{\MT@set@pr@prefixes@#1}
-\def\MT@set@pr@prefixes@#1#2#3#4%
-  {%
-  \@tempcnta=\z@
-  \ifnum#3>\z@
-    \@tempcnta=\numexpr
-      (\fontcharwd\MT@font#2-\fontcharwd\MT@font#1)%
-      *#3/\MT@dimen@six\relax
-  \fi
-  \lpcode\MT@font #2=\numexpr\lpcode\MT@font#1+\@tempcnta\relax
-  \@tempcnta=\z@
-  \ifnum#4>\z@
-    \@tempcnta=\numexpr
-      (\fontcharwd\MT@font#2-\fontcharwd\MT@font#1)%
-      *#4/\MT@dimen@six\relax
-  \fi
-  \rpcode\MT@font #2=\numexpr\rpcode\MT@font#1+\@tempcnta\relax
+\def\MT@set@pr@heirs#1{%
+  \lpcode\MT@font #1 =\lpcode\MT@font\MT@char\relax
+  \rpcode\MT@font #1 =\rpcode\MT@font\MT@char\relax
 }
-\def\MT@prot@addtoken@next#1{%
-  \MT@toks\expandafter{\the\MT@toks#1}%
-  \setbox\MT@tempbox\hbox{%
-    \begingroup
-    \let\maybe@ic\relax
-    \MT@exp@one@n\MT@maybe@textcmd{\the\MT@toks}%
-    \relax
-    \endgroup
-    \ifnum\lastnodetype=7 \aftergroup\@firstoftwo\else\aftergroup\@secondoftwo\fi}%
-      \MT@prot@get@nexttoken
-      {\MT@exp@one@n\MT@prot@l{\the\MT@toks}}%
+\def\MT@preset@pr{%
+  \expandafter\expandafter\expandafter\MT@preset@pr@
+    \csname MT@pr@c@\MT@pr@c@name @preset\endcsname\@nil
+}
+\def\MT@preset@pr@#1,#2\@nil{%
+  \ifx\MT@pr@unit@\@empty
+    \MT@warn@preset@towidth{pr}%
+    \let\MT@preset@aux\MT@preset@aux@factor
+  \else
+    \def\MT@preset@aux{\MT@preset@aux@space2}%
+  \fi
+  \MT@ifempty{#1}{\let\@tempa\@empty}{\MT@preset@aux{#1}\@tempa}%
+  \MT@ifempty{#2}{\let\@tempb\@empty}{\MT@preset@aux{#2}\@tempb}%
+  \MT@set@all@pr\@tempa\@tempb
+}
+\def\MT@preset@aux@factor#1#2{%
+  \@tempcntb=#1\relax
+  \MT@scale@factor
+  \edef#2{\number\@tempcntb}%
+}
+\def\MT@preset@aux@space#1#2#3{%
+  \def\@tempb{#2}%
+  \MT@get@space@unit#1%
+  \MT@scale@to@em
+  \edef#3{\number\@tempcntb}%
+}
+\def\MT@warn@preset@towidth#1{%
+  \MT@warning@nl{%
+    Cannot preset characters relative to their widths\MessageBreak
+    for \@nameuse{MT@abbr@#1} list `\@nameuse{MT@#1@c@name}'. Presetting them%
+    \MessageBreak relative to 1em instead}%
 }
 \def\MT@expansion{\MT@maybe@do{ex}}
 \def\MT@set@ex@codes@s{%
@@ -477,7 +464,8 @@
   \MT@get@ex@opt@{stretch}{Setting stretch limit to \number\MT@stretch@}%
   \MT@get@ex@opt@{shrink} {Setting shrink limit to \number\MT@shrink@}%
   \MT@get@ex@opt@{step}   {Setting expansion step to \number\MT@step@}%
-  \MT@get@ex@opt@{auto}{\MT@ifstreq{\MT@auto@}{autoexpand}{En}{Dis}abling automatic expansion}%
+  \def\@tempa{autoexpand}%
+  \MT@get@ex@opt@{auto}{\ifx\@tempa\MT@auto@ En\else Dis\fi abling automatic expansion}%
   \MT@ifdefined@n@T{MT@ex@c@\MT@ex@c@name @preset}{%
     \MT@preset@ex
     \let\MT@reset@ef@codes\relax
@@ -503,14 +491,15 @@
 \def\MT@spacing{\MT@maybe@do{sp}}
 \def\MT@set@sp@codes{%
   \MT@if@list@exists{%
-    \MT@get@opt
-    \MT@reset@sp@codes
-    \MT@get@inh@list
-    \MT@set@inputenc{c}%
-    \MT@load@list\MT@sp@c@name
-    \MT@set@listname
-    \MT@let@cn\@tempc{MT@sp@c@\MT@sp@c@name}%
-    \expandafter\MT@set@codes\@tempc,\relax,%
+    \MT@get@font@dimen@six{%
+      \MT@get@opt
+      \MT@reset@sp@codes
+      \MT@get@inh@list
+      \MT@set@inputenc{c}%
+      \MT@load@list\MT@sp@c@name
+      \MT@set@listname
+      \MT@let@cn\@tempc{MT@sp@c@\MT@sp@c@name}%
+      \expandafter\MT@set@codes\@tempc,\relax,}%
   }\MT@reset@sp@codes
 }
 \def\MT@sp@split@val#1,#2,#3\relax{%
@@ -574,14 +563,15 @@
 \def\MT@kerning{\MT@maybe@do{kn}}
 \def\MT@set@kn@codes{%
   \MT@if@list@exists{%
-    \MT@get@opt
-    \MT@reset@kn@codes
-    \MT@get@inh@list
-    \MT@set@inputenc{c}%
-    \MT@load@list\MT@kn@c@name
-    \MT@set@listname
-    \MT@let@cn\@tempc{MT@kn@c@\MT@kn@c@name}%
-    \expandafter\MT@set@codes\@tempc,\relax,%
+    \MT@get@font@dimen@six{%
+      \MT@get@opt
+      \MT@reset@kn@codes
+      \MT@get@inh@list
+      \MT@set@inputenc{c}%
+      \MT@load@list\MT@kn@c@name
+      \MT@set@listname
+      \MT@let@cn\@tempc{MT@kn@c@\MT@kn@c@name}%
+      \expandafter\MT@set@codes\@tempc,\relax,}%
   }\MT@reset@kn@codes
 }
 \def\MT@kn@split@val#1,#2\relax{%
@@ -647,17 +637,7 @@
   \MT@tracking@
 \def\MT@set@tr@codes{%
   \MT@vinfo{Tracking font `\MT@@font'\on@line}%
-  \MT@requires@pdftex8\@firstofone{%
-    \MT@ifdefined@n@TF{\MT@@font-fake6}{%
-      \MT@exp@cs\ifx{\MT@@font-fake6}\@empty
-        \MT@warning@nl{%
-          Font `\MT@@font' does not specify its\MessageBreak
-          \@backslashchar fontdimen 6 (width of an `em')! Therefore,\MessageBreak
-          tracking will not work with this font}%
-        \MT@glet@nc{\MT@@font-fake6}\relax
-      \fi
-    }%
-  }{%
+  \MT@get@font@dimen@six{%
   \MT@if@list@exists
     \MT@get@tr@opt
     \relax
@@ -724,21 +704,19 @@
 }
 \def\MT@get@tr@opt{%
   \MT@set@listname
-  \let\MT@tr@factor@\@m
-  \MT@ifdefined@n@T{MT@tr@c@\MT@tr@c@name @unit}{%
-    \MT@let@cn\MT@tr@unit@{MT@tr@c@\MT@tr@c@name @unit}%
-    \ifdim\MT@tr@unit@=1em
-      \let\MT@tr@unit@\@undefined
-    \else
-      \MT@get@unit\MT@tr@unit@
-    \fi
-  }%
   \MT@ifdefined@n@T{MT@tr@c@\MT@tr@c@name}{%
     \MT@let@cn\MT@letterspace{MT@tr@c@\MT@tr@c@name}%
-    \MT@ifdefined@c@T\MT@tr@unit@{%
-      \let\@tempb\MT@letterspace
-      \MT@scale@to@em
-      \edef\MT@letterspace{\number\@tempcntb}%
+    \MT@ifdefined@n@T{MT@tr@c@\MT@tr@c@name @unit}{%
+      \MT@let@cn\MT@tr@unit@{MT@tr@c@\MT@tr@c@name @unit}%
+      \ifdim\MT@tr@unit@=1em
+        \let\MT@tr@unit@\@undefined
+      \else
+        \MT@let@cn\@tempb{MT@tr@c@\MT@tr@c@name}%
+        \MT@get@unit\MT@tr@unit@
+        \let\MT@tr@factor@\@m
+        \MT@scale@to@em
+        \edef\MT@letterspace{\number\@tempcntb}%
+      \fi
     }%
   }%
   \MT@get@tr@opt@{spacing}     {ispace}%
@@ -753,7 +731,6 @@
 \def\MT@set@lsfont{\MT@exp@two@c\let\font@name\MT@lsfont}
 \DeclareRobustCommand\lsstyle{%
   \not@math@alphabet\lsstyle\textls
-  \let\glb@currsize\@empty
   \MT@maybe@gobble@with@tikz{\aftergroup\glb@settings}%
   \def\MT@feat{tr}%
   \let\MT@tracking\MT@set@tr@codes
@@ -762,7 +739,6 @@
 \DeclareRobustCommand\lslig[1]{%
   {\MT@ifdefined@c@TF\MT@curr@ls{%
      \escapechar\m@ne
-     \xdef\font@name{\csname\curr@fontshape/\f@size\endcsname}%
      \MT@get@ls@basefont
      \MT@outer@kern=\dimexpr\MT@curr@ls sp * \fontdimen6\font@name/2000\relax
      \kern\MT@outer@kern
@@ -775,7 +751,7 @@
   \expandafter\ifx\MT@ls@basefont\relax
     \MT@exp@two@c\MT@glet\MT@ls@basefont\font@name
   \else
-    \MT@set@lsbasefont
+    \MT@exp@two@c\let\font@name\MT@ls@basefont
   \fi
 }
 \def\MT@set@lsbasefont{\MT@exp@two@c\let\font@name\MT@ls@basefont}
@@ -790,25 +766,15 @@
     \ifx\MT@tr@ligatures\@empty
       \MT@noligatures@\MT@lsfont\@undefined
     \else
-      \MT@ifstreq\MT@tr@ligatures{all}{%
-        \MT@noligatures@\MT@lsfont\@undefined
-      }{%
-        \MT@ifstreq\MT@tr@ligatures{none}\relax{%
-          \MT@noligatures@\MT@lsfont\MT@tr@ligatures
-        }%
-      }%
+      \MT@noligatures@\MT@lsfont\MT@tr@ligatures
     \fi
   }
 }{
   \def\MT@tr@noligatures{%
-    \MT@ifstreq\MT@tr@ligatures{all}\relax{%
-      \MT@warning@nl{%
-        Disabling (selected) ligatures is
-        possible since\MessageBreak pdftex 1.40.4.
-        Disabling all ligatures instead%
-      }%
-      \MT@glet\MT@tr@noligatures\relax
-    }%
+    \MT@warning@nl{%
+      Disabling selected ligatures is only possible since\MessageBreak
+      pdftex 1.40.4. Disabling all ligatures instead}%
+    \MT@glet\MT@tr@noligatures\relax
   }
 }
 \newskip\MT@outer@space
@@ -821,11 +787,13 @@
 }
 \def\MT@tr@set@space@#1#2#3#4{%
   \MT@ifempty{#2}{%
-    \MT@ifempty{#1}\relax{%
+    \MT@ifempty{#1}{%
+      \edef\MT@temp{\MT@temp#4\the\fontdimen#3\MT@lsfont}%
+    }{%
       \MT@tr@set@space@@{#1}{#3}{1000}%
+      \edef\MT@temp{\MT@temp#4\the\@tempdima}%
       \fontdimen#3\MT@lsfont=\@tempdima
     }%
-    \edef\MT@temp{\MT@temp#4\the\fontdimen#3\MT@lsfont}%
   }{%
     \MT@tr@set@space@@{#2}{#3}{2000}%
     \edef\MT@temp{\MT@temp#4\the\@tempdima}%
@@ -840,10 +808,12 @@
     \MT@ifdefined@c@TF\MT@tr@unit@
       {\edef\@tempb{#1}\MT@scale@to@em}
       {\@tempcntb=#1\relax}%
-    \@tempdima=\dimexpr\@tempcntb sp*\MT@dimen@six/1000\relax
+    \@tempdima=\dimexpr \dimexpr\@tempcntb sp*\MT@dimen@six/1000\relax
+                       -\fontdimen#2\MT@lsfont\relax
     \ifnum#2=\tw@
       \advance\@tempdima -\dimexpr\MT@letterspace@ sp*\MT@dimen@six/#3\relax
     \fi
+    \@tempdima=\dimexpr \fontdimen#2\MT@lsfont+\@tempdima\relax
   }{%
     \MT@ifempty\@tempa{\let\@tempa\MT@letterspace@}\relax
     \@tempdima=\dimexpr \numexpr1000+\@tempa sp *\fontdimen#2\MT@lsfont/1000\relax
@@ -960,7 +930,7 @@
                       * \fontdimen6\MT@lsfont/2000\relax
   }%
   \advance\@tempdima -\dimexpr \MT@letterspace@ sp
-                  * \fontdimen6\MT@lsfont/2000\relax
+                             * \fontdimen6\MT@lsfont/2000\relax
   \edef\MT@temp{\MT@temp{\the\@tempdima}}%
 }
 \def\MT@ls@outer@k{%
@@ -981,7 +951,6 @@
 \def\MT@noligatures{%
   \MT@dotrue
   \let\@tempa\MT@nl@setname
-  \def\MT@feat{nl}%
   \MT@map@clist@n{font,encoding,family,series,shape,size}{%
     \MT@ifdefined@n@TF{MT@checklist@##1}%
       {\csname MT@checklist@##1\endcsname}%
@@ -996,15 +965,12 @@
   \MT@ifdefined@c@TF#2{%
     \MT@ifdefined@c@TF\tagcode{%
       \let\MT@warn@maybe@inputenc\@empty
-      \MT@ifstreq\MT@feat{tr}\relax
-        {\def\MT@curr@list@name{\@backslashchar DisableLigatures}}%
+      \def\MT@curr@list@name{\@backslashchar DisableLigatures}%
       \MT@map@clist@c#2{%
-        \MT@ifempty{##1}\relax{%
-          \KV@@sp@def\@tempa{##1}\MT@get@slot
-          \ifnum\MT@char>\m@ne
-            \tagcode#1\MT@char=\m@ne
-          \fi
-        }%
+        \KV@@sp@def\@tempa{##1}\MT@get@slot
+        \ifnum\MT@char>\m@ne
+          \tagcode#1\MT@char=\m@ne
+        \fi
       }%
       \MT@vinfo{... Disabling ligatures for characters: #2}%
     }{%
@@ -1033,10 +999,6 @@
   {127 }
 \def\MT@max@slot
   {255 }
-\MT@requires@pdftex6
-  {%
-  \def\MT@active@features{,tr}%
-  }{\let\MT@active@features\@empty}
 \MT@requires@pdftex5{
 \def\DisableLigatures{%
   \MT@begin@catcodes
@@ -1054,10 +1016,23 @@
 \renewcommand*\DisableLigatures[2][]{%
   \MT@error{Disabling ligatures of a font is only possible\MessageBreak
     with pdftex version 1.30 or newer.\MessageBreak
-    Ignoring \@backslashchar DisableLigatures}{%
+    Ignoring \string\DisableLigatures}{%
     Upgrade
     pdftex.}%
 }
+}
+\def\SetProtrusion{%
+  \MT@begin@catcodes
+  \MT@SetProtrusion
+}
+\newcommand*\MT@SetProtrusion[3][]{%
+  \let\MT@extra@context\@empty
+  \MT@set@named@keys{MT@pr@c}{#1}%
+  \def\MT@permutelist{pr@c}%
+  \setkeys{MT@cfg}{#2}%
+  \MT@permute
+  \MT@gdef@n{MT@pr@c@\MT@pr@c@name}{#3}%
+  \MT@end@catcodes
 }
 \def\SetExpansion{%
   \MT@begin@catcodes
@@ -1171,6 +1146,23 @@
       {Upgrade pdftex.}%
   }
 }
+\define@key{MT@pr@c}{unit}[character]{%
+  \MT@glet@nc{MT@pr@c@\MT@curr@set@name @unit}\@empty
+  \def\@tempa{#1}%
+  \MT@ifstreq\@tempa{character}\relax{%
+    \MT@ifdimen\@tempa
+      {\MT@glet@nc{MT@pr@c@\MT@curr@set@name @unit}\@tempa}%
+      {\MT@warn@nodim{character widths}}%
+  }%
+}
+\define@key{MT@tr@c}{unit}[1em]{%
+  \MT@glet@nc{MT@tr@c@\MT@curr@set@name @unit}\@empty
+  \def\@tempa{#1}%
+  \MT@ifdimen\@tempa
+    {\MT@glet@nc{MT@tr@c@\MT@curr@set@name @unit}\@tempa}%
+    {\MT@warn@nodim{1em}%
+     \MT@gdef@n{MT@tr@c@\MT@curr@set@name @unit}{1em}}%
+}
 \MT@map@clist@n{sp,kn}{%
   \define@key{MT@#1@c}{unit}[space]{%
     \MT@glet@nc{MT@#1@c@\MT@curr@set@name @unit}\@empty
@@ -1201,19 +1193,20 @@
 \define@key{MT@ex@c}{auto}[true]{%
   \def\@tempa{#1}%
   \csname if\@tempa\endcsname
-    \MT@requires@pdftex4%
-      {\MT@gdef@n{MT@ex@c@\MT@curr@set@name @auto}{autoexpand}}%
-      {\MT@warning{pdftex too old for automatic font expansion}}%
+    \MT@requires@pdftex4{%
+      \MT@gdef@n{MT@ex@c@\MT@curr@set@name @auto}{autoexpand}%
+    }{%
+      \MT@warning{pdftex too old for automatic font expansion}%
+    }
   \else
-    \MT@requires@pdftex4%
-      {\MT@glet@nc{MT@ex@c@\MT@curr@set@name @auto}\@empty}%
-      \relax
+    \MT@requires@pdftex4{%
+      \MT@glet@nc{MT@ex@c@\MT@curr@set@name @auto}\@empty
+    }\relax
   \fi
 }
 \MT@define@opt@key{tr}{spacing}
 \MT@define@opt@key{tr}{outerspacing}
 \MT@define@opt@key{tr}{outerkerning}
-\MT@define@opt@key{tr}{features}
 \define@key{MT@tr@c}{noligatures}[]%
   {\MT@xdef@n{MT@tr@c@\MT@curr@set@name @noligatures}{#1}}
 \define@key{MT@tr@c}{outer spacing}[]{\setkeys{MT@tr@c}{outerspacing={#1}}}
@@ -1222,7 +1215,6 @@
 \def\MT@inh@split#1=#2=#3\relax{%
   \def\@tempa{#1}%
   \ifx\@tempa\@empty \else
-    \expandafter\MT@has@inh@prefix\@tempa()\relax\@nil
     \MT@get@slot
     \ifnum\MT@char > \m@ne
       \let\MT@val\MT@char
@@ -1231,12 +1223,7 @@
         \ifx\@tempa\@empty \else
           \MT@get@slot
           \ifnum\MT@char > \m@ne
-            \ifx\MT@inh@prefix\@empty
-              \MT@exp@cs\MT@xadd{MT@inh@\MT@listname @\MT@val @}{{\MT@char}}%
-            \else
-              \MT@exp@cs\MT@xadd{MT@inh@\MT@listname @prefixes}%
-                  {{{\MT@val}{\MT@char}\MT@inh@prefix@}}%
-            \fi
+            \MT@exp@cs\MT@xadd{MT@inh@\MT@listname @\MT@val @}{{\MT@char}}%
           \fi
         \fi
       }%
@@ -1397,8 +1384,7 @@
 }
 \def\MT@setup@expansion{%
   \ifnum\pdfoutput<\@ne
-    \ifMT@opt@expansion
-    \else
+    \ifMT@opt@expansion \else
       \MT@expansionfalse
     \fi
   \fi
@@ -1503,7 +1489,7 @@
     \MT@check@active@set{ex}%
     \MT@ifdefined@n@TF{showhyphens }{%
       \def\MT@temp##1##2{%
-        \MT@exp@cs\CheckCommand{showhyphens }[1]{##1}%
+        \expandafter\CheckCommand\csname showhyphens \endcsname[1]{##1}%
         \DeclareRobustCommand\showhyphens[1]{##2}}%
     }{%
       \def\MT@temp##1##2{%
@@ -1527,6 +1513,7 @@
 \MT@requires@pdftex6{%
   \def\MT@setup@tracking{%
     \ifMT@tracking
+      \edef\MT@active@features{\MT@active@features,tr}%
       \MT@info@nl{Tracking enabled}%
       \MT@check@active@set{tr}%
       \ifMT@protrusion\else\MT@protrudechars\@ne\fi
@@ -1558,9 +1545,9 @@
         \ifnum\sfcode`\. > 1500
           \MT@ifstreq\MT@sp@context{nonfrench}\relax{%
             \MT@warning@nl{%
-              \@backslashchar nonfrenchspacing is active. Adjustment of\MessageBreak
+              \string\nonfrenchspacing\space is active. Adjustment of\MessageBreak
               interword spacing will disable it. You might want\MessageBreak
-              to add `\@backslashchar microtypecontext{spacing=nonfrench}'\MessageBreak
+              to add `\@backslashchar\MT@MT context{spacing=nonfrench}'\MessageBreak
               to your preamble}%
           }%
         \fi

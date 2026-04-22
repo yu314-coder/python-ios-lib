@@ -1,7 +1,7 @@
 % \iffalse meta-comment
 %
-% Copyright (C) 1993-2025
-% The LaTeX Project and any individual authors listed elsewhere
+% Copyright 1993-2020
+% The LaTeX3 Project and any individual authors listed elsewhere
 % in this file.
 %
 % This file is part of the LaTeX base system.
@@ -35,13 +35,13 @@
 % with LaTeX.  The changes log is at the end of the file.
 
 % Copyright 1994-2004
-% Alan Jeffrey and the LaTeX Project.
+% Alan Jeffrey and the LaTeX3 project.
 
 % This is a LaTeX2e document class.
 
 \NeedsTeXFormat{LaTeX2e}
 
-\ProvidesClass{ltnews}[2023/05/28 v1.08  Standard LaTeX class]
+\ProvidesClass{ltnews}[2017/12/13 v1.06  Standard LaTeX class]
 
 % The configuration file, used for passing options.
 
@@ -429,30 +429,6 @@
 \newcommand{\@year}{\ClassError{ltnews}
    {No \protect\publicationyear~given}\@eha}
 
-\newcommand{\publicationday}{\renewcommand{\@day}}
-\newcommand{\@day}{01} % most releases happen on 1st of a month
-
-\newcommand{\publicationdate}{%
-  % support draft ltnews, \publicationyear{2023 --- DRAFT ...}
-  \expandafter\@gobblenonyear\@year\@nil
-  -\@julianmonthtonum\@month-\two@digits\@day}
-
-\newcommand{\@julianmonthtonum}[1]{\@nameuse{@juliantonum#1}}
-\def\@juliantonumJanuary  {01}
-\def\@juliantonumFebruary {02}
-\def\@juliantonumMarch    {03}
-\def\@juliantonumApril    {04}
-\def\@juliantonumMay      {05}
-\def\@juliantonumJune     {06}
-\def\@juliantonumJuly     {07}
-\def\@juliantonumAugust   {08}
-\def\@juliantonumSeptember{09}
-\def\@juliantonumOctober  {10}
-\def\@juliantonumNovember {11}
-\def\@juliantonumDecember {12}
-
-\long\def\@gobblenonyear#1#2#3#4#5\@nil{#1#2#3#4}
-
 \newcommand{\publicationissue}{\renewcommand{\@issue}}
 \newcommand{\@issue}{\ClassError{ltnews}
    {No \protect\publicationissue~given}\@eha}
@@ -461,7 +437,7 @@
 \newcommand{\indicia}{\renewcommand{\@indicia}}
 \newcommand{\@indicia}{%
    \LaTeXNews, and the \LaTeX{} software,
-   are brought to you by the \LaTeX\ Project Team;
+   are brought to you by the \LaTeX3 Project Team;
    Copyright \@year, all rights reserved.
 }
 
@@ -473,8 +449,7 @@
    \twocolumn[{%
       \parbox[t][7\baselineskip]{\textwidth}{%
          \@titlefont\@title\\[\medskipamount]
-         \normalfont\normalsize\issuename~\@issue,
-         \@month~\@year~(\LaTeX\ release \publicationdate)%
+         \normalfont\normalsize\issuename~\@issue, \@month~\@year
       }%
    }]%
    \thispagestyle{titlepage}
@@ -517,17 +492,6 @@
    \@startsection
       {subsubsection}{2}{\leftmargini}{-1.5ex \@plus -1ex \@minus -.2ex}%
       {1sp}{\@subheadingfont}%
-}
-
-
-% suggestion by Karl Berry (not integrated (yet))
-
-\newcommand{\ltnewssectformat}{%
-  \@headingfont
-  \frenchspacing
-  \raggedright
-  \hyphenpenalty=10000
-  \exhyphenpenalty=10000
 }
 
 % No section numbers.
@@ -643,10 +607,6 @@
 \def\verbatim@nolig@list{\do\`\do\,\do\'\do\-}
 
 % That's it!
-
-%FMi temp addition until etoolbox is updated
-%\RequirePackage{etoolbox-ltx}
-%\AddToHook{env/document/begin}{\RemoveFromHook{env/document/begin}[*]} % done in \document
 
 \endinput
 

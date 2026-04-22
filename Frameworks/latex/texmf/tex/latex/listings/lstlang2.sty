@@ -22,7 +22,7 @@
 %% programming languages to Jobst Hoffmann at <j.hoffmann@fh-aachen.de>.
 %%
 \ProvidesFile{lstlang2.sty}
-    [2024/09/23 1.10c listings language file]
+    [2019/09/10 1.8c listings language file]
 %%
 %% Abap definition by Knut Lickert
 %%
@@ -98,7 +98,7 @@
   morecomment=[l]{//},%
   morecomment=[s]{/*}{*/},%
   string=[b]{"},%
-}[keywords,comments,strings]
+}[keywords,comments,strings]%
 \lst@definelanguage{ACMscript}[]{VBScript}{%
   morekeywords={%
     ElseIf,False,In,Resume,True%
@@ -107,7 +107,7 @@
     Abs,Array,Clear,CreateObject,CStr,Err,ForReading,ForWriting,%
     OpenTextFile,Replace,WriteLine%
   }%
-}[keywords,comments,strings]
+}[keywords,comments,strings]%
 %%
 %% Corba IDL definition (c) 1999 Jens T. Berger Thielemann
 %%
@@ -209,7 +209,7 @@
    sensitive=f,% ???
    morecomment=[f][commentstyle][6]*,%
    morestring=[d]"% ??? doubled
-  }[keywords,comments,strings]
+  }[keywords,comments,strings]%
 \lst@definelanguage{Delphi}%
   {morekeywords={and,as,asm,array,begin,case,class,const,constructor,%
       destructor,div,do,downto,else,end,except,exports,file,finally,%
@@ -256,7 +256,7 @@
    morecomment=[s]{\{}{\}},%
    morecomment=[l]{//},% 2001 Christian Gudrian
    morestring=[d]'%
-  }[keywords,comments,strings]
+  }[keywords,comments,strings]%
 \lst@definelanguage{Eiffel}%
   {morekeywords={alias,all,and,as,BIT,BOOLEAN,CHARACTER,check,class,%
       creation,Current,debug,deferred,do,DOUBLE,else,elseif,end,%
@@ -269,7 +269,7 @@
    sensitive,%
    morecomment=[l]--,%
    morestring=[d]",%
-  }[keywords,comments,strings]
+  }[keywords,comments,strings]%
 %%
 %% Euphoria definition (c) 1998 Detlef Reimers
 %%
@@ -288,7 +288,7 @@
    morecomment=[l]--,%
    morestring=[d]',%
    morestring=[d]"%
-  }[keywords,comments,strings]
+  }[keywords,comments,strings]%
 %%
 %% GAP definition
 %% (c) 2013 Heiko Oberdiek
@@ -331,7 +331,7 @@
    sensitive=f,%
    morecomment=[s]{\{}{\}},%
    morestring=[d]'%
-  }[keywords,comments,strings]
+  }[keywords,comments,strings]%
 %%
 %% gnuplot definition (c) Christoph Giess
 %%
@@ -356,7 +356,7 @@
    comment=[l]\#,%
    morestring=[b]",%
    morestring=[b]',%
-  }[keywords,comments,strings]
+  }[keywords,comments,strings]%
 \lst@definelanguage{hansl}{%
   showstringspaces = false, %
   morekeywords={ % hansl commands:
@@ -514,7 +514,7 @@
    morecomment=[l]--,%
    morecomment=[n]{\{-}{-\}},%
    morestring=[b]"%
-  }[keywords,comments,strings]
+  }[keywords,comments,strings]%
 %%
 %% IDL definition (c) 1998 Juergen Heim
 %%
@@ -527,11 +527,11 @@
    sensitive=f,%
    morecomment=[l];,%
    morestring=[d]'%
-  }[keywords,comments,strings]
+  }[keywords,comments,strings]%
 %%
 %% Inform definition (c) 2003 Jonathan Sauer
 %%
-\lst@definelanguage{Inform}{%
+\lst@definelanguage{inform}{%
   % Language keywords
   morekeywords={breakdo,else,false,for,has,hasnt,if,%
     in,indirect,jump,notin,nothing,NULL,objectloop,ofclass,%
@@ -614,7 +614,7 @@
   sensitive=false,%
   morestring=[d]{"},%
   morecomment=[l]{!}%
-}[keywords,comments,strings]
+}[keywords,comments,strings]%
 \lst@definelanguage{Lisp}%
   {morekeywords={abort,abs,acons,acos,acosh,adjoin,alphanumericp,alter,%
       append,apply,apropos,aref,arrayp,ash,asin,asinh,assoc,atan,atanh,%
@@ -658,7 +658,7 @@
    morecomment=[l];,%
    morecomment=[s]{\#|}{|\#},% 1997 Aslak Raanes
    morestring=[b]"%
-  }[keywords,comments,strings]
+  }[keywords,comments,strings]%
 %%
 %% AutoLISP/VisualLISP - Stefan Lagotzki, info@lagotzki.de
 %%
@@ -753,7 +753,7 @@
    morecomment=[l];,%
    morecomment=[l];;,%
    morestring=[b]"%
-  }[keywords,comments,strings]
+  }[keywords,comments,strings]%
 \lst@definelanguage{elisp}[]{Lisp}{%
   morekeywords={begin, car, cdr, cons, define, display, drop, filter,%
     hash-ref, hash-set, if, load-file, lambda, length, map, message,%
@@ -766,7 +766,7 @@
   morecomment=[l];,%
   morecomment=[l];;,%
   morestring=[b]"%
-}[keywords,comments,strings]
+}[keywords,comments,strings]%
 %%
 %% Lua definitions (c) 2013 Stephan Hennig
 %%
@@ -816,7 +816,7 @@
   morestring=[b]',%
   % multi line strings
   morestring=[s]{[[}{]]},%
-}[keywords,comments,strings]
+}[keywords,comments,strings]%
 \lst@definelanguage[5.1]{Lua}[5.0]{Lua}{%
   deletekeywords=[2]{%
     _LOADED, _REQUIREDNAME, LUA_PATH, gcinfo, loadlib,%
@@ -857,7 +857,7 @@
   morestring=[s]{[========[}{]========]},%
   morestring=[s]{[=========[}{]=========]},%
   morestring=[s]{[==========[}{]==========]},%
-}[keywords,comments,strings]
+}[keywords,comments,strings]%
 \lst@definelanguage[5.2]{Lua}[5.1]{Lua}{%
   morekeywords=[1]{%
     goto,%
@@ -883,7 +883,7 @@
     _ENV,%
   },%
   moredelim=[s][keywordstyle3]{::}{::},%
-}[keywords,comments,strings]
+}[keywords,comments,strings]%
 \lst@definelanguage[5.3]{Lua}[5.2]{Lua}{%
   deletekeywords=[2]{%
     bit32, bit32.arshift, bit32.band, bit32.bnot, bit32.bor,%
@@ -901,7 +901,7 @@
     utf8, utf8.char, utf8.charpattern, utf8.codepoint, utf8.codes,%
     utf8.len, utf8.offset,%
   },%
-}[keywords,comments,strings]
+}[keywords,comments,strings]%
 %%
 %% Make definitions (c) 2000 Rolf Niepraschk
 %%
@@ -954,7 +954,7 @@
    morecomment=[s]{/*}{*/},%
    morestring=[bd]",%
    morestring=[bd]'%
-  }[keywords,comments,strings]
+  }[keywords,comments,strings]%
 %%
 %% Miranda definition (c) 1998 Peter Bartke
 %%
@@ -977,7 +977,7 @@
    sensitive,%
    morecomment=[l]||,%
    morestring=[b]"%
-  }[keywords,comments,strings]
+  }[keywords,comments,strings]%
 %%
 %% ML definition (c) 1999 Torben Hoffmann
 %%
@@ -989,7 +989,7 @@
    sensitive,%
    morecomment=[n]{(*}{*)},%
    morestring=[d]"%
-  }[keywords,comments,strings]
+  }[keywords,comments,strings]%
 %%
 %% Oz definition (c) Andres Becerra Sandoval
 %%
@@ -1006,7 +1006,7 @@
    morecomment=[s]{/*}{*/},%
    morestring=[b]",%
    morestring=[d]'%
-  }[keywords,comments,strings]
+  }[keywords,comments,strings]%
 %%
 %% PHP definition by Luca Balzerani
 %%
@@ -1591,7 +1591,7 @@
    morecomment=[s]{/*}{*/},%
    morestring=[b]",%
    morestring=[b]'%
-  }[keywords,comments,strings]
+  }[keywords,comments,strings]%
 %%
 %% Prolog definition (c) 1997 Dominique de Waleffe
 %%
@@ -1609,22 +1609,21 @@
    morecomment=[s]{/*}{*/},%
    morestring=[bd]",%
    morestring=[bd]'%
-  }[keywords,comments,strings]
+  }[keywords,comments,strings]%
 %%
 %% classic rexx listings definition
 %% by Patrick TJ McPhee <ptjm@interlog.com>
 %%
-\lst@definelanguage{Rexx}{%
-   morekeywords={address,arg,call,do,drop,else,end,exit,if,interpret,%
-                 iterate,leave,nop,numeric,options,otherwise,parse,%
-                 procedure,pull,push,queue,return,say,select,signal,then,%
-                 to,trace,when},%
+\lst@definelanguage{Rexx}
+  {morekeywords={address,arg,call,do,drop,else,end,exit,if,iterate,%
+                 interpret,leave,nop,numeric,options,otherwise,parse,%
+                 procedure,pull,push,queue,return,say,signal,then,to,%
+                 trace,when},%
    sensitive=false,%
-   morecomment=[l]{--},%
    morecomment=[n]{/*}{*/},%
    morestring=[d]{'},%
    morestring=[d]{"},%
-  }[keywords,comments,strings]
+  }[keywords,comments,strings]%
 %%
 %% REXX keywords from System Product Interpreter Reference, VM/XA SP Release 1
 %% and Release 2
@@ -1633,27 +1632,24 @@
     external,for,form,fuzz,halt,labels,intermediates,negative,normal,novalue,%
     on,off,results,scan,scientific,select,source,stream,syntax,until,upper,%
     value,var,version,while,with},%
-  morekeywords=[2]{abbrev,abs,address,bitand,bitor,bitxor,center,centre,%
+  ndkeywords={abbrev,abs,address,bitand,bitor,bitxor,center,centre,%
     compare,copies,c2d,c2x,datatype,date,delstr,delword,diag,diagrc,%
     d2c,d2x,errortext,externals,find,format,index,insert,justify,%
-    lastpos,left,length,linein,lineout,lines,linesize,max,min,overlay,%
-    pos,queued,random,reverse,rigth,sign,sourceline,space,storage,%
-    strip,substr,subword,symbol,time,translate,trunc,userid,value,verify,%
-    word,wordindex,wordlength,words,xrange,x2c,x2d},%
-  morekeywords=[3]{result,rc,self,sigl,super},%
+    lastpos,left,length,linesize,max,min,overlay,pos,queued,random,%
+    reverse,rigth,sign,sourceline,space,storage,strip,substr,subword,%
+    symbol,time,translate,trunc,userid,value,verify,word,wordindex,%
+    wordlength,words,xrange,x2c,x2d},%
   sensitive=false,%
   morestring=[d]",%
   morestring=[d]',%
-}[keywords,comments,strings]
+  morecomment=[s]{/*}{*/},%
+  alsoletter={:},%
+}[keywords,comments,strings]%
 %%
 %% ooREXX keywords (http://www.oorexx.org/)
 \lst@definelanguage[]{OORexx}[VM/XA]{Rexx}{%
-  morekeywords={::annotate, ::attribute, ::class, ::constant, ::method,%
-    ::options, ::requires, ::resource, ::routine,%
-    forward, guard, local, loop, raise, strict,%
-  },%
-  alsoletter={:}
-}[keywords,comments,strings]
+  morekeywords={::class, ::method, ::attribute},%
+}
 \lst@definelanguage{Ruby}%
   {morekeywords={__FILE__,__LINE__,BEGIN,END,alias,and,begin,break,%
       case,class,def,defined?,do,else,elsif,end,ensure,false,for,%
@@ -1677,7 +1673,7 @@
    morestring=[s]{\%Q(}{)},%
    morestring=[s]{\%Q[}{]},%
    morestring=[s]{\%Q-}{-}%
-  }[keywords,comments,strings]
+  }[keywords,comments,strings]%
 %%
 %% SHELXL definition (c) 1999 Aidan Philip Heerdegen
 %%
@@ -1781,7 +1777,7 @@
    morecomment=[l]{;\#},%
    morecomment=[l]{[\#},%
    morecomment=[l]{\{\#}%
-  }[keywords,comments,strings]
+  }[keywords,comments,strings]%
 %%
 %% VBScript definition (c) 2000 Sonja Weidmann
 %%
@@ -1830,7 +1826,7 @@
    sensitive=f,%
    morecomment=[l]',%
    morestring=[d]"%
-  }[keywords,comments,strings]
+  }[keywords,comments,strings]%
 %%
 %% VRML definition (c) 2001 Oliver Baum
 %%

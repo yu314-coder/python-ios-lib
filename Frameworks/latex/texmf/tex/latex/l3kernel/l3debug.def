@@ -6,7 +6,7 @@
 %%
 %% l3debug.dtx  (with options: `package')
 %% 
-%% Copyright (C) 1990-2025 The LaTeX Project
+%% Copyright (C) 1990-2020 The LaTeX3 Project
 %% 
 %% It may be distributed and/or modified under the conditions of
 %% the LaTeX Project Public License (LPPL), either version 1.3c of
@@ -19,28 +19,21 @@
 %% and all files in that bundle must be distributed together.
 %% 
 %% File: l3debug.dtx
-\ProvidesExplFile{l3debug.def}{2025-01-18}{}{L3 Debugging support}
-\scan_new:N \s__debug_stop
-\cs_new:Npn \__debug_use_i_delimit_by_s_stop:nw #1 #2 \s__debug_stop {#1}
-\quark_new:N \q__debug_recursion_tail
-\quark_new:N \q__debug_recursion_stop
-\cs_new:Npn \__debug_use_none_delimit_by_q_recursion_stop:w
-  #1 \q__debug_recursion_stop { }
-\__kernel_quark_new_test:N \__debug_if_recursion_tail_stop:N
-\cs_gset_protected:Npn \debug_on:n #1
-  {
+\ProvidesExplFile{l3debug.def}{2019-04-06}{}{L3 Debugging support}
+\cs_set_protected:Npn \debug_on:n #1
+   {
     \exp_args:No \clist_map_inline:nn { \tl_to_str:n {#1} }
-      {
+       {
         \cs_if_exist_use:cF { __debug_ ##1 _on: }
-          { \msg_error:nnn { debug } { debug } {##1} }
-      }
+          { \__kernel_msg_error:nnn { kernel } { debug } {##1} }
+       }
   }
-\cs_gset_protected:Npn \debug_off:n #1
+\cs_set_protected:Npn \debug_off:n #1
   {
     \exp_args:No \clist_map_inline:nn { \tl_to_str:n {#1} }
       {
         \cs_if_exist_use:cF { __debug_ ##1 _off: }
-          { \msg_error:nnn { debug } { debug } {##1} }
+          { \__kernel_msg_error:nnn { kernel } { debug } {##1} }
       }
   }
 \cs_new_protected:Npn \__debug_all_on:
@@ -64,14 +57,14 @@
       }
   }
 \tl_new:N \l__debug_suspended_tl { }
-\cs_gset_protected:Npn \debug_suspend:
+\cs_set_protected:Npn \debug_suspend:
   {
     \tl_put_right:Nn \l__debug_suspended_tl { . }
     \cs_set_eq:NN \__debug_suspended:T \use:n
   }
-\cs_gset_protected:Npn \debug_resume:
+\cs_set_protected:Npn \debug_resume:
   {
-    \__kernel_tl_set:Nx \l__debug_suspended_tl
+    \tl_set:Nx \l__debug_suspended_tl
       { \tl_tail:N \l__debug_suspended_tl }
     \tl_if_empty:NT \l__debug_suspended_tl
       {
@@ -82,7 +75,7 @@
 \cs_new_protected:Npn \__kernel_chk_var_exist:N #1 { }
 \cs_new_protected:Npn \__kernel_chk_cs_exist:N #1 { }
 \cs_generate_variant:Nn \__kernel_chk_cs_exist:N { c }
-\cs_new:Npn \__kernel_chk_flag_exist:NN { }
+\cs_new:Npn \__kernel_chk_flag_exist:n #1 { }
 \cs_new_protected:Npn \__kernel_chk_var_local:N #1 { }
 \cs_new_protected:Npn \__kernel_chk_var_global:N #1 { }
 \cs_new_protected:Npn \__kernel_chk_var_scope:NN #1#2 { }
@@ -93,7 +86,7 @@
         \__debug_suspended:T \use_none:nnn
         \cs_if_exist:NF ##1
           {
-            \msg_error:nne { debug } { non-declared-variable }
+            \__kernel_msg_error:nnx { kernel } { non-declared-variable }
               { \token_to_str:N ##1 }
           }
       }
@@ -102,18 +95,17 @@
         \__debug_suspended:T \use_none:nnn
         \cs_if_exist:NF ##1
           {
-            \msg_error:nne { kernel } { command-not-defined }
+            \__kernel_msg_error:nnx { kernel } { command-not-defined }
               { \token_to_str:N ##1 }
           }
       }
-    \cs_set:Npn \__kernel_chk_flag_exist:NN ##1##2
+    \cs_set:Npn \__kernel_chk_flag_exist:n ##1
       {
-        \__debug_suspended:T \use_iii:nnnn
-        \flag_if_exist:NTF ##2
-          { ##1 ##2 }
+        \__debug_suspended:T \use_none:nnn
+        \flag_if_exist:nF {##1}
           {
-            \msg_expandable_error:nnn { kernel } { bad-variable } {##2}
-            ##1 \l_tmpa_flag
+            \__kernel_msg_expandable_error:nnn
+              { kernel } { bad-variable } { flag~##1~ }
           }
       }
     \cs_set_protected:Npn \__kernel_chk_var_scope:NN
@@ -138,7 +130,7 @@
   {
     \cs_set_protected:Npn \__kernel_chk_var_exist:N ##1 { }
     \cs_set_protected:Npn \__kernel_chk_cs_exist:N ##1 { }
-    \cs_set:Npn \__kernel_chk_flag_exist:NN { }
+    \cs_set:Npn \__kernel_chk_flag_exist:N ##1 { }
     \cs_set_protected:Npn \__kernel_chk_var_local:N ##1 { }
     \cs_set_protected:Npn \__kernel_chk_var_global:N ##1 { }
     \cs_set_protected:Npn \__kernel_chk_var_scope:NN ##1##2 { }
@@ -147,9 +139,9 @@
   { \exp_args:NNf \__debug_chk_var_scope_aux:Nn #1 { \cs_to_str:N #2 } }
 \cs_new_protected:Npn \__debug_chk_var_scope_aux:Nn #1#2
   {
-    \if:w _ \use_i:nn \__debug_use_i_delimit_by_s_stop:nw #2 ? ? \s__debug_stop
+    \if:w _ \use_i:nn \use_i_delimit_by_q_stop:nw #2 ? ? \q_stop
       \exp_after:wN \__debug_chk_var_scope_aux:NNn
-        \__debug_use_i_delimit_by_s_stop:nw #2 ? \s__debug_stop
+        \use_i_delimit_by_q_stop:nw #2 ? \q_stop
         #1 {#2}
     \else:
       \exp_args:Nc \__debug_chk_var_scope_aux:NNn
@@ -164,7 +156,7 @@
       \if:w #1 \scan_stop:
         \cs_gset_nopar:Npn #1 {#2}
       \else:
-        \msg_error:nneee { debug } { local-global }
+        \__kernel_msg_error:nnxxx { kernel } { local-global }
           {#1} {#2} { \iow_char:N \\ #3 }
       \fi:
     \fi:
@@ -172,12 +164,12 @@
 \use:c { __debug_check-declarations_off: }
 \cs_new_protected:cpn { __debug_log-functions_on: }
   {
-    \cs_set_protected:Npn \__kernel_debug_log:e
-      { \__debug_suspended:T \use_none:nn \iow_log:e }
+    \cs_set_protected:Npn \__kernel_debug_log:x
+      { \__debug_suspended:T \use_none:nn \iow_log:x }
   }
 \cs_new_protected:cpn { __debug_log-functions_off: }
-  { \cs_set_protected:Npn \__kernel_debug_log:e { \use_none:n } }
-\cs_new_protected:Npn \__kernel_debug_log:e { \use_none:n }
+  { \cs_set_protected:Npn \__kernel_debug_log:x { \use_none:n } }
+\cs_new_protected:Npn \__kernel_debug_log:x { \use_none:n }
 \cs_new_protected:cpn { __debug_check-expressions_on: }
   {
     \cs_set:Npn \__kernel_chk_expr:nNnN ##1##2
@@ -200,8 +192,8 @@
         \int_value:w #3 #2 #1 \scan_stop:
       }
       {
-        \msg_expandable_error:nnnn
-          { debug } { expr } {#4} {#1}
+        \__kernel_msg_expandable_error:nnnn
+          { kernel } { expr } {#4} {#1}
       }
     #1
   }
@@ -214,26 +206,26 @@
 \tl_new:N \l__debug_tmpb_tl
 \cs_new_protected:Npn \__debug_generate_parameter_list:NNN #1#2#3
   {
-    \__kernel_tl_set:Nx \l__debug_internal_tl
+    \tl_set:Nx \l__debug_internal_tl
       { \exp_last_unbraced:Nf \use_ii:nnn \cs_split_function:N #1 }
-    \__kernel_tl_set:Nx #2
+    \tl_set:Nx #2
       { \exp_args:NV \__debug_build_parm_text:n \l__debug_internal_tl }
-    \__kernel_tl_set:Nx #3
+    \tl_set:Nx #3
       { \exp_args:NV \__debug_build_arg_list:n \l__debug_internal_tl }
   }
 \cs_new:Npn \__debug_build_parm_text:n #1
   {
     \__debug_arg_list_from_signature:nNN { 1 } \c_false_bool #1
-    \q__debug_recursion_tail \q__debug_recursion_stop
+    \q_recursion_tail \q_recursion_stop
   }
 \cs_new:Npn \__debug_build_arg_list:n #1
   {
     \__debug_arg_list_from_signature:nNN { 1 } \c_true_bool #1
-    \q__debug_recursion_tail \q__debug_recursion_stop
+    \q_recursion_tail \q_recursion_stop
   }
 \cs_new:Npn \__debug_arg_list_from_signature:nNN #1 #2 #3
   {
-    \__debug_if_recursion_tail_stop:N #3
+    \quark_if_recursion_tail_stop:N #3
     \__debug_arg_check_invalid:N #3
     \bool_if:NT #2 { \__debug_arg_if_braced:NT #3 { \use_none:n } }
     \use:n { \c_hash_str \int_eval:n {#1} }
@@ -254,19 +246,19 @@
     \exp_end:
   }
 \cs_new:Npn \__debug_parm_terminate:w
-  { \exp_after:wN \__debug_use_none_delimit_by_q_recursion_stop:w \exp:w }
+  { \exp_after:wN \use_none_delimit_by_q_recursion_stop:w \exp:w }
 \prg_new_conditional:Npnn \__debug_arg_if_braced:N #1 { T }
   { \exp_args:Nf \__debug_arg_if_braced:n { \__debug_get_base_form:N #1 } }
 \cs_new:Npn \__debug_arg_if_braced:n #1
   {
     \if:w n #1 \prg_return_true: \else:
       \if:w N #1 \prg_return_false: \else:
-        \msg_expandable_error:nnn
-          { debug } { bad-arg-type } {#1}
+        \__kernel_msg_expandable_error:nnn
+          { kernel } { bad-arg-type } {#1}
       \fi:
     \fi:
   }
-\msg_new:nnn { debug } { bad-arg-type }
+\__kernel_msg_new:nnn { kernel } { bad-arg-type }
   { Wrong~argument~type~#1. }
 \cs_new:Npn \__debug_get_base_form:N #1
   {
@@ -318,7 +310,7 @@
     {
       \cs_gset_eq:cN { __debug_ \cs_to_str:N #1 } #1
       \__debug_generate_parameter_list:NNN #1 \l__debug_tmpa_tl \l__debug_tmpb_tl
-      \exp_args:Ne \tex_scantokens:D
+      \exp_args:Nx \tex_scantokens:D
         {
           \tex_global:D \cs_prefix_spec:N #1
           \tex_def:D \exp_not:N #1
@@ -333,28 +325,28 @@
     }
   \cs_set_protected:Npn \__debug_add_to_debug_code:Nnn #1#2#3
     {
-      \use:e
+      \use:x
         {
           \cs_set:Npn \exp_not:N \__debug_tmp:w
-            ##1 \tl_to_str:n { macro: }
-            ##2 \tl_to_str:n { -> }
-            ##3 \c_backslash_str \tl_to_str:n { __debug_ }
+            ####1 \tl_to_str:n { macro: }
+            ####2 \tl_to_str:n { -> }
+            ####3 \c_backslash_str \tl_to_str:n { __debug_ }
                     \cs_to_str:N #1
-            ##4 \s__debug_stop
+            ####4 \exp_not:N \q_mark
             {
-              \exp_not:N \exp_args:Ne \exp_not:N \tex_scantokens:D
+              \exp_not:N \exp_args:Nx \exp_not:N \tex_scantokens:D
                 {
-                  \tex_global:D ##1
-                  \tex_def:D \exp_not:N #1 ##2
+                  \tex_global:D ####1
+                  \tex_def:D \exp_not:N #1 ####2
                     {
-                      ##3 \tl_to_str:n {#2}
+                      ####3 \tl_to_str:n {#2}
                       \c_backslash_str __debug_ \cs_to_str:N #1
-                      ##4 \tl_to_str:n {#3}
+                      ####4 \tl_to_str:n {#3}
                     }
                 }
             }
         }
-      \exp_after:wN \__debug_tmp:w \cs_meaning:N #1 \s__debug_stop
+      \exp_after:wN \__debug_tmp:w \cs_meaning:N #1 \q_mark
     }
   \cs_set_protected:Npn \__kernel_patch_weird:nnn
     {
@@ -373,14 +365,14 @@
     }
   \cs_set_protected:Npn \__debug_patch_weird:Nnn #1#2#3
     {
-      \use:e
+      \use:x
         {
           \tex_endlinechar:D -1 \scan_stop:
           \exp_not:N \tex_scantokens:D
             {
               \tex_global:D \cs_prefix_spec:N #1
               \tex_def:D \exp_not:N #1
-              \cs_parameter_spec:N #1
+              \cs_argument_spec:N #1
                 {
                   \tl_to_str:n {#2}
                   \cs_replacement_spec:N #1
@@ -417,8 +409,6 @@
     {
       \clist_concat:NNN
       \clist_gconcat:NNN
-      \prop_concat:NNN
-      \prop_gconcat:NNN
       \seq_concat:NNN
       \seq_gconcat:NNN
       \str_concat:NNN
@@ -426,8 +416,6 @@
       \tl_concat:NNN
       \tl_gconcat:NNN
     }
-\cs_gset_protected:Npn \__kernel_tl_set:Nx  { \cs_set_nopar:Npe }
-\cs_gset_protected:Npn \__kernel_tl_gset:Nx { \cs_gset_nopar:Npe }
   \__kernel_patch:nnn
     { \__kernel_chk_var_local:N #1 }
     { }
@@ -439,7 +427,6 @@
       \box_set_eq:NN
       \box_set_eq_drop:NN
       \box_set_to_last:N
-      \clist_clear:N
       \clist_set_eq:NN
       \dim_zero:N
       \dim_set:Nn
@@ -463,43 +450,27 @@
       \muskip_add:Nn
       \muskip_sub:Nn
       \muskip_set_eq:NN
-      \prop_clear:N
-      \prop_concat:NNN
-      \prop_pop:NnN
-      \prop_pop:NnNT
-      \prop_pop:NnNF
-      \prop_pop:NnNTF
-      \prop_put:Nnn
-      \prop_put_if_not_in:Nnn
-      \prop_put_from_keyval:Nn
-      \prop_remove:Nn
-      \prop_set_eq:NN
-      \prop_set_from_keyval:Nn
       \seq_set_eq:NN
       \skip_zero:N
       \skip_set:Nn
       \skip_set_eq:NN
       \skip_add:Nn
       \skip_sub:Nn
-      \str_clear:N
-      \str_set_eq:NN
-      \str_put_left:Nn
-      \str_put_right:Nn
-      \__kernel_tl_set:Nx
-      \tl_clear:N
+      \tl_set:Nn
+      \tl_set:No
+      \tl_set:Nx
       \tl_set_eq:NN
       \tl_put_left:Nn
       \tl_put_left:NV
-      \tl_put_left:Nv
-      \tl_put_left:Ne
       \tl_put_left:No
+      \tl_put_left:Nx
       \tl_put_right:Nn
       \tl_put_right:NV
-      \tl_put_right:Nv
-      \tl_put_right:Ne
       \tl_put_right:No
+      \tl_put_right:Nx
       \tl_build_begin:N
       \tl_build_put_right:Nn
+      \tl_build_put_right:Nx
       \tl_build_put_left:Nn
       \vbox_set:Nn
       \vbox_set_top:Nn
@@ -519,8 +490,6 @@
       \box_gset_eq:NN
       \box_gset_eq_drop:NN
       \box_gset_to_last:N
-      \cctab_gset:Nn
-      \clist_gclear:N
       \clist_gset_eq:NN
       \dim_gset_eq:NN
       \dim_gzero:N
@@ -544,43 +513,27 @@
       \muskip_gadd:Nn
       \muskip_gsub:Nn
       \muskip_gset_eq:NN
-      \prop_gclear:N
-      \prop_gconcat:NNN
-      \prop_gpop:NnN
-      \prop_gpop:NnNT
-      \prop_gpop:NnNF
-      \prop_gpop:NnNTF
-      \prop_gput:Nnn
-      \prop_gput_if_not_in:Nnn
-      \prop_gput_from_keyval:Nn
-      \prop_gremove:Nn
-      \prop_gset_eq:NN
-      \prop_gset_from_keyval:Nn
       \seq_gset_eq:NN
       \skip_gzero:N
       \skip_gset:Nn
       \skip_gset_eq:NN
       \skip_gadd:Nn
       \skip_gsub:Nn
-      \str_gclear:N
-      \str_gset_eq:NN
-      \str_gput_left:Nn
-      \str_gput_right:Nn
-      \__kernel_tl_gset:Nx
-      \tl_gclear:N
+      \tl_gset:Nn
+      \tl_gset:No
+      \tl_gset:Nx
       \tl_gset_eq:NN
       \tl_gput_left:Nn
       \tl_gput_left:NV
-      \tl_gput_left:Nv
-      \tl_gput_left:Ne
       \tl_gput_left:No
+      \tl_gput_left:Nx
       \tl_gput_right:Nn
       \tl_gput_right:NV
-      \tl_gput_right:Nv
-      \tl_gput_right:Ne
       \tl_gput_right:No
+      \tl_gput_right:Nx
       \tl_build_gbegin:N
       \tl_build_gput_right:Nn
+      \tl_build_gput_right:Nx
       \tl_build_gput_left:Nn
       \vbox_gset:Nn
       \vbox_gset_top:Nn
@@ -594,48 +547,30 @@
     { }
     {
       \bool_const:Nn
-      \cctab_const:Nn
       \dim_const:Nn
       \int_const:Nn
       \intarray_const_from_clist:Nn
       \muskip_const:Nn
-      \prop_const_from_keyval:Nn
-      \prop_const_linked_from_keyval:Nn
       \skip_const:Nn
-      \str_const:Nn
       \tl_const:Nn
+      \tl_const:Nx
     }
   \__kernel_patch:nnn
-    { \__kernel_chk_flag_exist:NN }
+    { \__kernel_chk_flag_exist:n {#1} }
     { }
     {
-      \flag_ensure_raised:N
-      \flag_height:N
-      \flag_if_raised:NT
-      \flag_if_raised:NF
-      \flag_if_raised:NTF
-      \flag_if_raised_p:N
-      \flag_raise:N
+      \flag_if_raised:nT
+      \flag_if_raised:nF
+      \flag_if_raised:nTF
+      \flag_if_raised_p:n
+      \flag_height:n
+      \flag_raise_if_clear:n
+      \flag_clear:n
     }
   \__kernel_patch:nnn
     { \__kernel_chk_cs_exist:N #1 }
     { }
     { \cs_generate_variant:Nn }
-  \__kernel_patch:nnn
-    { \__kernel_chk_var_scope:NN g #1 }
-    { }
-    { \cctab_new:N }
-  \__kernel_patch:nnn
-    { \__kernel_chk_var_scope:NN l #1 }
-    { }
-    { \flag_new:N }
-  \__kernel_patch:nnn
-    {
-      \__kernel_chk_var_scope:NN l #1
-      \__kernel_chk_flag_exist:NN
-    }
-    { }
-    { \flag_clear:N }
   \__kernel_patch:nnn
     { \__kernel_chk_var_scope:NN g #1 }
     { }
@@ -651,7 +586,7 @@
   \__kernel_patch:nnn
     { }
     {
-      \__kernel_debug_log:e
+      \__kernel_debug_log:x
         { Defining~\token_to_str:N #1~ \msg_line_context: }
     }
     { \__kernel_chk_if_free_cs:N }
@@ -659,7 +594,7 @@
     {
       \cs_if_free:NF #4
         {
-          \__kernel_debug_log:e
+          \__kernel_debug_log:x
             {
               Variant~\token_to_str:N #4~%
               already~defined;~ not~ changing~ it~ \msg_line_context:
@@ -671,14 +606,14 @@
   \__kernel_patch:nnn
     {
       \cs_if_exist:cF { \c__keys_code_root_str #1 }
-        { \__kernel_debug_log:e { Defining~key~#1~\msg_line_context: } }
+        { \__kernel_debug_log:x { Defining~key~#1~\msg_line_context: } }
     }
     { }
-    { \__keys_cmd_set_direct:nn }
+    { \__keys_cmd_set:nn }
   \__kernel_patch:nnn
     { }
     {
-      \__kernel_debug_log:e
+      \__kernel_debug_log:x
         { Defining~message~ #1 / #2 ~\msg_line_context: }
     }
     { \__msg_chk_free:nn }
@@ -702,7 +637,7 @@
     {
       \__regex_trace_push:nnN { regex } { 1 } \__regex_escape_use:nnnn
       \group_begin:
-        \__kernel_tl_set:Nx \l__regex_internal_a_tl
+        \tl_set:Nx \l__regex_internal_a_tl
           { \__regex_trace_pop:nnN { regex } { 1 } \__regex_escape_use:nnnn }
         \use_none:nnn
     }
@@ -724,7 +659,7 @@
     { \__regex_build_for_cs:n }
   \__kernel_patch:nnn
     {
-      \__regex_trace:nne { regex } { 2 }
+      \__regex_trace:nnx { regex } { 2 }
         {
           regex~new~state~
           L=\int_use:N \l__regex_left_state_int ~ -> ~
@@ -746,24 +681,24 @@
   \__kernel_patch:nnn
     {
       \__regex_trace_push:nnN { regex } { 1 } \__regex_match:n
-      \__regex_trace:nne { regex } { 1 } { analyzing~query~token~list }
+      \__regex_trace:nnx { regex } { 1 } { analyzing~query~token~list }
     }
     { \__regex_trace_pop:nnN { regex } { 1 } \__regex_match:n }
     { \__regex_match:n }
   \__kernel_patch:nnn
     {
       \__regex_trace_push:nnN { regex } { 1 } \__regex_match_cs:n
-      \__regex_trace:nne { regex } { 1 } { analyzing~query~token~list }
+      \__regex_trace:nnx { regex } { 1 } { analyzing~query~token~list }
     }
     { \__regex_trace_pop:nnN { regex } { 1 } \__regex_match_cs:n }
     { \__regex_match_cs:n }
   \__kernel_patch:nnn
-    { \__regex_trace:nne { regex } { 1 } { initializing } }
+    { \__regex_trace:nnx { regex } { 1 } { initializing } }
     { }
     { \__regex_match_init: }
   \__kernel_patch:nnn
     {
-      \__regex_trace:nne { regex } { 2 }
+      \__regex_trace:nnx { regex } { 2 }
         { state~\int_use:N \l__regex_curr_state_int }
     }
     { }
@@ -784,10 +719,10 @@
     {
         \char_set_catcode_parameter:N \#
         \tex_endlinechar:D -1 \scan_stop:
-        \exp_args:Ne \tex_scantokens:D
+        \exp_args:Nx \tex_scantokens:D
           {
             \tex_global:D \cs_prefix_spec:N #1 \tex_def:D \exp_not:N #1
-              \cs_parameter_spec:N #1
+              \cs_argument_spec:N #1
               { \exp_args:No \tl_to_str:n { #1 #2 } }
           }
       \group_end:
@@ -796,7 +731,7 @@
     {
       \tl_map_inline:nn {#1}
         {
-          \exp_args:NNe \__kernel_patch:Nn ##1
+          \exp_args:NNx \__kernel_patch:Nn ##1
             {
               { \c_hash_str 1 }
               {
@@ -855,7 +790,7 @@
     {
       \tl_map_inline:nn {#1}
         {
-          \exp_args:NNe \__kernel_patch:Nn ##1
+          \exp_args:NNx \__kernel_patch:Nn ##1
             {
               {
                 \exp_not:N \__kernel_chk_expr:nNnN { \c_hash_str 1 }
@@ -900,7 +835,7 @@
     {
       \tl_map_inline:nn {#1}
         {
-          \exp_args:NNe \__kernel_patch:Nn ##1
+          \exp_args:NNx \__kernel_patch:Nn ##1
             {
               {
                 \exp_not:N \__kernel_chk_expr:nNnN { \c_hash_str 1 }
@@ -933,7 +868,7 @@
     {
       \clist_map_inline:nn { :nNnT , :nNnF , :nNnTF , _p:nNn }
         {
-          \exp_args:Nce \__kernel_patch:Nn { #1 ##1 }
+          \exp_args:Ncx \__kernel_patch:Nn { #1 ##1 }
             {
               {
                 \exp_not:N \__kernel_chk_expr:nNnN { \c_hash_str 1 }
@@ -955,7 +890,7 @@
     {
       \clist_map_inline:nn { :nT , :nF , :nTF , _p:n }
         {
-          \exp_args:Nce \__kernel_patch:Nn { #1 ##1 }
+          \exp_args:Ncx \__kernel_patch:Nn { #1 ##1 }
             {
               {
                 \exp_not:N \__kernel_chk_expr:nNnN { \c_hash_str 1 }
@@ -1008,11 +943,11 @@
           \__kernel_chk_expr:nNnN
             {##1} \tex_glueexpr:D { } \skip_if_finite:n
         ; \prg_return_false:
-        #1 ; \prg_return_true: \s__skip_stop
+        #1 ; \prg_return_true: \q_stop
       }
   }
 \exp_args:No \__skip_tmp:w { \tl_to_str:n { fil } }
-\msg_new:nnnn { debug } { debug }
+\__kernel_msg_new:nnnn { kernel } { debug }
   { The~debugging~option~'#1'~does~not~exist~\msg_line_context:. }
   {
     The~functions~'\iow_char:N\\debug_on:n'~and~
@@ -1020,8 +955,8 @@
     'all',~'check-declarations',~'check-expressions',~
     'deprecation',~'log-functions',~not~'#1'.
   }
-\msg_new:nnn { debug } { expr } { '#2'~in~#1 }
-\msg_new:nnnn { debug } { local-global }
+\__kernel_msg_new:nnn { kernel } { expr } { '#2'~in~#1 }
+\__kernel_msg_new:nnnn { kernel } { local-global }
   { Inconsistent~local/global~assignment }
   {
     \c__msg_coding_error_text_tl
@@ -1038,7 +973,7 @@
     \ %
     variable~'#3'.
   }
-\msg_new:nnnn { debug } { non-declared-variable }
+\__kernel_msg_new:nnnn { kernel } { non-declared-variable }
   { The~variable~#1~has~not~been~declared~\msg_line_context:. }
   {
     \c__msg_coding_error_text_tl
@@ -1047,7 +982,7 @@
     without~first~having: \\
     \ \ \tl_new:N ~ #1  \\
     \\
-    LaTeX~will~continue,~creating~the~variable~where~it~is~the~one~being~set.
+    LaTeX~will~create~the~variable~and~continue.
   }
 \cs_set_protected:Npn \__kernel_if_debug:TF #1#2 {#1}
 %% 

@@ -12,8 +12,8 @@
 %% reports for it can be opened at https://latex-project.org/bugs/
 %% (but please observe conditions on bug reports sent to that address!)
 %% 
-%% Copyright (C) 1993-2024
-%% The LaTeX Project and any individual authors listed elsewhere
+%% Copyright (C) 1993-2020
+%% The LaTeX3 Project and any individual authors listed elsewhere
 %% in this file.
 %% 
 %% This file was generated from file(s) of the Standard LaTeX `Tools Bundle'.
@@ -45,13 +45,14 @@
 %% or open an issue at https://github.com/latex3/latex2e.
 %%
 \NeedsTeXFormat{LaTeX2e}[1995/05/16]
+\providecommand\DeclareRelease[3]{}
+\providecommand\DeclareCurrentRelease[2]{}
 
-\DeclareRelease{}{1994-06-01}{varioref-2016-02-16.sty}
 \DeclareRelease{}{2016-02-16}{varioref-2016-02-16.sty}
 \DeclareCurrentRelease{}{2019-10-01}
 
 \ProvidesPackage{varioref}
-    [2024/05/23 v1.6g package for extended references (FMi)]
+    [2020/01/23 v1.6c package for extended references (FMi)]
 %%
 
 
@@ -107,10 +108,6 @@
     \def\reftextfaraway#1{op bladsy~\pageref{#1}}%
     \def\reftextpagerange#1#2{op bladsye~\pageref{#1}--\pageref{#2}}%
     \def\reftextlabelrange#1#2{\ref{#1} tot~\ref{#2}}%
-    \let\vrefformat\vrefdefaultformat
-    \let\Vrefformat\Vrefdefaultformat
-    \let\fullrefformat\fullrefdefaultformat
-    \let\vrefrangeformat\vrefrangedefaultformat
   }}
 \DeclareOption{american}
   {\vref@addto\extrasamerican{%
@@ -123,10 +120,6 @@
     \def\reftextfaraway#1{on page~\pageref{#1}}%
     \def\reftextpagerange#1#2{on pages~\pageref{#1}--\pageref{#2}}%
     \def\reftextlabelrange#1#2{\ref{#1} to~\ref{#2}}%
-    \let\vrefformat\vrefdefaultformat
-    \let\Vrefformat\Vrefdefaultformat
-    \let\fullrefformat\fullrefdefaultformat
-    \let\vrefrangeformat\vrefrangedefaultformat
   }}
 \DeclareOption{arabic}
   {\vref@addto\extrasarabic{%
@@ -138,10 +131,6 @@
     \def\reftextfaraway#1{بالصفحة رقم~\pageref{#1}}%
     \def\reftextpagerange#1#2{بالصفحات~\pageref{#1}--\pageref{#2}}%
     \def\reftextlabelrange#1#2{\ref{#1} حتى~\ref{#2}}%
-    \let\vrefformat\vrefdefaultformat
-    \let\Vrefformat\Vrefdefaultformat
-    \let\fullrefformat\fullrefdefaultformat
-    \let\vrefrangeformat\vrefrangedefaultformat
   }}
 \DeclareOption{austrian}
   {\vref@addto\extrasaustrian{%
@@ -153,7 +142,6 @@
     \def\reftextfaraway#1{auf Seite~\pageref{#1}}%
     \def\reftextpagerange#1#2{auf Seiten~\pageref{#1}--\pageref{#2}}%
     \def\reftextlabelrange#1#2{\ref{#1} bis~\ref{#2}}%
-    \let\vrefrangeformat\vrefrangedefaultformat
   }}
 \DeclareOption{naustrian}
   {\vref@addto\extrasnaustrian{%
@@ -165,10 +153,6 @@
     \def\reftextfaraway#1{auf Seite~\pageref{#1}}%
     \def\reftextpagerange#1#2{auf Seiten~\pageref{#1}--\pageref{#2}}%
     \def\reftextlabelrange#1#2{\ref{#1} bis~\ref{#2}}%
-    \let\vrefformat\vrefdefaultformat
-    \let\Vrefformat\Vrefdefaultformat
-    \let\fullrefformat\fullrefdefaultformat
-    \let\vrefrangeformat\vrefrangedefaultformat
   }}
 \DeclareOption{basque}
   {\vref@addto\extrasbasque{%
@@ -180,10 +164,6 @@
     \def\reftextfaraway#1{~\pageref{#1}. orrialdean}%
     \def\reftextpagerange#1#2{~\pageref{#1}--\pageref{#2} orrialdeetan}%
     \def\reftextlabelrange#1#2{\ref{#1}.etik \ref{#2}.eraino}%
-    \let\vrefformat\vrefdefaultformat
-    \let\Vrefformat\Vrefdefaultformat
-    \let\fullrefformat\fullrefdefaultformat
-    \let\vrefrangeformat\vrefrangedefaultformat
   }}
 \DeclareOption{bahasam}
   {\vref@addto\extrasbahasam{%
@@ -195,10 +175,6 @@
     \def\reftextfaraway#1{pada muka surat~\pageref{#1}}%
     \def\reftextpagerange#1#2{pada muka surat~\pageref{#1}--\pageref{#2}}%
     \def\reftextlabelrange#1#2{\ref{#1}--\ref{#2}}%
-    \let\vrefformat\vrefdefaultformat
-    \let\Vrefformat\Vrefdefaultformat
-    \let\fullrefformat\fullrefdefaultformat
-    \let\vrefrangeformat\vrefrangedefaultformat
   }}
 \DeclareOption{brazil}
   {\vref@addto\extrasbrazil{%
@@ -213,10 +189,6 @@
     \def\reftextfaraway#1{na p\'agina~\pageref{#1}}%
     \def\reftextpagerange#1#2{nas p\'aginas~\pageref{#1}--\pageref{#2}}%
     \def\reftextlabelrange#1#2{\ref{#1} a~\ref{#2}}%
-    \let\vrefformat\vrefdefaultformat
-    \let\Vrefformat\Vrefdefaultformat
-    \let\fullrefformat\fullrefdefaultformat
-    \let\vrefrangeformat\vrefrangedefaultformat
   }}
 \DeclareOption{breton}
   {\vref@excuse{breton}%
@@ -232,10 +204,6 @@
                               on pages~\pageref{#1}--\pageref{#2}}%
     \def\reftextlabelrange#1#2{\vref@stringwarning\reflabelpagerange
                                \ref{#1} to~\ref{#2}}%
-    \let\vrefformat\vrefdefaultformat
-    \let\Vrefformat\Vrefdefaultformat
-    \let\fullrefformat\fullrefdefaultformat
-    \let\vrefrangeformat\vrefrangedefaultformat
   }}
 \DeclareOption{bulgarian}%
  {\vref@addto\extrasbulgarian{%
@@ -265,10 +233,6 @@
                         \cyrs\cyrt\cyrr\cyra\cyrn\cyri\cyrc\cyri
                         ~\pageref{#1}--\pageref{#2}}%
    \def\reftextlabelrange#1#2{\ref{#1} \cyrd\cyro~\ref{#2}}%
-    \let\vrefformat\vrefdefaultformat
-    \let\Vrefformat\Vrefdefaultformat
-    \let\fullrefformat\fullrefdefaultformat
-    \let\vrefrangeformat\vrefrangedefaultformat
  }}
 \DeclareOption{catalan}
   {\vref@addto\extrascatalan{%
@@ -281,10 +245,6 @@
     \def\reftextpagerange#1#2{a les
                      p\`agines~\pageref{#1}--\pageref{#2}}%
     \def\reftextlabelrange#1#2{\ref{#1} a~\ref{#2}}%
-    \let\vrefformat\vrefdefaultformat
-    \let\Vrefformat\Vrefdefaultformat
-    \let\fullrefformat\fullrefdefaultformat
-    \let\vrefrangeformat\vrefrangedefaultformat
   }}
 \DeclareOption{croatian}
    {\vref@addto\extrascroatian{%
@@ -296,10 +256,6 @@
      \def\reftextfaraway#1{na stranici~\pageref{#1}}%
      \def\reftextpagerange#1#2{na stranicama~\pageref{#1}--\pageref{#2}}%
      \def\reftextlabelrange#1#2{\ref{#1} do~\ref{#2}}%
-    \let\vrefformat\vrefdefaultformat
-    \let\Vrefformat\Vrefdefaultformat
-    \let\fullrefformat\fullrefdefaultformat
-    \let\vrefrangeformat\vrefrangedefaultformat
    }}
 \DeclareOption{czech}
   {%\vref@excuse{czech}%
@@ -312,10 +268,6 @@
     \def\reftextfaraway#1{na stran\v{e}~\pageref{#1}}%
     \def\reftextpagerange#1#2{na stran\'ach~\pageref{#1}\--\pageref{#2}}%
     \def\reftextlabelrange#1#2{\ref{#1} a\v{z}~\ref{#2}}%
-    \let\vrefformat\vrefdefaultformat
-    \let\Vrefformat\Vrefdefaultformat
-    \let\fullrefformat\fullrefdefaultformat
-    \let\vrefrangeformat\vrefrangedefaultformat
   }}
 \DeclareOption{danish}
   {\vref@addto\extrasdanish{%
@@ -331,10 +283,6 @@
     \def\reftextfaraway#1{p\aa{} side~\pageref{#1}}%
     \def\reftextpagerange#1#2{p\aa{} side~\pageref{#1}--\pageref{#2}}%
     \def\reftextlabelrange#1#2{\ref{#1} til~\ref{#2}}%
-    \let\vrefformat\vrefdefaultformat
-    \let\Vrefformat\Vrefdefaultformat
-    \let\fullrefformat\fullrefdefaultformat
-    \let\vrefrangeformat\vrefrangedefaultformat
   }}
 \DeclareOption{dutch}
   {\vref@addto\extrasdutch{%
@@ -351,10 +299,6 @@
     \def\reftextfaraway#1{op \refpagename~\pageref{#1}}%
     \def\reftextpagerange#1#2{op pagina's~\pageref{#1}--\pageref{#2}}%
     \def\reftextlabelrange#1#2{\ref{#1}--\ref{#2}}%
-    \let\vrefformat\vrefdefaultformat
-    \let\Vrefformat\Vrefdefaultformat
-    \let\fullrefformat\fullrefdefaultformat
-    \let\vrefrangeformat\vrefrangedefaultformat
   }}
 \DeclareOption{english}
   {\vref@addto\extrasenglish{%
@@ -367,10 +311,6 @@
     \def\reftextfaraway#1{on page~\pageref{#1}}%
     \def\reftextpagerange#1#2{on pages~\pageref{#1}--\pageref{#2}}%
     \def\reftextlabelrange#1#2{\ref{#1} to~\ref{#2}}%
-    \let\vrefformat\vrefdefaultformat
-    \let\Vrefformat\Vrefdefaultformat
-    \let\fullrefformat\fullrefdefaultformat
-    \let\vrefrangeformat\vrefrangedefaultformat
   }}
 \DeclareOption{esperanto}
   {\vref@addto\extrasesperanto{%
@@ -385,10 +325,6 @@
     \def\reftextfaraway#1{en pa\^go~\pageref{#1}}%
     \def\reftextpagerange#1#2{en pa\^goj~\pageref{#1} \^gis \pageref{#2}}%
     \def\reftextlabelrange#1#2{\ref{#1} \^gis~\ref{#2}}%
-    \let\vrefformat\vrefdefaultformat
-    \let\Vrefformat\Vrefdefaultformat
-    \let\fullrefformat\fullrefdefaultformat
-    \let\vrefrangeformat\vrefrangedefaultformat
   }}
 \DeclareOption{finnish}
   {\vref@addto\extrasfinnish{%
@@ -402,10 +338,6 @@
     \def\reftextfaraway#1{sivulla~\pageref{#1}}%
      \def\reftextpagerange#1#2{sivuilla~\pageref{#1}--\pageref{#2}}%
      \def\reftextlabelrange#1#2{\ref{#1}--\ref{#2}}%
-    \let\vrefformat\vrefdefaultformat
-    \let\Vrefformat\Vrefdefaultformat
-    \let\fullrefformat\fullrefdefaultformat
-    \let\vrefrangeformat\vrefrangedefaultformat
   }}
 \DeclareOption{french}
   {\vref@addto\extrasfrench{%
@@ -418,10 +350,6 @@
     \def\reftextfaraway#1{page~\pageref{#1}}%
     \def\reftextpagerange#1#2{pages~\pageref{#1}--\pageref{#2}}%
     \def\reftextlabelrange#1#2{\ref{#1} \`a~\ref{#2}}%
-    \let\vrefformat\vrefdefaultformat
-    \let\Vrefformat\Vrefdefaultformat
-    \let\fullrefformat\fullrefdefaultformat
-    \let\vrefrangeformat\vrefrangedefaultformat
   }}
 \DeclareOption{galician}
   {\vref@addto\extrasgalician{%
@@ -434,10 +362,6 @@
      \def\reftextpagerange#1#2{%
                 nas p\'axinas~\pageref{#1}-\pageref{#2}}%
      \def\reftextlabelrange#1#2{\ref{#1} a~\ref{#2}}%
-    \let\vrefformat\vrefdefaultformat
-    \let\Vrefformat\Vrefdefaultformat
-    \let\fullrefformat\fullrefdefaultformat
-    \let\vrefrangeformat\vrefrangedefaultformat
   }}
 \DeclareOption{german}
   {\vref@addto\extrasgerman{%
@@ -449,10 +373,6 @@
     \def\reftextfaraway#1{auf Seite~\pageref{#1}}%
     \def\reftextpagerange#1#2{auf den Seiten~\pageref{#1}--\pageref{#2}}%
     \def\reftextlabelrange#1#2{\ref{#1} bis~\ref{#2}}%
-    \let\vrefformat\vrefdefaultformat
-    \let\Vrefformat\Vrefdefaultformat
-    \let\fullrefformat\fullrefdefaultformat
-    \let\vrefrangeformat\vrefrangedefaultformat
   }}
 \DeclareOption{ngerman}
   {\vref@addto\extrasngerman{%
@@ -464,10 +384,6 @@
     \def\reftextfaraway#1{auf Seite~\pageref{#1}}%
     \def\reftextpagerange#1#2{auf den Seiten~\pageref{#1}--\pageref{#2}}%
     \def\reftextlabelrange#1#2{\ref{#1} bis~\ref{#2}}%
-    \let\vrefformat\vrefdefaultformat
-    \let\Vrefformat\Vrefdefaultformat
-    \let\fullrefformat\fullrefdefaultformat
-    \let\vrefrangeformat\vrefrangedefaultformat
   }}
 \DeclareOption{greek}
   {\vref@addto\extrasgreek{%
@@ -482,10 +398,6 @@
     \def\reftextpagerange#1#2{stis sel'ides\nobreakspace
                           \pageref{#1}---\pageref{#2}}%
     \def\reftextlabelrange#1#2{\ref{#1} ws\nobreakspace\ref{#2}}%
-    \let\vrefformat\vrefdefaultformat
-    \let\Vrefformat\Vrefdefaultformat
-    \let\fullrefformat\fullrefdefaultformat
-    \let\vrefrangeformat\vrefrangedefaultformat
   }}
 \DeclareOption{icelandic}
   {\vref@addto\extrasicelandic{%
@@ -501,10 +413,6 @@
     \def\reftextfaraway#1{\'{a} s\'{i}{\dh}u~\pageref{#1}}%
     \def\reftextpagerange#1#2{\'{a} s\'{i}{\dh}um~\pageref{#1}--\pageref{#2}}%
     \def\reftextlabelrange#1#2{\ref{#1} til~\ref{#2}}%
-    \let\vrefformat\vrefdefaultformat
-    \let\Vrefformat\Vrefdefaultformat
-    \let\fullrefformat\fullrefdefaultformat
-    \let\vrefrangeformat\vrefrangedefaultformat
   }}
 \DeclareOption{italian}
   {\vref@addto\extrasitalian{%
@@ -519,26 +427,6 @@
     \def\reftextfaraway#1{a pagina~\pageref{#1}}%
     \def\reftextpagerange#1#2{nelle pagine~\pageref{#1}--\pageref{#2}}%
     \def\reftextlabelrange#1#2{da~\ref{#1} a~\ref{#2}}%
-    \let\vrefformat\vrefdefaultformat
-    \let\Vrefformat\Vrefdefaultformat
-    \let\fullrefformat\fullrefdefaultformat
-    \let\vrefrangeformat\vrefrangedefaultformat
-  }}
-\DeclareOption{japanese}
-  {\vref@addto\extrasjapanese{%
-    \def\reftextfaceafter {\reftextvario{見開き}{次}ページ}%
-    \def\reftextfacebefore{\reftextvario{見開き}{前}ページ}%
-    \def\reftextafter     {\reftextvario{直後の}{次}ページ}%
-    \def\reftextbefore    {\reftextvario{直前の}{前}ページ}%
-    \def\reftextcurrent   {\reftextvario{この}{現}ページ}%
-    \def\reftextfaraway#1{\pageref{#1}ページ}%
-    \def\reftextpagerange#1#2{\pageref{#1}から\pageref{#2}ページ}%
-    \def\reftextlabelrange#1#2{\ref{#1}から\ref{#2}}%
-    \def\vrefformat#1#2{\ref{#2}（\vpageref[#1]{#2}）}%
-    \def\Vrefformat#1#2{\Ref{#2}（\vpageref[#1]{#2}）}%
-    \def\fullrefformat#1{\ref{#1}（\reftextfaraway{#1}）}%
-    \def\vrefrangeformat#1#2#3{\reftextlabelrange{#2}{#3}%
-                               （\vpagerefrange[{#1}]{#2}{#3}）}%
   }}
 \DeclareOption{magyar}
   {\vref@addto\extrasmagyar{%
@@ -554,10 +442,6 @@
                               on pages~\pageref{#1}--\pageref{#2}}%
     \def\reftextlabelrange#1#2{\vref@stringwarning\reflabelpagerange
                                \ref{#1} to~\ref{#2}}%
-    \let\vrefformat\vrefdefaultformat
-    \let\Vrefformat\Vrefdefaultformat
-    \let\fullrefformat\fullrefdefaultformat
-    \let\vrefrangeformat\vrefrangedefaultformat
    }%
    \AtBeginDocument{\providecommand\aza[1]{a/az%
        \PackageError{varioref}{%
@@ -579,10 +463,6 @@
     \def\reftextfaraway#1{p\aa{} side~\pageref{#1}}%
     \def\reftextpagerange#1#2{p\aa{} side~\pageref{#1}--\pageref{#2}}%
     \def\reftextlabelrange#1#2{\ref{#1} til~\ref{#2}}%
-    \let\vrefformat\vrefdefaultformat
-    \let\Vrefformat\Vrefdefaultformat
-    \let\fullrefformat\fullrefdefaultformat
-    \let\vrefrangeformat\vrefrangedefaultformat
   }}
 \DeclareOption{nynorsk}
   {\vref@addto\extrasnynorsk{%
@@ -594,10 +474,6 @@
     \def\reftextfaraway#1{p\aa{} side~\pageref{#1}}%
     \def\reftextpagerange#1#2{p\aa{} side~\pageref{#1}--\pageref{#2}}%
     \def\reftextlabelrange#1#2{\ref{#1} til~\ref{#2}}%
-    \let\vrefformat\vrefdefaultformat
-    \let\Vrefformat\Vrefdefaultformat
-    \let\fullrefformat\fullrefdefaultformat
-    \let\vrefrangeformat\vrefrangedefaultformat
   }}
 \DeclareOption{polish}
   {\vref@addto\extraspolish{%
@@ -612,10 +488,6 @@
     \def\reftextfaraway#1{na stronie~\pageref{#1}}%
     \def\reftextpagerange#1#2{na stronach~\pageref{#1}--\pageref{#2}}%
     \def\reftextlabelrange#1#2{od~\ref{#1} do~\ref{#2}}%
-    \let\vrefformat\vrefdefaultformat
-    \let\Vrefformat\Vrefdefaultformat
-    \let\fullrefformat\fullrefdefaultformat
-    \let\vrefrangeformat\vrefrangedefaultformat
   }}
 \DeclareOption{portuges}
   {\vref@addto\extrasportuges{%
@@ -629,10 +501,6 @@
     \def\reftextfaraway#1{na p\'agina~\pageref{#1}}%
      \def\reftextpagerange#1#2{nas p\'aginas~\pageref{#1}--\pageref{#2}}%
      \def\reftextlabelrange#1#2{\ref{#1} a~\ref{#2}}%
-    \let\vrefformat\vrefdefaultformat
-    \let\Vrefformat\Vrefdefaultformat
-    \let\fullrefformat\fullrefdefaultformat
-    \let\vrefrangeformat\vrefrangedefaultformat
   }}
 \DeclareOption{romanian}
   {\vref@addto\extrasromanian{%
@@ -646,10 +514,6 @@
     \def\reftextfaraway#1{pe pagina~\pageref{#1}}%
     \def\reftextpagerange#1#2{pe paginile~\pageref{#1}--\pageref{#2}}%
     \def\reftextlabelrange#1#2{\ref{#1} la~\ref{#2}}%
-    \let\vrefformat\vrefdefaultformat
-    \let\Vrefformat\Vrefdefaultformat
-    \let\fullrefformat\fullrefdefaultformat
-    \let\vrefrangeformat\vrefrangedefaultformat
   }}
 \DeclareOption{russian}
   {\vref@addto\extrasrussian{%
@@ -674,10 +538,6 @@
     \def\reftextpagerange#1#2{\cyrn\cyra\ \cyrs\cyrt\cyrr\cyra\cyrn
       \cyri\cyrc\cyra\cyrh~\pageref{#1}--\pageref{#2}}%
     \def\reftextlabelrange#1#2{\cyrs~\ref{#1}\ \cyrp\cyro~\ref{#2}}%
-    \let\vrefformat\vrefdefaultformat
-    \let\Vrefformat\Vrefdefaultformat
-    \let\fullrefformat\fullrefdefaultformat
-    \let\vrefrangeformat\vrefrangedefaultformat
   }}
 \DeclareOption{slovak}
   {\vref@addto\extrasslovak{%
@@ -693,10 +553,6 @@
     \def\reftextfaraway#1{na strane~\pageref{#1}}%
     \def\reftextpagerange#1#2{na stran\'ach~\pageref{#1}--\pageref{#2}}%
     \def\reftextlabelrange#1#2{\ref{#1} a\v z~\ref{#2}}%
-    \let\vrefformat\vrefdefaultformat
-    \let\Vrefformat\Vrefdefaultformat
-    \let\fullrefformat\fullrefdefaultformat
-    \let\vrefrangeformat\vrefrangedefaultformat
   }}
 \DeclareOption{slovene}
   {\vref@addto\extrasslovene{%
@@ -708,10 +564,6 @@
     \def\reftextfaraway#1{na strani~\pageref{#1}}%
     \def\reftextpagerange#1#2{na straneh~\pageref{#1}--\pageref{#2}}%
     \def\reftextlabelrange#1#2{od~\ref{#1} do~\ref{#2}}%
-    \let\vrefformat\vrefdefaultformat
-    \let\Vrefformat\Vrefdefaultformat
-    \let\fullrefformat\fullrefdefaultformat
-    \let\vrefrangeformat\vrefrangedefaultformat
   }}
 \DeclareOption{spanish}
   {\vref@addto\extrasspanish{%
@@ -724,10 +576,6 @@
     \def\reftextpagerange#1#2{en las p\'aginas~\pageref{#1}%
                                              -\pageref{#2}}%
     \def\reftextlabelrange#1#2{\ref{#1} a~\ref{#2}}%
-    \let\vrefformat\vrefdefaultformat
-    \let\Vrefformat\Vrefdefaultformat
-    \let\fullrefformat\fullrefdefaultformat
-    \let\vrefrangeformat\vrefrangedefaultformat
   }}
 \DeclareOption{swedish}
   {\vref@addto\extrasswedish{%
@@ -743,10 +591,6 @@
      \def\reftextpagerange#1#2{p\aa\
                                sidorna~\pageref{#1}--\pageref{#2}}%
      \def\reftextlabelrange#1#2{\ref{#1} till~\ref{#2}}%
-    \let\vrefformat\vrefdefaultformat
-    \let\Vrefformat\Vrefdefaultformat
-    \let\fullrefformat\fullrefdefaultformat
-    \let\vrefrangeformat\vrefrangedefaultformat
   }}
 \DeclareOption{turkish}
   {\vref@excuse{turkish}%
@@ -760,7 +604,6 @@
     \def\reftextfaraway#1{on page~\pageref{#1}}%
     \def\reftextpagerange#1#2{on pages~\pageref{#1}--\pageref{#2}}%
     \def\reftextlabelrange#1#2{\ref{#1} to~\ref{#2}}%
-    \let\vrefrangeformat\vrefrangedefaultformat
   }}
 \DeclareOption{ukrainian}
    {\vref@addto\extrasukrainian{%
@@ -783,10 +626,6 @@
      \def\reftextpagerange#1#2{\cyrn\cyra\ \cyrs\cyrt\cyro\cyrr\cyrii
        \cyrn\cyrk\cyra\cyrh~\pageref{#1}--\pageref{#2}}%
      \def\reftextlabelrange#1#2{\cyrz~\ref{#1}\ \cyrd\cyro~\ref{#2}}%
-    \let\vrefformat\vrefdefaultformat
-    \let\Vrefformat\Vrefdefaultformat
-    \let\fullrefformat\fullrefdefaultformat
-    \let\vrefrangeformat\vrefrangedefaultformat
    }}
 \DeclareOption{francais}{%
    \typeout{Please use `french' instead of `francais'}%
@@ -800,6 +639,7 @@
 \DeclareOption{space}  {\@vrefhandlespacetrue}
 \DeclareOption{nospace}{\@vrefhandlespacefalse}
 \ExecuteOptions{english,final,space}
+\ProcessOptions*
 \newcounter{vrcnt}
 \DeclareRobustCommand\vpageref{\@ifstar
      {\let\vref@maybe@space\@empty\vp@gerefstar}%
@@ -906,11 +746,9 @@
 \DeclareRobustCommand\vref{\@ifstar
    {\vref@star}{\vr@f}}
 
-\newcommand\vref@star[1][]{\vrefformat{#1}}
-\def\vrefdefaultformat#1#2{%
+\newcommand\vref@star[2][]{%
   \ref{#2}
   \vpageref[#1]{#2}}
-\let\vrefformat\vrefdefaultformat
 
 \def\vr@f{%
   \leavevmode
@@ -926,12 +764,9 @@
     \expandafter\@firstoftwo \else
     \expandafter\@secondoftwo  \fi}
 \def\reftextvario#1#2{\ifodd\c@vrcnt #1\else#2\fi}
-\newcommand\fullref{\fullrefformat}
-\def\fullrefdefaultformat#1{%
-  \ref{#1} \reftextfaraway{#1}}
-\let\fullrefformat\fullrefdefaultformat
+\def\fullref#1{\ref{#1} \reftextfaraway{#1}}
 \def\vref@pagenum#1#2{%
-  \@ifundefined{r@#2}{\@namedef{r@#2}{{??}{??}{}{}{}}}{}%
+  \@ifundefined{r@#2}{\@namedef{r@#2}{{??}{??}}}{}%
   \expandafter\expandafter\expandafter\vref@@pagenum
   \csname r@#2\endcsname{}{}\@nil#1%
 }
@@ -963,18 +798,14 @@
   \fi
 }
 \newcommand\vpagerefrange{\@ifstar\@svpagerefrange\@vpagerefrange}
-\newcommand\vrefrange[1][\reftextcurrent]{\vrefrangeformat{#1}}
-\def\vrefrangedefaultformat#1#2#3{%
-  \reftextlabelrange{#2}{#3} \vpagerefrange[{#1}]{#2}{#3}}
-\let\vrefrangeformat\vrefrangedefaultformat
+\newcommand\vrefrange[3][\reftextcurrent]
+  {\reftextlabelrange{#2}{#3} \vpagerefrange[{#1}]{#2}{#3}}
 \DeclareRobustCommand\Vref{\@ifstar
    {\Vref@star}%
    {\Vr@f}}
-\newcommand\Vref@star[1][]{\Vrefformat{#1}}
-\def\Vrefdefaultformat#1#2{%
+\newcommand\Vref@star[2][]{%
   \Ref{#2}
   \vpageref[#1]{#2}}
-\let\Vrefformat\Vrefdefaultformat
 \def\Vr@f{%
   \if@vrefhandlespace
     \unskip \vref@space
@@ -1038,7 +869,6 @@
       \protected@edef\@currentlabel
          {\csname p@#1\expandafter\endcsname\csname the#1\endcsname}}
 \fi
-\ProcessOptions*
 \endinput
 %%
 %% End of file `varioref.sty'.

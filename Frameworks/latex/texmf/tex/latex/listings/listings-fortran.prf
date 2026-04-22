@@ -22,7 +22,7 @@
 %% programming languages to Jobst Hoffmann at <j.hoffmann@fh-aachen.de>.
 %%
 \ProvidesFile{listings-fortran.prf}
-    [2024/09/23 1.10c listings language file]
+    [2019/09/10 1.8c listings language file]
 \usepackage[rgb, x11names]{xcolor}
 
 \lstset{%

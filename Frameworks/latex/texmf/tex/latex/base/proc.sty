@@ -13,8 +13,8 @@
 %% (but please observe conditions on bug reports sent to that address!)
 %% 
 %% 
-%% Copyright (C) 1993-2025
-%% The LaTeX Project and any individual authors listed elsewhere
+%% Copyright (C) 1993-2020
+%% The LaTeX3 Project and any individual authors listed elsewhere
 %% in this file.
 %% 
 %% This file was generated from file(s) of the LaTeX base system.
@@ -43,7 +43,7 @@
 %% extension .ins) which are part of the distribution.
 \NeedsTeXFormat{LaTeX2e}[1995/12/01]
 \ProvidesFile{proc.sty}
-              [2021/12/09 v1.3m
+              [2014/09/29 v1.3l
                LaTeX 2.09 compatibility style option `proc']
 \if@compatibility
 \else
@@ -84,12 +84,9 @@
 \setlength\columnsep{.375in}
 \let\@oddhead\@empty
 \let\@evenhead\@empty
-\def\@oddfoot{\rightmark \hfil \pagename{} \thepage}
-\if@twoside
-  \def\@evenfoot{\pagename{} \thepage \hfil \leftmark}
-\else
-  \def\@evenfoot{\@oddfoot}
-\fi
+\def\@oddfoot{\normalfont\rightmark \hfil
+              \pagename{} \thepage}
+\def\@evenfoot{\@oddfoot}
 \def\maketitle{\par
  \begingroup
    \renewcommand\thefootnote{\fnsymbol{footnote}}%

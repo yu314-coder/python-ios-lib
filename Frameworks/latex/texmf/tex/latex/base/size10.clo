@@ -13,8 +13,8 @@
 %% (but please observe conditions on bug reports sent to that address!)
 %% 
 %% 
-%% Copyright (C) 1993-2025
-%% The LaTeX Project and any individual authors listed elsewhere
+%% Copyright (C) 1993-2020
+%% The LaTeX3 Project and any individual authors listed elsewhere
 %% in this file.
 %% 
 %% This file was generated from file(s) of the LaTeX base system.
@@ -42,7 +42,7 @@
 %% and covered by LPPL is defined by the unpacking scripts (with
 %% extension .ins) which are part of the distribution.
 \ProvidesFile{size10.clo}
-              [2024/06/29 v1.4n
+              [2019/12/20 v1.4l
       Standard LaTeX file (size option)]
 \renewcommand\normalsize{%
    \@setfontsize\normalsize\@xpt\@xiipt
@@ -97,7 +97,7 @@
 \setlength\topskip   {10\p@}
 \setlength\footskip{30\p@}
 \if@compatibility \setlength\maxdepth{4\p@} \else
-  \setlength\maxdepth{.5\topskip} \fi
+\setlength\maxdepth{.5\topskip} \fi
 \if@compatibility
   \if@twocolumn
     \setlength\textwidth{410\p@}
@@ -137,7 +137,7 @@
 \fi
 \addtolength\textheight{\topskip}
 \if@twocolumn
-  \setlength\marginparsep {10\p@}
+ \setlength\marginparsep {10\p@}
 \else
   \setlength\marginparsep{11\p@}
 \fi

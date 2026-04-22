@@ -13,8 +13,8 @@
 %% (but please observe conditions on bug reports sent to that address!)
 %% 
 %% 
-%% Copyright (C) 1993-2024
-%% The LaTeX Project and any individual authors listed elsewhere
+%% Copyright (C) 1993-2020
+%% The LaTeX3 Project and any individual authors listed elsewhere
 %% in this file.
 %% 
 %% This file was generated from file(s) of the Standard LaTeX `Tools Bundle'.
@@ -35,40 +35,16 @@
 %% The list of all files belonging to the LaTeX `Tools Bundle' is
 %% given in the file `manifest.txt'.
 %% 
-%% File: xr.dtx Copyright (C) 1993-2024 David Carlisle
+%% File: xr.dtx Copyright (C) 1993-2019 David Carlisle
 \NeedsTeXFormat{LaTeX2e}
-\DeclareRelease{v5}{2023-07-04}{xr-2023-07-04.sty}
-\DeclareCurrentRelease{}{2024-04-10}
 \ProvidesPackage{xr}
-         [2024-04-10 v6.00 eXternal References (DPC)]
-\def\externaldocument{\@testopt\XR@cite{}}
+         [2019/07/22 v5.05 eXternal References (DPC)]
+\def\externaldocument{\@ifnextchar[\XR@{\XR@[]}}
 \let\externalcitedocument\externaldocument
-\def\XR@cite[#1]{\@testopt{\XR@[#1]}{}}
-\def\XR@[#1][#2]#3{\@testopt{\XR@@{#1}{#2}{#3}}{#3.\XR@ext}}
-\def\XR@@nocite{nocite}
-\long\def\@gobblefour  #1#2#3#4{}
-\long\def\@firstoffour #1#2#3#4{#1}
-\long\def\@secondoffour#1#2#3#4{#2}
-\long\def\@thirdoffour #1#2#3#4{#3}
-\long\def\@fourthoffour #1#2#3#4{#4}
-\def\XR@addURL#1{\XR@@dURL#1{}{}{}{}\\}
-\def\XR@@dURL#1#2#3#4#5\\{%
-     \unexpanded{{#1}{#2}{#3}{#4}}{\XR@URL}%
-  }%
-\providecommand\XR@ext{pdf}
-\def\XR@@#1#2#3[#4]{{%
+\def\XR@[#1]#2{{%
   \makeatletter
   \def\XR@prefix{#1}%
-   \def\XR@nocite{#2}%
-   \ifx\XR@nocite\XR@@nocite
-     \let\XR@bibcite\vadjust
-   \else
-     \let\XR@bibcite\bibcite
-   \fi
-  \def\XR@URL{#4}%
-  \set@curr@file{#3}%
-  \filename@parse\@curr@file
-  \XR@next\@curr@file.aux\relax\\}}
+  \XR@next#2.aux\relax\\}}
 \def\XR@next#1\relax#2\\{%
   \edef\XR@list{#2}%
   \XR@loop{#1}}
@@ -76,7 +52,7 @@
   \ifx\XR@list\@empty\else\expandafter\XR@explist\fi}
 
 \def\XR@explist{\expandafter\XR@next\XR@list\\}
-\def\XR@loop#1{\openin\@inputcheck{#1}\relax
+\def\XR@loop#1{\openin\@inputcheck#1\relax
   \ifeof\@inputcheck
     \PackageWarning{xr}{^^JNo file #1^^JLABELS NOT IMPORTED.^^J}%
     \expandafter\XR@aux
@@ -87,26 +63,15 @@
   \read\@inputcheck to\XR@line
   \expandafter\XR@test\XR@line...\XR@}
 \long\def\XR@test#1#2#3#4\XR@{%
-  \let\XR@tempa\@gobblefour
+  \let\XR@tempa\@gobbletwo
   \ifx#1\newlabel
-    \let\XR@tempa\@firstoffour
-  \else\ifx#1\XR@bibcite
-    \let\XR@tempa\@secondoffour
+    \let\XR@tempa\@firstoftwo
+  \else\ifx#1\bibcite
+    \let\XR@tempa\@firstoftwo
   \else\ifx#1\@input
-     \let\XR@tempa\@thirdoffour
-  \else\ifx#1\new@label@record
-     \let\XR@tempa\@fourthoffour
-  \fi\fi\fi\fi
-   \XR@tempa
-    {%
-     \expandafter\protected@xdef\csname r@\XR@prefix#2\endcsname{\XR@addURL{#3}}%
-    }%
-    {\expandafter\bibcite\expandafter{\XR@prefix#2}{#3}}%
-    {\edef\XR@list{\XR@list\filename@area#2\relax}}%
-    {%
-      \edef\next{\noexpand\new@label@record{\XR@prefix#2}{\unexpanded{#3}{xr-url}{\XR@URL}}}%
-      \next
-    }
+     \let\XR@tempa\@secondoftwo
+  \fi\fi\fi
+   \XR@tempa{#1{\XR@prefix#2}{#3}}{\edef\XR@list{\XR@list#2\relax}}%
   \ifeof\@inputcheck\expandafter\XR@aux
   \else\expandafter\XR@read\fi}
 \endinput

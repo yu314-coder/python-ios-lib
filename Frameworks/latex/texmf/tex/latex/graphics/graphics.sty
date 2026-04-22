@@ -12,9 +12,7 @@
 %% 
 %% 
 %% graphics.dtx Copyright (C) 1994      David Carlisle Sebastian Rahtz
-%%              Copyright (C) 1995-2024 LaTeX Project
-%% The LaTeX Project and any individual authors listed elsewhere
-%% in this file.
+%%              Copyright (C) 1995-2020 David Carlisle, LaTeX3 Project
 %%
 %% This file is part of the Standard LaTeX `Graphics Bundle'.
 %% It may be distributed under the terms of the LaTeX Project Public
@@ -24,13 +22,14 @@
 %% This file has the LPPL maintenance status "maintained".
 %%
 \NeedsTeXFormat{LaTeX2e}[1995/12/01]
+\providecommand\DeclareRelease[3]{}
+\providecommand\DeclareCurrentRelease[2]{}
 
-\DeclareRelease{}{1994-06-01}{graphics-2017-06-25.sty}
 \DeclareRelease{}{2017-06-25}{graphics-2017-06-25.sty}
 \DeclareCurrentRelease{}{2019-10-01}
 
 \ProvidesPackage{graphics}
-          [2024/08/06 v1.4g  Standard LaTeX Graphics (DPC,SPQR)]
+          [2019/11/30 v1.4a  Standard LaTeX Graphics (DPC,SPQR)]
 \edef\Gin@codes{%
  \catcode`\noexpand\^^A\the\catcode`\^^A\relax
  \catcode`\noexpand\"\the\catcode`\"\relax
@@ -170,21 +169,25 @@
 \let\Gin@ext\relax
 \def\Gin@sepdefault{.}
 \edef\Gin@gzext{\detokenize{gz}}
-\def\Gin@set@curr@file#1{%
+\def\Gin@temp#1{%
+  \begingroup
+    \escapechar\m@ne
+    \xdef\@curr@file{\expandafter\string\csname #1\endcsname}%
+  \endgroup
+}
+\ifx\set@curr@file\@Gin@temp
+  \let\set@curr@file\@undefined
+\fi
+\ifx\set@curr@file\@undefined
+\def\set@curr@file#1{%
   \begingroup
     \escapechar\m@ne
     \xdef\@curr@file{\expandafter\string\csname\@firstofone#1\@empty\endcsname}%
-  \endgroup}
-\ifx\set@curr@file@nosearch\@undefined
-  \ifx\set@curr@file\@undefined
-    \def\quote@name#1{"\quote@@name#1\@gobble""}
-    \def\quote@@name#1"{#1\quote@@name}
-    \def\unquote@name#1{\quote@@name#1\@gobble"}
-  \else
-    \let\Gin@set@curr@file\set@curr@file
-  \fi
-\else
-  \let\Gin@set@curr@file\set@curr@file@nosearch
+  \endgroup
+}
+\def\quote@name#1{"\quote@@name#1\@gobble""}
+\def\quote@@name#1"{#1\quote@@name}
+\def\unquote@name#1{\quote@@name#1\@gobble"}
 \fi
 \def\Ginclude@graphics#1{%
   \ifx\detokenize\@undefined\else
@@ -192,14 +195,14 @@
   \fi
   \begingroup
   \let\input@path\Ginput@path
-  \Gin@set@curr@file{#1}%
+  \set@curr@file{#1}%
   \expandafter\filename@parse\expandafter{\@curr@file}%
   \ifx\filename@ext\Gin@gzext
     \expandafter\filename@parse\expandafter{\filename@base}%
     \ifx\filename@ext\relax
       \let\filename@ext\Gin@gzext
     \else
-      \edef\filename@ext{\filename@ext\Gin@sepdefault\Gin@gzext}%
+      \edef\Gin@ext{\Gin@ext\Gin@sepdefault\Gin@gzext}%
     \fi
   \fi
   \ifx\filename@ext\relax
@@ -209,26 +212,20 @@
       \fi}%
   \else
     \Gin@getbase{\Gin@sepdefault\filename@ext}%
-    \ifnum0%
-        \ifx\Gin@ext\relax 1%
-        \else \@ifundefined{Gin@rule@\Gin@ext}{1}{0}%
-        \fi >0
-      \let\Gin@extsaved\Gin@ext
-      \let\Gin@savedbase\filename@base
-      \let\Gin@savedext\filename@ext
-      \let\Gin@ext\relax
-      \edef\filename@base{\filename@base\Gin@sepdefault\filename@ext}%
-      \let\filename@ext\relax
-      \@for\Gin@temp:=\Gin@extensions\do{%
-          \ifx\Gin@ext\relax
-            \Gin@getbase\Gin@temp
-          \fi}%
+\ifx\Gin@ext\relax
+\let\Gin@savedbase\filename@base
+\let\Gin@savedext\filename@ext
+  \edef\filename@base{\filename@base\Gin@sepdefault\filename@ext}%
+  \let\filename@ext\relax
+   \@for\Gin@temp:=\Gin@extensions\do{%
       \ifx\Gin@ext\relax
-        \let\Gin@ext\Gin@extsaved
-        \let\filename@base\Gin@savedbase
-        \let\filename@ext\Gin@savedext
-      \fi
-    \fi
+        \Gin@getbase\Gin@temp
+      \fi}%
+  \ifx\Gin@ext\relax
+    \let\filename@base\Gin@savedbase
+    \let\filename@ext\Gin@savedext
+  \fi
+\fi
     \ifx\Gin@ext\relax
        \@warning{File `#1' not found}%
        \def\Gin@base{\filename@area\filename@base}%
@@ -346,7 +343,6 @@
   \dospecials
   \catcode`\ 10 %
   \catcode`\^^I10 %
-  \endlinechar13 %
   \catcode\endlinechar5 %
   \@makeother\:%
   \@makeother\-%
@@ -404,34 +400,6 @@
   \Gin@defaultbp\Gin@urx{#3}%
   \Gin@defaultbp\Gin@ury{#4}}%
 \def\Gread@atend{atend}
-\def\Gin@viewport{%
-  \let\Gin@ollx\Gin@llx
-  \let\Gin@olly\Gin@lly
-  \let\Gin@ourx\Gin@urx
-  \let\Gin@oury\Gin@ury
-  \dimen@\Gin@llx\p@\advance\dimen@ \Gin@vurx\p@
-                      \edef\Gin@urx{\strip@pt\dimen@}%
-  \dimen@\Gin@lly\p@\advance\dimen@ \Gin@vury\p@
-                      \edef\Gin@ury{\strip@pt\dimen@}%
-  \dimen@\Gin@llx\p@\advance\dimen@ \Gin@vllx\p@
-                      \edef\Gin@llx{\strip@pt\dimen@}%
-  \dimen@\Gin@lly\p@\advance\dimen@ \Gin@vlly\p@
-                      \edef\Gin@lly{\strip@pt\dimen@}}
-\def\Gin@trim{%
-  \let\Gin@ollx\Gin@llx
-  \let\Gin@olly\Gin@lly
-  \let\Gin@ourx\Gin@urx
-  \let\Gin@oury\Gin@ury
-  \dimen@\Gin@llx\p@\advance\dimen@ \Gin@vllx\p@
-                      \edef\Gin@llx{\strip@pt\dimen@}%
-  \dimen@\Gin@lly\p@\advance\dimen@ \Gin@vlly\p@
-                      \edef\Gin@lly{\strip@pt\dimen@}%
-  \dimen@\Gin@urx\p@\advance\dimen@ -\Gin@vurx\p@
-                      \edef\Gin@urx{\strip@pt\dimen@}%
-  \dimen@\Gin@ury\p@\advance\dimen@ -\Gin@vury\p@
-                      \edef\Gin@ury{\strip@pt\dimen@}}
-\let\Gin@vllx\Gin@llx\let\Gin@vlly\Gin@llx
-\let\Gin@vurx\Gin@llx\let\Gin@vury\Gin@llx
 \let\Grot@height\@ovxx
 \let\Grot@left\@ovyy
 \let\Grot@right\@ovdx

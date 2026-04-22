@@ -8,8 +8,8 @@
 %% 
 %% This is a generated file.
 %% 
-%% Copyright (C) 1993-2025
-%% The LaTeX Project and any individual authors listed elsewhere
+%% Copyright (C) 1993-2020
+%% The LaTeX3 Project and any individual authors listed elsewhere
 %% in this file.
 %% 
 %% This file was generated from file(s) of the LaTeX base system.
@@ -35,18 +35,18 @@
 %% the system are in the document `cfgguide.tex'.
 %% 
 %% 
-%%%   From File: fontdef.dtx
+%%% From File: fontdef.dtx
 \ProvidesFile{fonttext.ltx}
-           [2024/11/19 v3.0l LaTeX Kernel
-   (Text font setup)
-]
+           [2020/02/11 v3.0g LaTeX Kernel
+(Text
+           font setup)]
 \typeout{=== Don't modify this file, use a .cfg file instead ===^^J}
 \input {omlenc.def}
 \input {omsenc.def}
 \input {ot1enc.def}
 \input  {t1enc.def}
-\input {ts1enc.def}
-\ifx\Umathcode\@undefined
+\input{ts1enc.def}
+\ifx\Umathchar\@undefined
 \fontencoding{OT1}
 \def\@fontenc@load@list{\@elt{T1,OT1}}
 \def\rmsubstdefault{cmr}
@@ -68,23 +68,20 @@
 \DeclareFontSubstitution{TU}{lmr}{m}{n}
 \fi
 \DeclareFontEncodingDefaults{}{}
+\DeclareFontSubstitution{T1}{cmr}{m}{n}
+\DeclareFontSubstitution{OT1}{cmr}{m}{n}
 \begingroup
 \nfss@catcodes
 \input  {t1cmr.fd}
 \input  {ot1cmr.fd}
-\input  {ts1cmr.fd}
 \endgroup
 \begingroup
 \nfss@catcodes
-\input {t1cmss.fd}
-\input {t1cmtt.fd}
 \input {ot1cmss.fd}
 \input {ot1cmtt.fd}
-\input {ts1cmss.fd}
-\input {ts1cmtt.fd}
 \endgroup
 \DeclareErrorFont{OT1}{cmr}{m}{n}{10}
-\ifx\Umathcode\@undefined
+\ifx\Umathchar\@undefined
 \newcommand\encodingdefault{OT1}
 \newcommand\rmdefault{cmr}
 \newcommand\sfdefault{cmss}
@@ -96,18 +93,15 @@
 \newcommand\sfdefault{lmss}
 \newcommand\ttdefault{lmtt}
 \fi
-\newcommand\bfdefault{b}  % overwritten below (for rollback)
-\newcommand\mddefault{m}  % overwritten below (for rollback)
+\newcommand\bfdefault{b}  % overwritten below
+\newcommand\mddefault{m}
 \newcommand\itdefault{it}
 \newcommand\sldefault{sl}
 \newcommand\scdefault{sc}
-\newcommand\updefault{up}  % overwritten below (for rollback)
+\newcommand\updefault{up}  % overwritten below
 
 \renewcommand\updefault{up}
-\renewcommand\bfdefault{b\@empty}
-\renewcommand\mddefault{m\@empty}
-\let\bfdefault@previous\bfdefault
-\let\mddefault@previous\mddefault
+\renewcommand\bfdefault{b}
 \newcommand\familydefault{\rmdefault}
 \newcommand\seriesdefault{\mddefault}
 \newcommand\shapedefault{n}

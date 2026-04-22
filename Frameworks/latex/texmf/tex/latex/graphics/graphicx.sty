@@ -12,9 +12,7 @@
 %% 
 %% 
 %% graphicx.dtx Copyright (C) 1994      David Carlisle Sebastian Rahtz
-%%              Copyright (C) 1995-2024 LaTeX Project
-%% The LaTeX Project and any individual authors listed elsewhere
-%% in this file.
+%%              Copyright (C) 1995-2020 David Carlisle, LaTeX3 Project
 %%
 %% This file is part of the Standard LaTeX `Graphics Bundle'.
 %% It may be distributed under the terms of the LaTeX Project Public
@@ -23,7 +21,7 @@
 %%
 \NeedsTeXFormat{LaTeX2e}[1995/12/01]
 \ProvidesPackage{graphicx}
-          [2021/09/16 v1.2d  Enhanced LaTeX Graphics (DPC,SPQR)]
+          [2019/11/30 v1.2a  Enhanced LaTeX Graphics (DPC,SPQR)]
 \DeclareOption{unknownkeysallowed}
   {\PassOptionsToPackage\CurrentOption{keyval}}
 \DeclareOption*{\PassOptionsToPackage\CurrentOption{graphics}}
@@ -55,6 +53,34 @@
   \Gin@defaultbp\Gin@vlly{#2}%
   \Gin@defaultbp\Gin@vurx{#3}%
   \Gin@defaultbp\Gin@vury{#4}}%
+\def\Gin@viewport{%
+  \let\Gin@ollx\Gin@llx
+  \let\Gin@olly\Gin@lly
+  \let\Gin@ourx\Gin@urx
+  \let\Gin@oury\Gin@ury
+  \dimen@\Gin@llx\p@\advance\dimen@ \Gin@vurx\p@
+                      \edef\Gin@urx{\strip@pt\dimen@}%
+  \dimen@\Gin@lly\p@\advance\dimen@ \Gin@vury\p@
+                      \edef\Gin@ury{\strip@pt\dimen@}%
+  \dimen@\Gin@llx\p@\advance\dimen@ \Gin@vllx\p@
+                      \edef\Gin@llx{\strip@pt\dimen@}%
+  \dimen@\Gin@lly\p@\advance\dimen@ \Gin@vlly\p@
+                      \edef\Gin@lly{\strip@pt\dimen@}}
+\def\Gin@trim{%
+  \let\Gin@ollx\Gin@llx
+  \let\Gin@olly\Gin@lly
+  \let\Gin@ourx\Gin@urx
+  \let\Gin@oury\Gin@ury
+  \dimen@\Gin@llx\p@\advance\dimen@ \Gin@vllx\p@
+                      \edef\Gin@llx{\strip@pt\dimen@}%
+  \dimen@\Gin@lly\p@\advance\dimen@ \Gin@vlly\p@
+                      \edef\Gin@lly{\strip@pt\dimen@}%
+  \dimen@\Gin@urx\p@\advance\dimen@ -\Gin@vurx\p@
+                      \edef\Gin@urx{\strip@pt\dimen@}%
+  \dimen@\Gin@ury\p@\advance\dimen@ -\Gin@vury\p@
+                      \edef\Gin@ury{\strip@pt\dimen@}}
+\let\Gin@vllx\Gin@llx\let\Gin@vlly\Gin@llx
+\let\Gin@vurx\Gin@llx\let\Gin@vury\Gin@llx
 \define@key{Gin}{angle}
            {\Gin@esetsize
             \@tempswatrue
@@ -101,7 +127,7 @@
 \define@key{Gin}{decodearray}{%
   \def\Gin@decode{#1}%
 }
-\define@key{Gin}{quiet}[]{%
+\define@key{Gin}{quiet}{%
   \let\Gin@log\@gobble
 }
 \define@key{Gin}{page}{%
@@ -130,7 +156,6 @@
       \def\Gin@pagebox@bleedbox{bleedbox}%
       \def\Gin@pagebox@trimbox{trimbox}%
       \def\Gin@pagebox@artbox{artbox}%
-\define@key{Gin}{alt}{}
 \def\Gin@boolkey#1#2{%
   \csname Gin@#2\ifx\relax#1\relax true\else#1\fi\endcsname}
 \def\Gin@eresize{\height}

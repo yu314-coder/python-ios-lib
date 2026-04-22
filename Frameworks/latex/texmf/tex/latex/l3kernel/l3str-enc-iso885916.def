@@ -6,7 +6,7 @@
 %%
 %% l3str-convert.dtx  (with options: `iso885916')
 %% 
-%% Copyright (C) 1990-2025 The LaTeX Project
+%% Copyright (C) 1990-2020 The LaTeX3 Project
 %% 
 %% It may be distributed and/or modified under the conditions of
 %% the LaTeX Project Public License (LPPL), either version 1.3c of
@@ -19,7 +19,7 @@
 %% and all files in that bundle must be distributed together.
 %% 
 %% File: l3str-convert.dtx
-\__str_declare_eight_bit_encoding:nnnn { iso885916 } { 558 }
+\str_declare_eight_bit_encoding:nnn { iso885916 }
   {
     { A1 } { 0104 }
     { A2 } { 0105 }

@@ -22,14 +22,12 @@
 %% programming languages to Jobst Hoffmann at <j.hoffmann@fh-aachen.de>.
 %%
 \ProvidesFile{listings-python.prf}
-    [2024/09/23 1.10c listings language file]
+    [2019/09/10 1.8c listings language file]
 \usepackage{xcolor}
 \usepackage{textcomp}
 
 %% Actual colors from idlelib/config-highlight.def
 %%     --> corrected to ``web-safe''
-%% Unimplemented IDLE syntax: function/class names being
-%% defined should be blue
 %% strings  = #00aa00 / 0,170,0      (a darker green)
 %% builtins = #900090 / 144,0,144    (purple-ish)
 %% keywords = #FF7700 / 255,119,0    (quite close to plain `orange')

@@ -13,8 +13,8 @@
 %% (but please observe conditions on bug reports sent to that address!)
 %% 
 %% 
-%% Copyright (C) 1993-2025
-%% The LaTeX Project and any individual authors listed elsewhere
+%% Copyright (C) 1993-2020
+%% The LaTeX3 Project and any individual authors listed elsewhere
 %% in this file.
 %% 
 %% This file was generated from file(s) of the LaTeX base system.
@@ -43,7 +43,7 @@
 %% extension .ins) which are part of the distribution.
 %%% From File: ltoutenc.dtx
 \ProvidesFile{ot1enc.def}
- [2021/04/29 v2.0v
+ [2020/02/11 v2.0o
       Standard LaTeX file]
 \DeclareFontEncoding{OT1}{}{}
 \DeclareTextAccent{\"}{OT1}{127}
@@ -77,9 +77,6 @@
 \DeclareTextSymbol{\ss}{OT1}{25}
 \DeclareTextSymbol{\textemdash}{OT1}{124}
 \DeclareTextSymbol{\textendash}{OT1}{123}
-\DeclareTextCommand{\textnonbreakinghyphen}{OT1}{\mbox{-}\nobreak\hskip\z@}
-\DeclareTextCommand{\textfiguredash}       {OT1}{\textendash}
-\DeclareTextCommand{\texthorizontalbar}    {OT1}{\textemdash}
 \DeclareTextCommand{\textexclamdown}{OT1}{!`}
 \DeclareTextCommand{\textquestiondown}{OT1}{?`}
 \DeclareTextSymbol{\textquotedblleft}{OT1}{92}
@@ -94,9 +91,9 @@
    {\leavevmode\setbox\z@\hbox{!}\dimen@\ht\z@\advance\dimen@-1ex%
     \rlap{\raise.67\dimen@\hbox{\char23}}A}
 \DeclareTextCommand{\ij}{OT1}{%
-  \nobreak\hskip\z@skip i\kern-0.02em\nobreak\hskip\z@skip j}
+  \nobreak\hskip\z@skip i\kern-0.02em j\nobreak\hskip\z@skip}
 \DeclareTextCommand{\IJ}{OT1}{%
-  \nobreak\hskip\z@skip I\kern-0.02em\nobreak\hskip\z@skip J}
+  \nobreak\hskip\z@skip I\kern-0.02em J\nobreak\hskip\z@skip}
 \DeclareTextCommand{\textdollar}{OT1}{\hmode@bgroup
    \ifdim \fontdimen\@ne\font >\z@
       \slshape
@@ -120,7 +117,6 @@
 \ifx\textcommaabove\@undefined\else
 \DeclareTextCompositeCommand{\c}{OT1}{g}{\textcommaabove{g}}
 \fi
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \endinput
 %%
 %% End of file `ot1enc.def'.

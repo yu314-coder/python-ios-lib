@@ -6,8 +6,8 @@
 %%
 %% listings.dtx  (with options: `doc')
 %% 
-\def\filedate{2024/09/23}
-\def\fileversion{1.10c}
+\def\filedate{2019/09/10}
+\def\fileversion{1.8c}
 \ProvidesPackage{lstdoc}
              [\filedate\space\fileversion\space(Carsten Heinz)]
 \let\lstdoc@currversion\fileversion
@@ -32,7 +32,7 @@
 \ifalgorithmicpkg \RequirePackage{algorithmic}\fi
 \iflgrind \RequirePackage{lgrind}\fi
 \RequirePackage{nameref}
-\RequirePackage{xurl}           % allow URL breaks
+\RequirePackage{url}
 \renewcommand\ref{\protect\T@ref}
 \renewcommand\pageref{\protect\T@pageref}
 \def\lst@BeginRemark#1{%
@@ -218,6 +218,11 @@
     \lstkeyindex{#1}{}%
     \lstaspectindex{#1}{}%
     \keyname{#1}}
+\newcommand\ekeyname[1]{%
+    \@bsphack
+    \lstkeyindex{#1}{}%
+    \lstaspectindex{#1}{}%
+    \@esphack}
 \newcommand\rkeyname[1]{%
     \@bsphack
     \lstkeyindex{#1}{}%

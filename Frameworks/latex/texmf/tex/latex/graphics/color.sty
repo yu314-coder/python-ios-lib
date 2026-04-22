@@ -12,9 +12,7 @@
 %% 
 %% 
 %% color.dtx Copyright (C) 1994--1999 David Carlisle
-%%           Copyright (C) 2005-2024 LaTeX Project
-%% The LaTeX Project and any individual authors listed elsewhere
-%% in this file.
+%%           Copyright (C) 2005-2020 David Carlisle, LaTeX3 Project
 %%
 %% This file is part of the Standard LaTeX `Graphics Bundle'.
 %% It may be distributed under the terms of the LaTeX Project Public
@@ -25,7 +23,7 @@
 %%
 \NeedsTeXFormat{LaTeX2e}[1995/12/01]
 \ProvidesPackage{color}
-          [2024/06/23 v1.3e Standard LaTeX Color (DPC)]
+          [2019/11/23 v1.2a Standard LaTeX Color (DPC)]
 \edef\Gin@codes{%
  \catcode`\noexpand\^^A\the\catcode`\^^A\relax
  \catcode`\noexpand\"\the\catcode`\"\relax
@@ -60,7 +58,7 @@
                       \def\c@lor@namefile{dvipsnam.def}}
 \DeclareOption{xdvi}{\ExecuteOptions{dvips,monochrome}}
 \DeclareOption{dvipdf}{\def\Gin@driver{dvipdf.def}}
-\DeclareOption{dvipdfm}{\def\Gin@driver{dvipdfmx.def}}
+\DeclareOption{dvipdfm}{\def\Gin@driver{dvipdfm.def}}
 \DeclareOption{dvipdfmx}{\def\Gin@driver{dvipdfmx.def}}
 \DeclareOption{pdftex}{\def\Gin@driver{pdftex.def}}
 \DeclareOption{luatex}{\def\Gin@driver{luatex.def}}
@@ -84,7 +82,7 @@
 \let\c@lor@usename\@gobble
 \DeclareOption{usenames}{%
   \def\c@lor@usename#1{%
-    \expandafter\color@named\csname\@backslashchar color@#1\endcsname{#1}}}
+    \expandafter\color@named\csname\string\color @#1\endcsname{#1}}}
 \DeclareRobustCommand\color{%
   \@ifnextchar[\@undeclaredcolor\@declaredcolor}
 \def\@undeclaredcolor[#1]#2{%
@@ -94,10 +92,10 @@
      \set@color}%
   \ignorespaces}
 \def\@declaredcolor#1{%
-  \@ifundefined{\@backslashchar color@#1}%
+  \@ifundefined{\string\color @#1}%
     {\c@lor@error{`#1'}}%
     {\expandafter\let\expandafter\current@color
-     \csname\@backslashchar color@#1\endcsname
+     \csname\string\color @#1\endcsname
      \set@color}%
   \ignorespaces}
 \protected\def\textcolor#1#{\@textcolor{#1}}
@@ -109,7 +107,7 @@
       \color}
 \protected\def\nopagecolor{%
   \@ifundefined{no@page@color}{%
-    \PackageInfo{color}{\@backslashchar nopagecolor\space is not supported}%
+    \PackageInfo{color}{\string\nopagecolor\space is not supported}%
   }{%
     \no@page@color
   }%
@@ -117,16 +115,16 @@
 \protected\def\definecolor#1#2#3{%
   \@ifundefined{color@#2}%
     {\c@lor@error{model `#2'}}%
-    {\@ifundefined{\@backslashchar color@#1}{}%
+    {\@ifundefined{\string\color @#1}{}%
       {\PackageInfo{color}{Redefining color #1}}%
      \csname color@#2\expandafter\endcsname
-         \csname\@backslashchar color@#1\endcsname{#3}}}
+         \csname\string\color @#1\endcsname{#3}}}
 \protected\def\DefineNamedColor#1#2#3#4{%
   \@ifundefined{define@color@#1}%
     {\c@lor@error{model `#1'}}%
     {\@ifundefined{color@#3}%
       {\c@lor@error{model `#3'}}%
-      {\@ifundefined{col@#2}{}%
+      {\@ifundefined{c@lor@#1@#2}{}%
         {\PackageInfo{color}{Redefining color #2 in named color model}}%
       \csname color@#3\endcsname\@tempa{#4}%
       \csname define@color@#1\endcsname{#2}\@tempa
@@ -167,10 +165,9 @@
  \dimen@\dp\z@\advance\dimen@\fboxsep\dp\z@\dimen@
  {#1{#2\color@block{\wd\z@}{\ht\z@}{\dp\z@}%
       \box\z@}}}
-\input{mathcolor.ltx}
 \def\color@setgroup{\begingroup\set@color}
 \let\color@begingroup\begingroup
-\def\color@endgroup{\endgraf\@endpefalse\endgroup}
+\def\color@endgroup{\endgraf\endgroup}
 \def\color@hbox{\hbox\bgroup\color@begingroup}
 \def\color@vbox{\vbox\bgroup\color@begingroup}
 \def\color@endbox{\color@endgroup\egroup}

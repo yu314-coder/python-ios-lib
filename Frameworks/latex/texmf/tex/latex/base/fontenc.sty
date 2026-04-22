@@ -13,8 +13,8 @@
 %% (but please observe conditions on bug reports sent to that address!)
 %% 
 %% 
-%% Copyright (C) 1993-2025
-%% The LaTeX Project and any individual authors listed elsewhere
+%% Copyright (C) 1993-2020
+%% The LaTeX3 Project and any individual authors listed elsewhere
 %% in this file.
 %% 
 %% This file was generated from file(s) of the LaTeX base system.
@@ -43,7 +43,7 @@
 %% extension .ins) which are part of the distribution.
 %%% From File: ltoutenc.dtx
 \ProvidesPackage{fontenc}
- [2021/04/29 v2.0v
+ [2020/02/11 v2.0o
                         Standard LaTeX package]
 \def\update@uclc@with@cyrillic{%
  \expandafter\def\expandafter\@uclclist\expandafter
@@ -90,11 +90,7 @@
           {}{\PackageError{fontenc}%
            {Encoding file `\reserved@f' not found.%
             \MessageBreak
-            You might have misspelled the name of the encoding
-            \MessageBreak
-            or a required support package (e.g., cyrillic) is
-            \MessageBreak
-            missing in your installation}%
+             You might have misspelt the name of the encoding}%
            {Necessary code for this encoding was not
             loaded.\MessageBreak
             Thus calling the encoding later on will
@@ -118,13 +114,10 @@
 \let\@elt\relax
 \xdef\@fontenc@load@list{\@fontenc@load@list
   \@elt{\csname opt@fontenc.sty\endcsname}}
-\global\expandafter\let\csname ver@@fontenc.sty\expandafter\endcsname
-                       \csname ver@fontenc.sty\endcsname
 \global\expandafter\let\csname ver@fontenc.sty\endcsname\relax
 \global\expandafter\let\csname opt@fontenc.sty\endcsname\relax
 \global\let\@ifl@ter@@\@ifl@ter
 \def\@ifl@ter#1#2#3#4#5{\global\let\@ifl@ter\@ifl@ter@@}
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \endinput
 %%
 %% End of file `fontenc.sty'.

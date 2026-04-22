@@ -13,8 +13,8 @@
 %% (but please observe conditions on bug reports sent to that address!)
 %% 
 %% 
-%% Copyright (C) 1993-2025
-%% The LaTeX Project and any individual authors listed elsewhere
+%% Copyright (C) 1993-2020
+%% The LaTeX3 Project and any individual authors listed elsewhere
 %% in this file.
 %% 
 %% This file was generated from file(s) of the LaTeX base system.
@@ -41,24 +41,23 @@
 %% The list of derived (unpacked) files belonging to the distribution
 %% and covered by LPPL is defined by the unpacking scripts (with
 %% extension .ins) which are part of the distribution.
-%%% From File: lttextcomp.dtx
-\DeclareRelease{}{1997-12-01}{textcomp-2018-08-11.sty}
+
+\providecommand\DeclareRelease[3]{}
+\providecommand\DeclareCurrentRelease[2]{}
+
 \DeclareRelease{}{2018-08-11}{textcomp-2018-08-11.sty}
 \DeclareCurrentRelease{}{2020-02-02}
 
 \ProvidesPackage{textcomp}
- [2024/04/24 v2.1b Standard LaTeX package]
+ [2020/02/02 v2.0n Standard LaTeX package]
 \NeedsTeXFormat{LaTeX2e}[2020/02/02]
 \DeclareOption{full}{\DeclareEncodingSubset{TS1}{?}{0}}
 \DeclareOption{almostfull}{\DeclareEncodingSubset{TS1}{?}{1}}
 \DeclareOption{euro}{\DeclareEncodingSubset{TS1}{?}{8}}
 \DeclareOption{safe}{\DeclareEncodingSubset{TS1}{?}{9}}
-\DeclareOption{error}
-              {\gdef\tc@errorwarn{\PackageError{textcomp}}}
-\DeclareOption{warn}
-              {\gdef\tc@errorwarn#1#2{\PackageWarning{textcomp}{#1}}}
-\DeclareOption{info}
-              {\gdef\tc@errorwarn#1#2{\PackageInfo{textcomp}{#1}}}
+\DeclareOption{error}{\gdef\tc@errorwarn{\PackageError{textcomp}}}
+\DeclareOption{warn}{\gdef\tc@errorwarn#1#2{\PackageWarning{textcomp}{#1}}}
+\DeclareOption{info}{\gdef\tc@errorwarn#1#2{\PackageInfo{textcomp}{#1}}}
 \DeclareOption{quiet}{\gdef\tc@errorwarn#1#2{}}
 \DeclareOption{force}{%
     \def\CheckEncodingSubset#1#2#3#4#5{%
@@ -72,9 +71,11 @@
      {#1{#2}}{#3}%
      #5}%
 }
+\ExecuteOptions{info}
 \ProcessOptions\relax
 \InputIfFileExists{textcomp.cfg}
   {\PackageInfo{textcomp}{Local configuration file used}}{}
+
 
 \endinput
 %%

@@ -12,8 +12,8 @@
 %% reports for it can be opened at https://latex-project.org/bugs/
 %% (but please observe conditions on bug reports sent to that address!)
 %% 
-%% Copyright (C) 1993-2024
-%% The LaTeX Project and any individual authors listed elsewhere
+%% Copyright (C) 1993-2020
+%% The LaTeX3 Project and any individual authors listed elsewhere
 %% in this file.
 %% 
 %% This file was generated from file(s) of the Standard LaTeX `Tools Bundle'.
@@ -34,23 +34,17 @@
 %% The list of all files belonging to the LaTeX `Tools Bundle' is
 %% given in the file `manifest.txt'.
 %% 
-%% Copyright 1996 1997 1998 1999 2002 2003 2004 2016 2017 2019 2021 2022 2023
+%% Copyright 1996 1997 1998 1999 2002 2003 2004 2016 2017 2019
 %% David Carlisle Frank Mittelbach
 %%
 %% Development of this package was commissioned by Y&Y Inc.
 \NeedsTeXFormat{LaTeX2e}
 \ProvidesPackage{bm}
-          [2023/12/19 v1.2f Bold Symbol Support (DPC/FMi)]
-\DeclareOption{nopmb}{\let\bm@pmb@\@firstofone}
-\DeclareOption{warn}{\def\bm@info{\PackageWarningNoLine{bm}}}
-\DeclareOption{info}{\def\bm@info#1{\PackageInfo{bm}{#1\@gobble}}}
-\DeclareOption{silent}{\let\bm@info\@gobble}
-\ExecuteOptions{info}
-\ProcessOptions\relax
-\def\bm@setup#1#2{%
-  \let\bm@install@mathalphabet\install@mathalphabet
-  \let\bm@getanddefine@fonts\getanddefine@fonts
-  \let\bm@or\or
+          [2019/07/24 v1.2d Bold Symbol Support (DPC/FMi)]
+\def\bm#1#2{%
+  \let\bm@pmb\install@mathalphabet
+  \let\bm@pmb@\getanddefine@fonts
+  \let\bm@pmb@@\or
   \edef\bm@general{\f@encoding/\f@family/\f@series/\f@shape/\f@size}%
   \@tempcnta#2%
   \count@-\count18%
@@ -71,8 +65,6 @@
       \@tempb\csname mv@#1\endcsname\@nil
     \ifx\@tempa\@tempb
       \bm@define\m@ne
-      \bm@info{No #1 for \string##2%
-               \ifx\bm@pmb@\@firstofone\else, using \string\pmb\fi}%
     \else
       \edef\@tempa{sym#1\expandafter\@gobblefour\string##1}%
       \ifnum\@tempcnta<%
@@ -113,7 +105,7 @@
            \fi
          \fi
         \else
-          \bm@info
+          \PackageInfo{bm}%
             {Symbol font \@tempa\space already defined.\MessageBreak
              Not overwriting it}%
         \fi
@@ -131,9 +123,9 @@
       \z@
     \noexpand\fi}%
   \expandafter\split@name\bm@general\@nil
-  \let\install@mathalphabet\bm@install@mathalphabet
-  \let\getanddefine@fonts\bm@getanddefine@fonts
-  \let\or\bm@or}
+  \let\install@mathalphabet\bm@pmb
+  \let\getanddefine@fonts\bm@pmb@
+  \let\or\bm@pmb@@}
 \ifx\bmmax\@undefined
   \chardef\bmmax=4
 \fi
@@ -141,9 +133,9 @@
   \def\bm@boldtable{\m@ne}
   \AtEndOfPackage{%
     \def\bm@gr@up#1#2{%
-      \bm@install@mathalphabet{#2}}}
+      \bm@pmb{#2}}}
 \else
-  \bm@setup{bold}\bmmax
+  \bm{bold}\bmmax
   \@ifundefined{symboldoperators}
     {}
     {\DeclareSymbolFontAlphabet\mathbf{boldoperators}}
@@ -153,7 +145,7 @@
 \fi
 \ifx\mv@heavy\@undefined
 \else
-  \bm@setup{heavy}\hmmax
+  \bm{heavy}\hmmax
 \fi
 \begingroup
 \catcode`\'=\active
@@ -184,14 +176,12 @@
         \expandafter\@secondoftwo
       \fi
       {##2##4}{##3{##4}}}%
-    \let\kernel@ifnextchar\@ifnextchar
     \def\GenericWarning##1##2{%
       \unvcopy{\GenericWarning{##1}{##2}}}%
     \def\GenericError##1##2##3##4{%
       \unvcopy{\GenericError{##1}{##2}{##3}{##4}}}%
     \let\DN@\copy
     \let\FN@\copy
-    \let\nolimits@\copy
     \let\next@\copy
     \global\let\bm@first\@empty
     \ifx\uproot@\undefined\else
@@ -367,7 +357,6 @@
 \fi}
 \def\bm@pmb#1{%
   \bm@add{\bm@pmb@{#1}}}
-\ifx\bm@pmb@\@firstofone\else
 \def\bm@pmb@#1{{%
   \setbox\tw@\hbox{$\m@th\mkern.4mu$}%
   \mathchoice
@@ -383,7 +372,6 @@
   \raise1.5\dimen@\rlap{\copy\z@}%
   \kern\dimen@
   \box\z@}}%
-\fi
 \def\bm@class{%
   \ifcase\count@
     \or

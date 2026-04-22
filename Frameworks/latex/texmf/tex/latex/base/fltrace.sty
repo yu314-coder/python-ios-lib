@@ -13,8 +13,8 @@
 %% (but please observe conditions on bug reports sent to that address!)
 %% 
 %% 
-%% Copyright (C) 1993-2025
-%% The LaTeX Project and any individual authors listed elsewhere
+%% Copyright (C) 1993-2020
+%% The LaTeX3 Project and any individual authors listed elsewhere
 %% in this file.
 %% 
 %% This file was generated from file(s) of the LaTeX base system.
@@ -43,7 +43,7 @@
 %% extension .ins) which are part of the distribution.
 %%% From File: ltoutput.dtx
 \ProvidesPackage{fltrace}
-       [2021/07/31 v1.4e
+       [2018/11/28 v1.4d
                   Tracing LaTeX floats algorithm (FMi)]
 \def\onecolumn{%
   \clearpage
@@ -112,7 +112,7 @@
   \global \advance \@colht \@tempdima
   \ifx \@dbltoplist \@empty
   \else
-    \@latex@error{Float(s) lost}\@ehb
+    \@latexerr{Float(s) lost}\@ehb
     \let \@dbltoplist \@empty
   \fi
   \@cons \@dbltoplist \@currbox
@@ -224,10 +224,8 @@
 \let\f@depth\z@
 \def \@opcol {%
   \if@twocolumn
-    \@expl@@@mark@update@dblcol@structures@@
     \@outputdblcol
   \else
-    \@expl@@@mark@update@singlecol@structures@@
     \@outputpage
     \fl@trace{PAGE: one column (float? see above) page completed}%
   \fi
@@ -939,7 +937,6 @@
                           {trace float vals}%
 \def \tracefloatvals{%
  \begingroup
-  \tracefloats
   \@dblfloatplacement
   \@floatplacement
   \fl@trace{***Float placement parameters:}%
@@ -966,7 +963,6 @@
                           {trace float vals}%
 \def \tracefloatvals{%
  \begingroup
-  \tracefloats
   \@dblfloatplacement
   \@floatplacement
   \fl@trace{***Float placement parameters:}%

@@ -13,8 +13,8 @@
 %% (but please observe conditions on bug reports sent to that address!)
 %% 
 %% 
-%% Copyright (C) 1993-2025
-%% The LaTeX Project and any individual authors listed elsewhere
+%% Copyright (C) 1993-2020
+%% The LaTeX3 Project and any individual authors listed elsewhere
 %% in this file.
 %% 
 %% This file was generated from file(s) of the LaTeX base system.
@@ -43,7 +43,7 @@
 %% extension .ins) which are part of the distribution.
 %%% From File: ltoutenc.dtx
 \ProvidesFile{ot4enc.def}
- [2021/04/29 v2.0v
+ [2020/02/11 v2.0o
       Standard LaTeX file]
 \DeclareFontEncoding{OT4}{}{}
 \DeclareFontSubstitution{OT4}{cmr}{m}{n}
@@ -126,7 +126,6 @@
 \DeclareTextComposite{\.}{OT4}{z}{187}
 \DeclareTextComposite{\'}{OT4}{O}{211}
 \DeclareTextComposite{\'}{OT4}{o}{243}
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \endinput
 %%
 %% End of file `ot4enc.def'.

@@ -22,7 +22,7 @@
 %% programming languages to Jobst Hoffmann at <j.hoffmann@fh-aachen.de>.
 %%
 \ProvidesFile{lstlang1.sty}
-    [2024/09/23 1.10c listings language file]
+    [2019/09/10 1.8c listings language file]
 %%
 %% ACSL definition (c) 2000 by Andreas Matthias
 %%
@@ -56,7 +56,7 @@
    morecomment=[l]--,%
    morestring=[m]",% percent not defined as stringizer so far
    morestring=[m]'%
-  }[keywords,comments,strings]
+  }[keywords,comments,strings]%
 %%
 %% awk definitions (c) Christoph Giess
 %%
@@ -75,7 +75,7 @@
    morecomment=[l]//,%
    morecomment=[s]{/*}{*/},%
    morestring=[b]"%
-  }[keywords,comments,strings]
+  }[keywords,comments,strings]%
 %%
 %% Visual Basic definition (c) 2002 Robert Frank
 %%
@@ -279,7 +279,7 @@
    morecomment=[s]{/*}{*/},%
    morecomment=[l]//,%
    morestring=[b]"
-  }[keywords,comments,strings]
+  }[keywords,comments,strings]%
 %%
 %% csh definition (c) 1998 Kai Below
 %%
@@ -292,7 +292,7 @@
       sqrt,BEGIN,END},%
    morecomment=[l]\#,%
    morestring=[d]"%
-  }[keywords,comments,strings]
+  }[keywords,comments,strings]%
 %%
 %% bash,sh definition (c) 2003 Riccardo Murri <riccardo.murri@gmx.it>
 %%
@@ -311,25 +311,10 @@
    morecomment=[l]\#,%
    morestring=[d]",%
    morestring=[d]'%
-  }[keywords,comments,strings]
-\lst@definelanguage[18]{Fortran}[08]{Fortran}{%
-  morekeywords={FAIL, IMAGE, NON_RECURSIVE},%
-  morekeywords=[3]{GET_TEAM, TEAM_NUMBER, IMAGE_TEAMS, NUM_IMAGES,
-    THIS_IMAGE, FAILED_IMAGES, STOPPED_IMAGES, IMAGES_STATUS, CO_BROADCAST,
-  CO_MAX, CO_MIN, CO_SUM, CO_REDUCE, ATOMIC_ADD, ATOMIC_AND, ATOMIC_OR,
-  ATOMIC_XOR, ATOMIC_FETCH_ADD, ATOMIC_FETCH_AND, ATOMIC_FETCH_OR,
-  ATOMIC_FETCH_XOR, ATOMIC_FETCH_CAS, IEEE_GET_MODES, IEEE_SET_MODES,
-  IEEE_FMA, IEEE_SIGNBIT, IEEE_INT, IEEE_REM, IEEE_MAX_NUM,
-  IEEE_MAX_NUM_MAG,
-  IEEE_MIN_NUM, IEEE_MAX_NUM_MAG, IEEE_NEXT_DOWN, IEEE_NEXT_UP,
-  IEEE_SUPPORT_DATATYPE, IEEE_QUIET_EQ, IEEE_QUIET_GE, IEEE_QUIET_GT,
-  IEEE_QUIET_LE, IEEE_QUIET_LT, IEEE_QUIET_NE, IEEE_SIGNALING_EQ,
-  IEEE_SIGNALING_GE, IEEE_SIGNALING_GT, IEEE_SIGNALING_LE,
-  IEEE_SIGNALING_LT, IEEE_SIGNALING_NE}%
-}%
+  }[keywords,comments,strings]%
 \lst@definelanguage[08]{Fortran}[03]{Fortran}{%
   morekeywords={ALL, BLOCK, CODIMENSION, CONCURRENT, CONTIGUOUS, CRITICAL,%
-    ERROR, IMAGES, LOCK, MEMORY, SUBMODULE, SYNC, UNLOCK},%
+    ERROR, LOCK, SUBMODULE, SYNC, UNLOCK},%
   morekeywords=[3]{ACOSH, ASINH, ATANH, ATOMIC_DEFINE, ATOMIC_REF,%
     BESSEL_J0, BESSEL_J1, BESSEL_JN, BESSEL_Y0, BESSEL_Y1, BESSEL_YN,%
     BGE, BGT, BLE, BLT, C_SIZEOF, COMPILER_OPTIONS, COMPILER_VERSION,%
@@ -355,8 +340,8 @@
   morekeywords={ALLOCATABLE, ALLOCATE, ASSIGNMENT, CASE, CONTAINS, CYCLE,%
     DEALLOCATE, DEFAULT, EXIT, INCLUDE, IN, NONE, OUT, INTENT, INTERFACE,%
     MODULE, NAMELIST, NULLIFY, ONLY, OPERATOR, OPTIONAL, OUT, POINTER,%
-    PRIVATE, PUBLIC, RECURSIVE, RESULT, SELECT, SEQUENCE, TARGET, TYPE,%
-    USE, WHERE, WHILE, BLOCKDATA, DOUBLEPRECISION, ENDBLOCKDATA, ENDFILE,%
+    PRIVATE, PUBLIC, RECURSIVE, RESULT, SELECT, SEQUENCE, TARGET, USE,%
+    WHERE, WHILE, BLOCKDATA, DOUBLEPRECISION, ENDBLOCKDATA, ENDFILE,%
     ENDFUNCTION, ENDINTERFACE, ENDMODULE, ENDPROGRAM, ENDSELECT,%
     ENDSUBROUTINE, ENDTYPE, ENDWHERE, INOUT, SELECTCASE,%
     ELEMENTAL, ELSEWHERE, FORALL, PURE,%
@@ -384,8 +369,8 @@ morecomment=[l]!%
     FILE, FORMAT, FUNCTION, GO, TO, GOTO, IF, IMPLICIT, %
     INQUIRE, INTEGER, INTRINSIC, LOGICAL, %
     OPEN, PARAMETER, PAUSE, PRECISION, PRINT, PROGRAM, READ, REAL, %
-    RETURN, REWIND, SAVE, STOP, SUBROUTINE, THEN, %
-    WRITE},%
+    RETURN, REWIND, STOP, SUBROUTINE, THEN, %
+    WRITE, SAVE},%
   morekeywords=[2]{ACCESS, BLANK, BLOCK, DIRECT, EOF, ERR, EXIST,%
     FMT, FORM, FORMATTED, IOSTAT, NAMED, NEXTREC, NUMBER, OPENED,%
     REC, RECL, SEQUENTIAL, STATUS, TYPE, UNFORMATTED, UNIT},%
@@ -401,7 +386,7 @@ morecomment=[l]!%
    morecomment=[f]c,%
    morestring=[d]",%% not Fortran-77 standard, but allowed in Fortran-95 %%
    morestring=[d]'%
-  }[keywords,comments,strings]
+  }[keywords,comments,strings]%
 \lst@definelanguage{HTML}%
   {morekeywords={A,ABBR,ACRONYM,ADDRESS,APPLET,AREA,B,BASE,BASEFONT,%
       BDO,BIG,BLOCKQUOTE,BODY,BR,BUTTON,CAPTION,CENTER,CITE,CODE,COL,%
@@ -481,7 +466,7 @@ morecomment=[l]!%
    morecomment=[s]{/*}{*/},%
    morestring=[b]",%
    morestring=[b]',%
-  }[keywords,comments,strings]
+  }[keywords,comments,strings]%
 %%
 %% ByteCodeJava definition (c) 2004 Martine Gautier
 %%
@@ -512,7 +497,6 @@ morecomment=[l]!%
       pop2,putfield,putstatic,ret,return,saload,sastore,sipush,swap,%
       tableswitch,wide,limit,locals,stack},%
   }[keywords]%
-\lst@definelanguage[5.1]{Matlab}[]{Matlab}{}
 \lst@definelanguage{Matlab}%
   {morekeywords={gt,lt,gt,lt,amp,abs,acos,acosh,acot,acoth,acsc,acsch,%
       all,angle,ans,any,asec,asech,asin,asinh,atan,atan2,atanh,auread,%
@@ -583,7 +567,7 @@ morecomment=[l]!%
    sensitive,%
    morecomment=[l]\%,%
    morestring=[m]'%
-  }[keywords,comments,strings]
+  }[keywords,comments,strings]%
 \lst@definelanguage[11.0]{Mathematica}[5.2]{Mathematica}{%
   morekeywords={
     "AASTriangle", "AbelianGroup", "Abort", "AbortKernels",%
@@ -2710,7 +2694,7 @@ morecomment=[l]!%
    sensitive,%
    morecomment=[s]{(*}{*)},%
    morestring=[d]"%
-  }[keywords,comments,strings]
+  }[keywords,comments,strings]%
 %%
 %% Octave definition (c) 2001,2002 Ulrich G. Wortmann
 %%
@@ -2789,7 +2773,7 @@ morecomment=[l]!%
    morecomment=[l]\%,%
    morestring=[m]',%
    morestring=[m]"%
-  }[keywords,comments,strings]
+  }[keywords,comments,strings]%
 \lst@definelanguage[XSC]{Pascal}[Standard]{Pascal}
   {deletekeywords={alfa,byte,pack,unpack},% 1998 Andreas Stephan
    morekeywords={dynamic,external,forward,global,module,nil,operator,%
@@ -2846,7 +2830,7 @@ morecomment=[l]!%
    morecomment=[s]{(*}{*)},%
    morecomment=[s]{\{}{\}},%
    morestring=[d]'%
-  }[keywords,comments,strings]
+  }[keywords,comments,strings]%
 \lst@definelanguage{Perl}%
   {morekeywords={abs,accept,alarm,atan2,bind,binmode,bless,caller,%
       chdir,chmod,chomp,chop,chown,chr,chroot,close,closedir,connect,%
@@ -2879,7 +2863,7 @@ morecomment=[l]!%
    morestring=[b]',%
    MoreSelectCharTable=%
       \lst@ReplaceInput{\$\#}{\lst@ProcessOther\$\lst@ProcessOther\#}%
-  }[keywords,comments,strings]
+  }[keywords,comments,strings]%
 %%
 %% POV definition (c) 1999 Berthold H\"ollmann
 %%
@@ -2940,20 +2924,16 @@ morecomment=[l]!%
    morecomment=[l]//,%
    morecomment=[s]{/*}{*/},%
    morestring=[d]",%
-  }[keywords,directives,comments,strings]
+  }[keywords,directives,comments,strings]%
 %%
 %% Python definition (c) 1998 Michael Weber
 %% Additional definitions (2013) Alexis Dimitriadis
-%% small corrections based on
-%% https://docs.python.org/2/reference/lexical_analysis.html#identifiers
 %%
-\lst@definelanguage[2]{Python}{%
-  morekeywords={and, as, assert, break, class, continue, def, del, elif,%
-    else, except, exec, finally, for, from, global, if, import, in, is,%
-    lambda, not, or, pass, print, raise, return, try, while, with, yield},%
-  % Built-ins according to
-  % http://docs.python.org/2/library/functions.html,
-  % the last five entries are known as advanced or not essential
+\lst@definelanguage{Python}{%
+  morekeywords={access, and, break, class, continue, def, del, elif, else,%
+    except, exec, finally, for, from, global, if, import, in, is, lambda,%
+    not, or, pass, print, raise, return, try, while},%
+  % Built-ins
   morekeywords=[2]{abs, all, any, basestring, bin, bool, bytearray,%
     callable, chr, classmethod, cmp, compile, complex, delattr, dict, dir,%
     divmod, enumerate, eval, execfile, file, filter, float, format,%
@@ -2962,60 +2942,22 @@ morecomment=[l]!%
     memoryview, min, next, object, oct, open, ord, pow, property, range,%
     raw_input, reduce, reload, repr, reversed, round, set, setattr, slice,%
     sorted, staticmethod, str, sum, super, tuple, type, unichr, unicode,%
-    vars, xrange, zip, __import__, apply, buffer, coerce, intern},%
+    vars, xrange, zip, apply, buffer, coerce, intern},%
   sensitive=true,%
   morecomment=[l]\#,%
-  morestring=[s]{'''}{'''},% used for documentation text
-                           % (multiline strings)
-  morestring=[s]{"""}{"""},% added by Philipp Matthias Hahn
   morestring=[b]',%
-  morestring=[b]"%
-}
-\lst@definelanguage[3]{Python}[2]{Python}{%
-  % keywords
-  deletekeywords={exec, print},
-  morekeywords={False, None, True, async, await, nonlocal,
-                match, case},
-  % built-in functions
-  deletekeywords=[2]{apply, basestring, buffer, cmp, coerce, execfile, %
-    file, intern, long, raw_input, reduce, reload, unichr, unicode, xrange},
-  morekeywords=[2]{aiter, anext, ascii, breakpoint, bytes, exec},
-  % `raw' strings
-  morestring=[s]{r'}{'},
-  morestring=[s]{r"}{"},
-  morestring=[s]{r'''}{'''},
-  morestring=[s]{r"""}{"""},
-  morestring=[s]{R'}{'},
-  morestring=[s]{R"}{"},
-  morestring=[s]{R'''}{'''},
-  morestring=[s]{R"""}{"""},
-  % Unicode strings
-  morestring=[s]{u'}{'},
-  morestring=[s]{u"}{"},
-  morestring=[s]{u'''}{'''},
-  morestring=[s]{u"""}{"""},
-  morestring=[s]{U'}{'},
-  morestring=[s]{U"}{"},
-  morestring=[s]{U'''}{'''},
-  morestring=[s]{U"""}{"""},
-  % Format strings
-  morestring=[s]{f'}{'},
-  morestring=[s]{f"}{"},
-  morestring=[s]{f'''}{'''},
-  morestring=[s]{f"""}{"""},
-  morestring=[s]{F'}{'},
-  morestring=[s]{F"}{"},
-  morestring=[s]{F'''}{'''},
-  morestring=[s]{F"""}{"""},
-  % Byte literals
-  morestring=[s]{b'}{'},
-  morestring=[s]{b"}{"},
-  morestring=[s]{b'''}{'''},
-  morestring=[s]{b"""}{"""},
-  morestring=[s]{B'}{'},
-  morestring=[s]{B"}{"},
-  morestring=[s]{B'''}{'''},
-  morestring=[s]{B"""}{"""},
+  morestring=[b]",%
+  morecomment=[s]{'''}{'''},% used for documentation text
+                            % (mulitiline strings)
+  morecomment=[s]{"""}{"""},% added by Philipp Matthias Hahn
+  morestring=[s]{r'}{'},% `raw' strings
+  morestring=[s]{r"}{"},%
+  morestring=[s]{r'''}{'''},%
+  morestring=[s]{r"""}{"""},%
+  morestring=[s]{u'}{'},% unicode strings
+  morestring=[s]{u"}{"},%
+  morestring=[s]{u'''}{'''},%
+  morestring=[s]{u"""}{"""}%
 }%
 %%
 %% Scilab definition (c) 2002,2003 Jean-Philippe Grivet
@@ -3177,7 +3119,7 @@ morecomment=[l]!%
    morecomment=[l]//,%
    morestring=[b]",%
    morestring=[m]'%
-  }[keywords,comments,strings]
+  }[keywords,comments,strings]%
 %%
 %% SQL definition (c) 1998 Christian Haul
 %%                (c) 2002 Neil Conway
@@ -3218,7 +3160,7 @@ morecomment=[l]!%
    morecomment=[s]{/*}{*/},%
    morestring=[d]',%
    morestring=[d]"%
-  }[keywords,comments,strings]
+  }[keywords,comments,strings]%
 %%
 %% VHDL definition (c) 1997 Kai Wollenweber
 %%
@@ -3237,7 +3179,7 @@ morecomment=[l]!%
    sensitive=f,% 1998 Gaurav Aggarwal
    morecomment=[l]--,%
    morestring=[d]{"}%
-  }[keywords,comments,strings]
+  }[keywords,comments,strings]%
 %%
 %% VHDL-AMS definition (c) Steffen Klupsch
 %%

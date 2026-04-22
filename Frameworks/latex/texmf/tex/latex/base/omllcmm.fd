@@ -13,8 +13,8 @@
 %% (but please observe conditions on bug reports sent to that address!)
 %% 
 %% 
-%% Copyright (C) 1993-2025
-%% The LaTeX Project and any individual authors listed elsewhere
+%% Copyright (C) 1993-2020
+%% The LaTeX3 Project and any individual authors listed elsewhere
 %% in this file.
 %% 
 %% This file was generated from file(s) of the LaTeX base system.
@@ -46,7 +46,7 @@
 %% making successful document exchange impossible.
 %% 
 \ProvidesFile{omllcmm.fd}
-        [2023/12/02 v2.2f Standard LaTeX slide font definitions]
+        [2019/07/09 v2.2f Standard LaTeX slide font definitions]
 \DeclareFontFamily{OML}{lcmm}{\skewchar\font'177}
 \DeclareFontShape{OML}{lcmm}{m}{it}{%
   <7><8><10><12><13.82><16.59><19.907><23.89><28.66><34.4><41.28>cmmi8%

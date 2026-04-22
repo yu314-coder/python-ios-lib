@@ -13,8 +13,8 @@
 %% (but please observe conditions on bug reports sent to that address!)
 %% 
 %% 
-%% Copyright (C) 1993-2025
-%% The LaTeX Project and any individual authors listed elsewhere
+%% Copyright (C) 1993-2020
+%% The LaTeX3 Project and any individual authors listed elsewhere
 %% in this file.
 %% 
 %% This file was generated from file(s) of the LaTeX base system.
@@ -42,8 +42,9 @@
 %% and covered by LPPL is defined by the unpacking scripts (with
 %% extension .ins) which are part of the distribution.
 
+
  \ProvidesFile{latin3.def}
-   [2024/02/08 v1.3d Input encoding file]
+   [2018/08/11 v1.3c Input encoding file]
 \ProvideTextCommandDefault{\textdegree}{\ensuremath{{^\circ}}}
 \ProvideTextCommandDefault{\textonehalf}{\ensuremath{\frac12}}
 \ProvideTextCommandDefault{\textcurrency}

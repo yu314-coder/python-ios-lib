@@ -13,8 +13,8 @@
 %% (but please observe conditions on bug reports sent to that address!)
 %% 
 %% 
-%% Copyright (C) 1993-2025
-%% The LaTeX Project and any individual authors listed elsewhere
+%% Copyright (C) 1993-2020
+%% The LaTeX3 Project and any individual authors listed elsewhere
 %% in this file.
 %% 
 %% This file was generated from file(s) of the LaTeX base system.
@@ -42,7 +42,7 @@
 %% and covered by LPPL is defined by the unpacking scripts (with
 %% extension .ins) which are part of the distribution.
 \ProvidesFile{utf8.def}
-   [2022/06/07 v1.3c UTF-8 support]
+   [2019/11/14 v1.2k UTF-8 support for inputenc]
 \ifx\ifincsname\@undefined  % old e-pTeX or e-upTeX engines
   \input utf8-2018.def
   \expandafter\@firstofone
@@ -83,13 +83,13 @@
   \fi
   \UTFviii@four@octets@combine
 }
-\long\def\UTF@two@octets@noexpand#1#2#3{\unexpanded{#2#3}}
-\long\def\UTF@three@octets@noexpand#1#2#3#4{\unexpanded{#2#3#4}}
-\long\def\UTF@four@octets@noexpand#1#2#3#4#5{\unexpanded{#2#3#4#5}}
+\long\def\UTF@two@octets@noexpand#1#2{\noexpand#2\noexpand}
+\long\def\UTF@three@octets@noexpand#1#2#3{\noexpand#2\noexpand#3\noexpand}
+\long\def\UTF@four@octets@noexpand#1#2#3#4{\noexpand#2\noexpand#3\noexpand#4\noexpand}
 
-\long\def\UTF@two@octets@string#1#2#3{\detokenize{#2#3}}
-\long\def\UTF@three@octets@string#1#2#3#4{\detokenize{#2#3#4}}
-\long\def\UTF@four@octets@string#1#2#3#4#5{\detokenize{#2#3#4#5}}
+\long\def\UTF@two@octets@string#1#2{\string#2\string}
+\long\def\UTF@three@octets@string#1#2#3{\string#2\string#3\string}
+\long\def\UTF@four@octets@string#1#2#3#4{\string#2\string#3\string#4\string}
 
 \long\def\UTFviii@two@octets@combine#1#2{\expandafter
     \UTFviii@defined\csname u8:\string#1\string#2\endcsname}
@@ -102,17 +102,16 @@
      \if\relax\expandafter\UTFviii@checkseq\string#1\relax\relax
       \UTFviii@undefined@err{#1}%
      \else
-       \@latex@error{Invalid UTF-8 byte sequence (\expandafter
-                     \@gobblefour\string#1)}%
-                    \UTFviii@invalid@help
+      \PackageError{inputenc}{Invalid UTF-8 byte sequence}%
+                             \UTFviii@invalid@help
      \fi
   \else\expandafter
     #1%
   \fi
 }
 \def\UTFviii@invalid@err#1{%
- \@latex@error{Invalid UTF-8 byte "\UTFviii@hexnumber{`#1}}%
-              \UTFviii@invalid@help}
+ \PackageError{inputenc}{Invalid UTF-8 byte "\UTFviii@hexnumber{`#1}}%
+                        \UTFviii@invalid@help}
 \def\UTFviii@invalid@help{%
    The document does not appear to be in UTF-8 encoding.\MessageBreak
    Try adding \noexpand\UseRawInputEncoding as the first line of the file\MessageBreak
@@ -120,7 +119,7 @@
    in the document preamble.\MessageBreak
    Alternatively, save the file in UTF-8 using your editor or another tool}
 \def\UTFviii@undefined@err#1{%
-  \@latex@error{Unicode character \expandafter
+  \PackageError{inputenc}{Unicode character \expandafter
                           \UTFviii@splitcsname\string#1\relax
                           \MessageBreak
                           not set up for use with LaTeX}%
@@ -145,13 +144,7 @@
   \expandafter\UTFviii@check@continue
   \fi
 }
-\edef\reserved@a{%
-\catcode`\noexpand\~=\the\catcode`\~\relax
-\catcode`\noexpand\"=\the\catcode`\"\relax
-\uccode`\noexpand\~=\the\uccode`\~\relax
-\count@=\the\count@\relax
-\@tempcnta=\the\@tempcnta\relax
-\let\noexpand\reserved@a\relax}
+\begingroup
 \catcode`\~13
 \catcode`\"12
 \def\UTFviii@loop{%
@@ -161,7 +154,7 @@
   \ifnum\count@<\@tempcnta
   \expandafter\UTFviii@loop
   \fi}
-    \def\UTFviii@tmp{\protected\edef~{\noexpand\UTFviii@undefined@err{:\string~}}}
+    \def\UTFviii@tmp{\xdef~{\noexpand\UTFviii@undefined@err{:\string~}}}
     \count@"1
     \@tempcnta9
 \UTFviii@loop
@@ -173,25 +166,25 @@
 \UTFviii@loop
     \count@"80
     \@tempcnta"C2
-    \def\UTFviii@tmp{\protected\edef~{\noexpand\UTFviii@invalid@err\string~}}
+    \def\UTFviii@tmp{\xdef~{\noexpand\UTFviii@invalid@err\string~}}
 \UTFviii@loop
     \count@"C2
     \@tempcnta"E0
-    \def\UTFviii@tmp{\protected\edef~{\noexpand\UTFviii@two@octets\noexpand~}}
+    \def\UTFviii@tmp{\xdef~{\noexpand\UTFviii@two@octets\noexpand~}}
 \UTFviii@loop
     \count@"E0
     \@tempcnta"F0
-    \def\UTFviii@tmp{\protected\edef~{\noexpand\UTFviii@three@octets\noexpand~}}
+    \def\UTFviii@tmp{\xdef~{\noexpand\UTFviii@three@octets\noexpand~}}
 \UTFviii@loop
     \count@"F0
     \@tempcnta"F5
-    \def\UTFviii@tmp{\protected\edef~{\noexpand\UTFviii@four@octets\noexpand~}}
+    \def\UTFviii@tmp{\xdef~{\noexpand\UTFviii@four@octets\noexpand~}}
 \UTFviii@loop
     \count@"F5
     \@tempcnta"100
-    \def\UTFviii@tmp{\protected\edef~{\noexpand\UTFviii@invalid@err\string~}}
+    \def\UTFviii@tmp{\xdef~{\noexpand\UTFviii@invalid@err\string~}}
 \UTFviii@loop
-\reserved@a
+\endgroup
 \@inpenc@test
 \ifx\@begindocumenthook\@undefined
   \makeatother
@@ -221,11 +214,12 @@
    \endgroup
 }
 \gdef\parse@XML@charref{%
-  \ifnum\count@<"80\relax
+  \ifnum\count@<"A0\relax
     \ifnum\catcode\count@=13
       \uccode`\~=\count@\uppercase{\def\UTFviii@tmp{\@empty\@empty~}}%
     \else
-      \@latex@error{Cannot define non-active Unicode char value < 0080}%
+      \PackageError{inputenc}%
+                   {Cannot define non-active Unicode char value < 00A0}%
                    \@eha
       \def\UTFviii@tmp{\UTFviii@tmp}%
     \fi
@@ -238,7 +232,7 @@
      \parse@UTFviii@b E\UTFviii@three@octets.{,;}%
    \else
      \ifnum\count@>"10FFFF\relax
-           \@latex@error
+           \PackageError{inputenc}%
                 {\UTFviii@hexnumber\count@\space too large for Unicode}%
                 {Values between 0 and 10FFFF are permitted}%
       \fi

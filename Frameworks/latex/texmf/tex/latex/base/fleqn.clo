@@ -13,8 +13,8 @@
 %% (but please observe conditions on bug reports sent to that address!)
 %% 
 %% 
-%% Copyright (C) 1993-2025
-%% The LaTeX Project and any individual authors listed elsewhere
+%% Copyright (C) 1993-2020
+%% The LaTeX3 Project and any individual authors listed elsewhere
 %% in this file.
 %% 
 %% This file was generated from file(s) of the LaTeX base system.
@@ -45,7 +45,7 @@
 \ProvidesFile{fleqn.clo}
         [2016/12/29 v1.2b Standard LaTeX option
                                    (flush left equations)]
-\newskip\mathindent
+\newdimen\mathindent
 \AtEndOfClass{\mathindent\leftmargini}
 \IncludeInRelease{2015/01/01}{\[}{Make \[ robust}%
 \DeclareRobustCommand\[{\relax
@@ -97,14 +97,13 @@
        \hb@xt@\linewidth\bgroup $\m@th% $
          \displaystyle
          \hskip\mathindent}%
-        {$\hskip .3em minus.3em\hfil % $
+        {$\hfil % $
          \displaywidth\linewidth\hbox{\@eqnnum}%
        \egroup
      \endtrivlist}
 \renewenvironment{eqnarray}{%
     \stepcounter{equation}%
     \def\@currentlabel{\p@equation\theequation}%
-    \def\@currentcounter{equation}%
     \global\@eqnswtrue\m@th
     \global\@eqcnt\z@
     \tabskip\mathindent

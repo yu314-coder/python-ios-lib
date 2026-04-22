@@ -6,16 +6,17 @@
 %%
 %% hyperref.dtx  (with options: `vtex,outlines')
 %% 
+%% File: hyperref.dtx
 %% Copyright
-%% 1995-2001 Sebastian Rahtz, with portions written by David Carlisle and Heiko Oberdiek
-%% 2001-2015 Heiko Oberdiek
+%% 1995-2001 Sebastian Rahtz, with portions written by David Carlisle and Heiko Oberdiek,
+%% 2001-2015 Heiko Oberdiek.
 %% 2016-2019 Oberdiek Package Support Group
-%% 2019-2024 LaTeX Project
+%% 2019-2020 LaTeX3 Project
 %%      https://github.com/latex3/hyperref/issues
-%% 
+%%
 %% This file is part of the `Hyperref Bundle'.
 %% -------------------------------------------
-%% 
+%%
 %% This work may be distributed and/or modified under the
 %% conditions of the LaTeX Project Public License, either version 1.3
 %% of this license or (at your option) any later version.
@@ -23,17 +24,16 @@
 %%   http://www.latex-project.org/lppl.txt
 %% and version 1.3 or later is part of all distributions of LaTeX
 %% version 2005/12/01 or later.
-%% 
+%%
 %% This work has the LPPL maintenance status `maintained'.
-%% 
-%% The Current Maintainer of this work is the LaTeX Project.
-%% 
+%%
+%% The Current Maintainer of this work is the LaTeX3 Project.
+%%
 %% The list of all files belonging to the `Hyperref Bundle' is
 %% given in the file `manifest.txt'.
-%% 
-%% File: hyperref.dtx
+%%
 \ProvidesFile{hvtex.def}
-  [2024-11-05 v7.01l %
+  [2020/01/14 v7.00d %
   Hyperref driver for VTeX in PDF/PS mode]
 \Hy@VersionCheck{hvtex.def}
 \providecommand*{\XR@ext}{pdf}
@@ -102,7 +102,7 @@
       |ifx|\#2|\%%
       |else
         \\%
-        |Hy@ReturnAfterFi{%
+        |ltx@ReturnAfterFi{%
           |Hy@ExchangeBackslash#2|@nil
         }%
       |fi
@@ -113,7 +113,7 @@
     \ifx\\#2\\%
     \else
       \@backslashchar(%
-      \Hy@ReturnAfterFi{%
+      \ltx@ReturnAfterFi{%
         \Hy@ExchangeLeftParenthesis#2\@nil
       }%
     \fi
@@ -123,7 +123,7 @@
     \ifx\\#2\\%
     \else
       \@backslashchar)%
-      \Hy@ReturnAfterFi{%
+      \ltx@ReturnAfterFi{%
         \Hy@ExchangeRightParenthesis#2\@nil
       }%
     \fi
@@ -137,37 +137,32 @@
     \let#1\Hy@gtemp
   }%
 \fi
-\ifcsname mediaheight\endcsname
-  \ifHy@setpagesize
-     \providecommand*{\VTeXInitMediaSize}{%
-       \ifnum\mag=\@m
-        \ifdim\stockwidth>\z@
-          \ifdim\stockheight>\z@
-           \setlength\mediaheight\stockheight
-           \setlength\mediawidth\stockwidth
-          \else
-            \ifdim\paperwidth>\z@
-              \ifdim\paperheight>\z@
-                \setlength\mediaheight\paperheight
-                \setlength\mediawidth\paperwidth
-              \fi
-            \fi
-          \fi
-        \else
-          \ifdim\stockwidth=\z@
-            \ifdim\paperwidth>\z@
-              \ifdim\paperheight>\z@
-                \setlength\mediaheight\paperheight
-                \setlength\mediawidth\paperwidth
-              \fi
-            \fi
-          \fi
-        \fi
-       \fi
-     }%
-     \Hy@AtBeginDocument{\VTeXInitMediaSize}%
+\ifx\mediaheight\@undefined
+\else
+  \ifx\mediaheight\relax
+  \else
+    \ifHy@setpagesize
+       \providecommand*{\VTeXInitMediaSize}{%
+         \ltx@IfUndefined{stockwidth}{%
+           \ifdim\paperheight>0pt %
+             \setlength\mediaheight\paperheight
+           \fi
+           \ifdim\paperheight>0pt %
+             \setlength\mediawidth\paperwidth
+           \fi
+         }{%
+           \ifdim\stockheight>0pt %
+             \setlength\mediaheight\stockheight
+           \fi
+           \ifdim\stockwidth>0pt %
+             \setlength\mediawidth\stockwidth
+           \fi
+         }%
+       }%
+       \Hy@AtBeginDocument{\VTeXInitMediaSize}%
+    \fi
+    \Hy@DisableOption{setpagesize}%
   \fi
-  \Hy@DisableOption{setpagesize}%
 \fi
 \providecommand*\@pdfview{xyz}
 \providecommand*\@pdfborder{0 0 1}
@@ -205,7 +200,7 @@
   \Hy@VerboseLinkStart{#1}{#2}%
   \Hy@pstringdef\Hy@pstringURI{#2}%
   \expandafter\Hy@colorlink\csname @#1color\endcsname
-  \@ifundefined{@#1bordercolor}{%
+  \ltx@IfUndefined{@#1bordercolor}{%
     \let\CurrentBorderColor\relax
   }{%
     \edef\CurrentBorderColor{%
@@ -308,7 +303,7 @@
 }
 \def\hyper@link#1#2#3{%
   \Hy@VerboseLinkStart{#1}{#2}%
-  \@ifundefined{@#1bordercolor}{%
+  \ltx@IfUndefined{@#1bordercolor}{%
     \let\CurrentBorderColor\relax
   }{%
     \edef\CurrentBorderColor{\csname @#1bordercolor\endcsname}%
@@ -516,9 +511,15 @@
       \fi
     \fi
   }%
+  \def\hyper@pagehidden{%
+    \ifHy@useHidKey
+      \special{!hidden\ifHy@pdfpagehidden +\else -\fi}%
+    \fi
+  }%
   \g@addto@macro\Hy@EveryPageBoxHook{%
     \hyper@pagetransition
     \hyper@pageduration
+    \hyper@pagehidden
   }%
 \fi
 \ifx\@pdfproducer\relax
@@ -698,6 +699,7 @@
         \let\partnumberline\@gobble
         \let\chapternumberline\@gobble
       \fi
+      \HyPsd@XeTeXBigCharstrue
       \pdfstringdef\Hy@tempa{#2}%
       \HyPsd@SanitizeForOutFile\Hy@tempa
       \if@filesw
@@ -743,9 +745,9 @@
   \def\HyPsd@SanitizeOut@BraceLeft#1(#2\@nil{%
     #1%
     \ifx\\#2\\%
-      \expandafter\@gobble
+      \expandafter\ltx@gobble
     \else
-      \expandafter\@firstofone
+      \expandafter\ltx@firstofone
     \fi
     {%
       \string\173%
@@ -755,9 +757,9 @@
   \def\HyPsd@SanitizeOut@BraceRight#1)#2\@nil{%
     #1%
     \ifx\\#2\\%
-      \expandafter\@gobble
+      \expandafter\ltx@gobble
     \else
-      \expandafter\@firstofone
+      \expandafter\ltx@firstofone
     \fi
     {%
       \string\175%
@@ -890,6 +892,9 @@
       \newwrite\@outlinefile
       \Hy@OutlineRerunCheck
       \immediate\openout\@outlinefile=\jobname.out\relax
+      \ifHy@typexml
+        \immediate\write\@outlinefile{<relaxxml>\relax}%
+      \fi
     \fi
   \fi
 }
@@ -913,9 +918,6 @@
     \hss
   }%
 }
-\AddToNoCaseChangeList{\Hy@@SectionAnchor}
-\@ifundefined{hyper@nopatch@sectioning}
-{
 \let\H@old@ssect\@ssect
 \def\@ssect#1#2#3#4#5{%
   \Hy@MakeCurrentHrefAuto{section*}%
@@ -941,7 +943,7 @@
   \endgroup
   \H@old@schapter{#1}%
 }
-\@ifundefined{@chapter}{}{%
+\ltx@IfUndefined{@chapter}{}{%
   \let\Hy@org@chapter\@chapter
   \def\@chapter{%
     \def\Hy@next{%
@@ -951,7 +953,7 @@
       }%
     }%
     \ifnum\c@secnumdepth>\m@ne
-      \@ifundefined{if@mainmatter}%
+      \ltx@IfUndefined{if@mainmatter}%
       \iftrue{\csname if@mainmatter\endcsname}%
         \let\Hy@next\relax
       \fi
@@ -961,9 +963,12 @@
   }%
 }
 \let\H@old@part\@part
-\@ifundefined{chapter}
-  {\let\Hy@secnum@part\z@}
-  {\let\Hy@secnum@part\m@ne}
+\begingroup\expandafter\expandafter\expandafter\endgroup
+\expandafter\ifx\csname chapter\endcsname\relax
+  \let\Hy@secnum@part\z@
+\else
+  \let\Hy@secnum@part\m@ne
+\fi
 \def\@part{%
   \ifnum\Hy@secnum@part>\c@secnumdepth
     \phantomsection
@@ -1001,7 +1006,6 @@
     \H@old@sect{#1}{#2}{#3}{#4}{#5}{#6}[{#7}]{#8}%
   }%
 }
-}{}
 \expandafter\def\csname Parent-4\endcsname{}
 \expandafter\def\csname Parent-3\endcsname{}
 \expandafter\def\csname Parent-2\endcsname{}
@@ -1011,6 +1015,43 @@
 \expandafter\def\csname Parent2\endcsname{}
 \expandafter\def\csname Parent3\endcsname{}
 \expandafter\def\csname Parent4\endcsname{}
+\def\Hy@tempa{%
+  \def\@addchap[##1]##2{%
+    \typeout{##2}%
+    \if@twoside
+      \@mkboth{##1}{}%
+    \else
+      \@mkboth{}{##1}%
+    \fi
+    \addtocontents{lof}{\protect\addvspace{10\p@}}%
+    \addtocontents{lot}{\protect\addvspace{10\p@}}%
+    \Hy@MakeCurrentHrefAuto{\Hy@chapapp*}%
+    \Hy@raisedlink{%
+      \hyper@anchorstart{\@currentHref}\hyper@anchorend
+    }%
+    \if@twocolumn
+       \@topnewpage[\@makeschapterhead{##2}]%
+    \else
+       \@makeschapterhead{##2}%
+       \@afterheading
+    \fi
+    \addcontentsline{toc}{chapter}{##1}%
+  }%
+}
+\@ifclassloaded{scrbook}{%
+  \@ifclasslater{scrbook}{2001/01/01}{%
+    \let\Hy@tempa\@empty
+  }{}%
+}{%
+  \@ifclassloaded{scrreprt}{%
+    \@ifclasslater{scrreprt}{2001/01/01}{%
+      \let\Hy@tempa\@empty
+    }{}%
+  }{%
+    \let\Hy@tempa\@empty
+  }%
+}%
+\Hy@tempa
 \endinput
 %%
 %% End of file `hvtex.def'.

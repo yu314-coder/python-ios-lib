@@ -13,8 +13,8 @@
 %% (but please observe conditions on bug reports sent to that address!)
 %% 
 %% 
-%% Copyright (C) 1993-2025
-%% The LaTeX Project and any individual authors listed elsewhere
+%% Copyright (C) 1993-2020
+%% The LaTeX3 Project and any individual authors listed elsewhere
 %% in this file.
 %% 
 %% This file was generated from file(s) of the LaTeX base system.
@@ -43,7 +43,7 @@
 %% extension .ins) which are part of the distribution.
 %%% From File: ltoutenc.dtx
 \ProvidesFile{t1enc.def}
- [2021/04/29 v2.0v
+ [2020/02/11 v2.0o
       Standard LaTeX file]
 \DeclareFontEncoding{T1}{}{}
 \DeclareTextAccent{\`}{T1}{0}
@@ -147,9 +147,6 @@
 \DeclareTextSymbol{\textdollar}{T1}{`\$}
 \DeclareTextSymbol{\textemdash}{T1}{22}
 \DeclareTextSymbol{\textendash}{T1}{21}
-\DeclareTextCommand{\textnonbreakinghyphen}{T1}{\mbox{-}\nobreak\hskip\z@}
-\DeclareTextCommand{\textfiguredash}       {T1}{\textendash}
-\DeclareTextCommand{\texthorizontalbar}    {T1}{\textemdash}
 \DeclareTextSymbol{\textexclamdown}{T1}{189}
 \DeclareTextSymbol{\textgreater}{T1}{`\>}
 \DeclareTextSymbol{\textless}{T1}{`\<}
@@ -291,7 +288,6 @@
 \DeclareTextCompositeCommand{\c}{T1}{R}{\textcommabelow{R}}
 \DeclareTextCompositeCommand{\c}{T1}{r}{\textcommabelow{r}}
 \fi
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \endinput
 %%
 %% End of file `t1enc.def'.

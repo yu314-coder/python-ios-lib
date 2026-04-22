@@ -8,8 +8,8 @@
 %% 
 %% This is a generated file.
 %% 
-%% Copyright (C) 1993-2025
-%% The LaTeX Project and any individual authors listed elsewhere
+%% Copyright (C) 1993-2020
+%% The LaTeX3 Project and any individual authors listed elsewhere
 %% in this file.
 %% 
 %% This file was generated from file(s) of the LaTeX base system.
@@ -36,7 +36,7 @@
 %% 
 %% 
 \ProvidesFile{sfonts.def}
-        [2023/12/02 v2.2f Standard LaTeX slide font definitions]
+        [2019/07/09 v2.2f Standard LaTeX slide font definitions]
 \DeclareErrorFont{OT1}{lcmss}{m}{n}{19.907}
 \DeclareFontSubstitution{OT1}{lcmss}{m}{n}
 \input ot1lcmss.fd

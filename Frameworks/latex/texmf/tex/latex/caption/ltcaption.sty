@@ -6,7 +6,7 @@
 %%
 %% ltcaption.dtx  (with options: `package')
 %% 
-%% Copyright (C) 1994-2022 Axel Sommerfeldt (axel.sommerfeldt@f-m.fm)
+%% Copyright (C) 1994-2020 Axel Sommerfeldt (axel.sommerfeldt@f-m.fm)
 %% 
 %% https://gitlab.com/axelsommerfeldt/caption
 %% 
@@ -25,21 +25,16 @@
 %% This Current Maintainer of this work is Axel Sommerfeldt.
 %% 
 %% This work consists of the files
-%%   caption.ins, caption.dtx, caption-light.dtx, caption2.dtx, caption3.dtx,
-%%   caption-ams-smf.dtx, caption-beamer.dtx, caption-elsarticle.dtx,
-%%   caption-koma.dtx, caption-memoir.dtx, caption-ntg.dtx,
-%%   caption-thesis.dtx, bicaption.dtx, ltcaption.dtx, subcaption.dtx,
+%%   caption.ins, caption.dtx, caption2.dtx, caption3.dtx,
+%%   bicaption.dtx, ltcaption.dtx, subcaption.dtx, totalcount.dtx,
 %% the derived files
-%%   caption.sty, caption-light.sty, caption2.sty, caption3.sty,
-%%   caption-ams-smf.sto, caption-beamer.sto, caption-elsarticle.sto,
-%%   caption-koma.sto, caption-memoir.sto, caption-ntg.sto,
-%%   caption-thesis.sto, bicaption.sty, ltcaption.sty, subcaption.sty.
+%%   caption.sty, caption2.sty, caption3.sty,
+%%   bicaption.sty, ltcaption.sty, subcaption.sty, totalcount.sty,
+%% and the user manuals
+%%   caption-deu.tex, caption-eng.tex, caption-rus.tex.
 %% 
 \NeedsTeXFormat{LaTeX2e}[1994/12/01]
-\providecommand\DeclareRelease[3]{}
-\providecommand\DeclareCurrentRelease[2]{}
-\DeclareCurrentRelease{v1}{2007-04-15}
-\ProvidesPackage{ltcaption}[2021/01/08 v1.4c longtable captions (AR)]
+\ProvidesPackage{ltcaption}[2018/08/26 v1.4a longtable captions (AR)]
 \@ifpackageloaded{longtable}{}{%
   \PackageError{ltcaption}{longtable package not loaded, aborting}{RTFM}}
 \providecommand*\LTcaptype{table}
@@ -69,7 +64,6 @@
     \def\hyper@makecurrent{%
       \caption@LTtype\caption@LT@makecurrent}%
     \def\lst@@caption{\relax}%
-    \def\captionnewline{\par}%
     \ltcaption@ORI@LT@array}}
 \newcommand*\caption@LTtype[2]{%
   \edef\caption@LT@tempa{#2}%
@@ -172,7 +166,7 @@
    \def\LT@c@ption##1[##2]##3{%
      \ifx##1\@firstofone
        \PackageError{ltcaption}%
-         {\noexpand\caption is not available in longtable* environment}%
+         {Not allowed in longtable* environment}%
          {If you do not understand this error, please take a closer
           look\MessageBreak at the documentation of the `ltcaption'
           package.\MessageBreak \@ehc}%

@@ -16,17 +16,17 @@
 %% Send comments and ideas on the package, error reports and additional
 %% programming languages to Jobst Hoffmann at <j.hoffmann@fh-aachen.de>.
 %%
-\def\filedate{2024/09/23}
-\def\fileversion{1.10c}
+\def\filedate{2019/09/10}
+\def\fileversion{1.8c}
 \ProvidesFile{lstmisc.sty}
              [\filedate\space\fileversion\space(Carsten Heinz)]
-\lst@CheckVersion\fileversion%
+\lst@CheckVersion\fileversion
     {\typeout{^^J%
      ***^^J%
      *** This file requires `listings.sty' version \fileversion.^^J%
-     *** You have a serious problem, so I'm exiting...^^J%
+     *** You have a serious problem, so I'm exiting ...^^J%
      ***^^J}%
-     \batchmode\@@end}
+     \batchmode \@@end}
 \lst@BeginAspect{writefile}
 \newtoks\lst@WFtoken % global
 \lst@AddToHook{InitVarsBOL}{\global\lst@WFtoken{}}
@@ -304,7 +304,7 @@
      \fi \fi \fi}
 \lst@NewMode\lst@TeXLmode
 \gdef\lst@ActiveCDefX#1{\lst@ActiveCDefX@#1}
-\gdef\lst@ActiveCDefX@#1#2#3{%
+\gdef\lst@ActiveCDefX@#1#2#3{
     \catcode`#1\active\lccode`\~=`#1%
     \lowercase{\lst@CDefIt~}{#2}{#3}{}}
 \gdef\lst@Escape#1#2#3#4{%
@@ -1186,14 +1186,14 @@
      right:\def\lst@PlaceNumber{\rlap{\normalfont
                 \kern\linewidth \kern\lst@numbersep
                 \lst@numberstyle{\thelstnumber}}}%
-    }{\PackageError{Listings}{value `#1' for keyword `numbers' not supported}\@ehc}}
-\lst@Key{stepnumber}{1}{\def\lst@stepnumber{#1\relax}}
-\lst@Key{numberfirstline}{f}[t]{\lstKV@SetIf{#1}\lst@ifnumberfirstline}
+    }{\PackageError{Listings}{Numbers #1 unknown}\@ehc}}
 \lst@Key{numberstyle}{}{\def\lst@numberstyle{#1}}
 \lst@Key{numbersep}{10pt}{\def\lst@numbersep{#1}}
+\lst@Key{stepnumber}{1}{\def\lst@stepnumber{#1\relax}}
+\lst@AddToHook{EmptyStyle}{\let\lst@stepnumber\@ne}
 \lst@Key{numberblanklines}{true}[t]
     {\lstKV@SetIf{#1}\lst@ifnumberblanklines}
-\lst@AddToHook{EmptyStyle}{\let\lst@stepnumber\@ne}
+\lst@Key{numberfirstline}{f}[t]{\lstKV@SetIf{#1}\lst@ifnumberfirstline}
 \gdef\lst@numberfirstlinefalse{\let\lst@ifnumberfirstline\iffalse}
 \lst@Key{firstnumber}{auto}{%
     \lstKV@SwitchCases{#1}%

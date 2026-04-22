@@ -4,7 +4,13 @@
 .Spotlight-V100
 .Trashes
 
+# Claude Code agent state (per-project scratch, not source)
+.claude/
+
 # App source (Swift/Xcode) — this repo is libraries only
+CodeBench/
+CodeBench.xcodeproj/
+# Old pre-rename paths (keep ignored in case of reappearance)
 OfflinAi/
 OfflinAi.xcodeproj/
 *.xcworkspace/

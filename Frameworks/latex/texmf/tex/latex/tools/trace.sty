@@ -13,8 +13,8 @@
 %% (but please observe conditions on bug reports sent to that address!)
 %% 
 %% 
-%% Copyright (C) 1993-2024
-%% The LaTeX Project and any individual authors listed elsewhere
+%% Copyright (C) 1993-2020
+%% The LaTeX3 Project and any individual authors listed elsewhere
 %% in this file.
 %% 
 %% This file was generated from file(s) of the Standard LaTeX `Tools Bundle'.
@@ -41,7 +41,7 @@
 %%
 \NeedsTeXFormat{LaTeX2e}
 \ProvidesPackage{trace}
-          [2021/04/18 v1.1f trace LaTeX code]
+          [2018/10/13 v1.1e trace LaTeX code]
 \NeedsTeXFormat{LaTeX2e}[1998/12/01]
 \DeclareOption{logonly}
    {\let\tracingonline@p\z@}
@@ -57,20 +57,19 @@
              \tr@ce@n}
 
 %% \tracinglostchars\z@
-  \edef\tr@ce@n{%
-    \noexpand\@tracingtrue
+  \def\tr@ce@n{%
+    \@tracingtrue
     \tracingstats\tw@
     \tracingpages\@ne
-    \tracinglostchars\thr@@
+    \tracinglostchars\@ne
     \tracingparagraphs\@ne
     \errorcontextlines\maxdimen
-    \ifdefined\tracingstacklevels \tracingstacklevels\maxdimen \fi
-    \noexpand\ifnum\tracingoutput=\@ne
-    \noexpand\else
+    \ifnum\tracingoutput=\@ne
+    \else
       \tracingoutput\tw@
       \showboxbreadth\maxdimen
       \showboxdepth\maxdimen
-    \noexpand\fi
+    \fi
     \errorstopmode
     \tracingmacros\tw@
     \tracinggroups\@ne
@@ -79,20 +78,18 @@
     \tracingassigns\@ne
     \tracingonline\tracingonline@p
   }
-  \edef\conditionally@traceoff{%
+  \def\conditionally@traceoff{%
     \tracingassigns\z@
     \tracingrestores\z@
     \tracingcommands\z@
     \tracingpages\z@
     \tracingmacros\z@
-    \noexpand\ifnum\tracingoutput=\tw@
+    \ifnum\tracingoutput=\tw@
       \tracingoutput\z@
       \showboxbreadth\m@ne
       \showboxdepth\m@ne
-    \noexpand\fi
+    \fi
     \tracingstats\@ne
-    \ifdefined\tracingstacklevels \tracingstacklevels\z@ \fi
-    \errorcontextlines\m@ne
     \tracingparagraphs\z@
     \tracinggroups\z@
   }

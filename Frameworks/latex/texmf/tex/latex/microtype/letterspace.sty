@@ -10,20 +10,19 @@
 %% 
 %%                       The `microtype' package
 %%         Subliminal refinements towards typographical perfection
-%%           Copyright (c) 2004--2025 R Schlicht <w.m.l@gmx.net>
+%%           Copyright (c) 2004--2019 R Schlicht <w.m.l@gmx.net>
 %% 
 %% This work may be distributed and/or modified under the conditions of the
 %% LaTeX Project Public License, either version 1.3c of this license or (at
 %% your option) any later version. The latest version of this license is in:
-%% https://www.latex-project.org/lppl.txt, and version 1.3c or later is part
+%% http://www.latex-project.org/lppl.txt, and version 1.3c or later is part
 %% of all distributions of LaTeX version 2005/12/01 or later.
 %% 
-%% This work has the LPPL maintenance status `maintained'.
+%% This work has the LPPL maintenance status `author-maintained'.
 %% 
-%% This work consists of the files microtype.dtx, microtype-utf.dtx and
-%% microtype.ins and the derived files microtype.sty, microtype-pdftex.def,
-%% microtype-luatex.def, microtype-xetex.def, microtype.lua, letterspace.sty
-%% and microtype-show.sty.
+%% This work consists of the files microtype.dtx and microtype.ins and the
+%% derived files microtype.sty, microtype-pdftex.def, microtype-luatex.def,
+%% microtype-xetex.def, microtype.lua and letterspace.sty.
 %% 
 %% ------------------------------------------------------------------------
 %%   This is a stand-alone version that only provides the letterspacing
@@ -34,7 +33,7 @@
 \NeedsTeXFormat{LaTeX2e}
 \ProvidesPackage
   {letterspace}
-  [2025/02/11 v3.2a
+  [2019/11/18 v2.7d
    Robust letterspacing
    (RS)]
 \def\MT@MT
@@ -43,11 +42,10 @@
 \def\MT@fix@catcode#1#2{%
   \edef\MT@restore@catcodes{%
     \MT@restore@catcodes
-    \catcode#1=\the\catcode#1\relax
+    \catcode#1 \the\catcode#1\relax
   }%
-  \catcode#1=#2\relax
+  \catcode#1 #2\relax
 }
-\MT@fix@catcode{17}{14}% ^^Q (comment)
 \MT@fix@catcode{24} {9}% ^^X (ignore)
 \MT@fix@catcode{36} {3}% $ (math shift)
 \MT@fix@catcode{39}{12}% '
@@ -98,8 +96,6 @@
 \else
   \catcode`\^^Q=9 \catcode`\^^X=14
 \fi
-^^Q\MT@warning@nl{This package requires the etex extensions.
-^^Q               \MessageBreak Exiting}\MT@restore@catcodes\endinput
 \def\MT@clear@options{%
   \MT@requires@latex1{%
   \AtEndOfPackage{\let\@unprocessedoptions\relax\MT@restore@catcodes}%
@@ -112,58 +108,50 @@
   \let\pdfoutput     \normalpdfoutput
 \fi
 \let\MT@engine\relax
-\newif\ifMT@engine@unfit
-\MT@engine@unfittrue
+\def\MT@engine@tooold{0}
 \ifx\pdftexversion\@undefined \else
   \ifx\pdftexversion\relax \else
     \def\MT@engine{pdf}
     \let\MT@pdf@or@lua\@firstoftwo
-    \ifnum\pdftexversion
-        > 139
-      \MT@engine@unfitfalse
-    \fi
+    \ifnum\pdftexversion > 139 \def\MT@engine@tooold{1}\fi
   \fi
 \fi
 \ifx\directlua\@undefined \else
   \ifx\directlua\relax \else
     \def\MT@engine{lua}
-    \MT@engine@unfitfalse
     \let\MT@pdf@or@lua\@secondoftwo
-    \ifnum\luatexversion < 62 \MT@engine@unfittrue
+    \ifnum\luatexversion < 62 \def\MT@engine@tooold{0}
     \else
-      \let\MT@lua\directlua
+      \def\MT@engine@tooold{1}
       \ifnum\luatexversion > 84
         \let\pdfoutput\outputmode
         \let\pdfprotrudechars\protrudechars
-        \let\pdfadjustspacing\adjustspacing
       \fi
     \fi
   \fi
 \fi
-\ifMT@engine@unfit
+\ifnum
+  \MT@engine@tooold=\z@
   \MT@warning@nl{You
     \ifx\MT@engine\relax
-      don't seem to be using pdftex%
-      \space or luatex%
-     .\MessageBreak `\MT@MT' only works with these engines.%
+      don't seem to be using pdftex or luatex.\MessageBreak
+      Try running `pdftex' or `luatex' instead of\MessageBreak
+        `\ifx\XeTeXversion\@undefined\else xe\fi tex'%
     \else
       are using a \MT@engine tex version older than
-      \MT@pdf@or@lua{1.40}{0.62}%
-     .\MessageBreak `\MT@MT' does not work with this version.%
-      \MessageBreak Please install a newer version of \MT@engine tex.%
+        \MT@pdf@or@lua{1.40}{0.62}%
+      .\MessageBreak
+      `\MT@MT' does not work with this version.\MessageBreak
+      Please install a newer version of \MT@engine tex%
     \fi
-    \MessageBreak I will quit now}
+      .\MessageBreak I will quit now}
   \MT@clear@options
 \endinput\fi
 \RequirePackage{keyval}[1997/11/10]
 \def\MT@tr@min{-\@m}
 \let\MT@tr@max\@m
 \let\MT@letterspace\m@ne
-\def\MT@letterspace@default{50}
-\MT@pdf@or@lua\relax{
-\ifx\newluafunction\@undefined \input ltluatex \fi
-\MT@lua{require("microtype")}
-}
+\def\MT@letterspace@default{100}
 \def\MT@glet{\global\let}
 \def\MT@exp@cs#1#2{\expandafter#1\csname#2\endcsname}
 \def\MT@edef@n{\MT@exp@cs\edef}
@@ -234,19 +222,27 @@
     \advance\@tempcnta \@ne
     \ifnum\@tempcnta < #2\MT@repeat
 }
-\MT@pdf@or@lua{\let\MT@if@opentype@font\@secondoftwo}{
-\def\MT@if@opentype@font{\csname\MT@lua{%
-  microtype.if_opentype_font()
-  }\endcsname
-}
-}
 \def\MT@do@font{\MT@while@num\z@\@cclvi}
 \MT@requires@latex1{
 \let\MT@setup@\@empty
 \def\MT@addto@setup{\g@addto@macro\MT@setup@}
 }{\let\MT@addto@setup\@firstofone}
 \def\MT@with@package@T#1{\@ifpackageloaded{#1}\@firstofone\@gobble}
+\newif\ifMT@fontspec
+\MT@requires@latex2{
+\MT@with@package@T{fontspec}\MT@fontspectrue
+}{\MT@fontspecfalse}
+\let\MT@if@fontspec@font\@secondoftwo
+\def\MT@fontspec@setup{%
+  \@ifpackagelater{fontspec}{2013/05/23}{
+    \MT@let@cn\MT@if@fontspec@font{fontspec_if_fontspec_font:TF}%
+  }\relax
+}
+\ifMT@fontspec\MT@fontspec@setup\fi
 \MT@addto@setup{%
+  \MT@requires@latex2{
+  \MT@with@package@T{fontspec}{\MT@fontspectrue\MT@fontspec@setup}%
+  }\relax
   \MT@requires@latex2{
   \MT@with@package@T{hyperref}{%
     \pdfstringdefDisableCommands{%
@@ -255,14 +251,15 @@
     }%
   }%
   }\relax
-  \ifx\SOUL@\@undefined\else
+  \MT@requires@latex2{
+  \MT@with@package@T{soul}{%
     \soulregister\lsstyle 0%
     \soulregister\textls  1%
-    \ifx\XeTeXrevision\@undefined
-      \let\MT@SOUL@doword\SOUL@doword
-      \def\SOUL@doword{\pdfadjustspacing=\z@ \MT@SOUL@doword}%
-    \fi
-  \fi
+  }%
+  }{\ifx\SOUL@\@undefined\else
+      \soulregister\lsstyle 0%
+      \soulregister\textls  1%
+    \fi}%
 }
 \let\MT@tracking
   \relax
@@ -276,9 +273,11 @@
                            /\number\MT@letterspace@ ls\endcsname}%
     \expandafter\ifx\MT@lsfont\relax
       \MT@get@ls@basefont
-      \MT@if@opentype@font{%
-        \let\MT@tr@features\@empty
-        \global\expandafter\font\MT@lsfont=\MT@ls@fontspec@font
+      \MT@if@fontspec@font{%
+        \ifnum\MT@letterspace@<\z@\def\MT@minus{-}\else\let\MT@minus\@empty\fi
+        \global\expandafter\font\MT@lsfont=%
+          \expandafter\MT@exp@two@c\expandafter\MT@ls@fontspec@font
+            \expandafter\fontname\expandafter\font@name\space \@nil
       }{%
       \global\expandafter\letterspacefont\MT@lsfont\font@name\MT@letterspace@
       }%
@@ -286,10 +285,8 @@
       \fontdimen2\MT@lsfont=\dimexpr\numexpr 1000+\MT@letterspace@\relax sp
                                             * \fontdimen2\MT@lsfont/1000\relax
       % no ligatures = {f}
-      \MT@if@opentype@font
-        {\MT@lua{microtype.noligatures([[\MT@lsfont]],[[\number\numexpr`f]])}}
-        {\tagcode\MT@lsfont`f=\m@ne}%
-      \MT@if@opentype@font\relax{%
+      \tagcode\MT@lsfont`f=\m@ne
+      \MT@if@fontspec@font\relax{%
       \MT@do@font{\lpcode\MT@lsfont\@tempcnta=\numexpr\MT@letterspace@/2\relax
                   \rpcode\MT@lsfont\@tempcnta=\numexpr\MT@letterspace@/2\relax}%
       \let\MT@the@pr@code\MT@the@pr@code@tr
@@ -318,14 +315,19 @@
         {MT@aftergroup@\number\currentgrouplevel}%
     }%
 }
-\def\MT@ls@fontspec@font{%
-  \MT@lua{microtype.add_ls([[\MT@letterspace@]],[[\MT@tr@features]])}%
+\def\MT@ls@fontspec@colon#1:#2:#3:#4\@nil{\ifx\\#3\\#1:#2\else#1:#2:#3\fi}
+\def\MT@ls@fontspec@font#1 #2\@nil{%
+  "\MT@ls@fontspec@colon#1:::\relax\@nil
+    kernfactor=\MT@minus \ifnum\MT@letterspace@=1000 1\else 0.%
+         \ifnum\MT@minus\MT@letterspace@<100 0\fi
+         \ifnum\MT@minus\MT@letterspace@<10  0\fi
+        \number\MT@minus\MT@letterspace@ \fi;"
+  \ifx\\#2\\ at \f@size pt\else#2\fi\relax
 }
 \MT@requires@latex2{
 \def\MT@set@lsfont{\MT@exp@two@c\let\font@name\MT@lsfont}
 \DeclareRobustCommand\lsstyle{%
   \not@math@alphabet\lsstyle\textls
-  \let\glb@currsize\@empty
   \let\MT@tracking\MT@set@tr@codes
   \selectfont
 }
@@ -344,9 +346,6 @@
 \DeclareRobustCommand\lslig[1]{%
   {\MT@ifdefined@c@TF\MT@curr@ls{%
      \escapechar\m@ne
-    \MT@requires@latex2{%
-     \xdef\font@name{\csname\curr@fontshape/\f@size\endcsname}%
-    }\relax%
      \MT@get@ls@basefont
      \MT@outer@kern=\dimexpr\MT@curr@ls sp * \fontdimen6\font@name/2000\relax
      \kern\MT@outer@kern
@@ -359,7 +358,7 @@
   \expandafter\ifx\MT@ls@basefont\relax
     \MT@exp@two@c\MT@glet\MT@ls@basefont\font@name
   \else
-    \MT@set@lsbasefont
+    \MT@exp@two@c\let\font@name\MT@ls@basefont
   \fi
 }
 \def\MT@set@lsbasefont{\MT@exp@two@c\let\font@name\MT@ls@basefont}
@@ -397,11 +396,11 @@
 \def\MT@ls@too@large#1{%
   \ifnum#1>\MT@tr@max
     \MT@warning{Maximum for option `letterspace' is \number\MT@tr@max}%
-    \edef#1{\number\MT@tr@max}%
+    \let#1\MT@tr@max
   \else
     \ifnum#1<\MT@tr@min
       \MT@warning{Minimum for option `letterspace' is \number\MT@tr@min}%
-      \edef#1{\number\MT@tr@min}%
+      \let#1\MT@tr@min
     \fi
   \fi
 }

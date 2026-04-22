@@ -1,9 +1,7 @@
-%% luatex.def
-%% Copyright (C) 2000-2015 David Carlisle, Sebastian Rahtz,
-%%                         Hans Hagen, Heiko Oberdiek and
-%%                         Martin Schr\"oder
-%% Copyright (C) 2016-2018 LaTeX3 project and Heiko Oberdiek
-%% Copyright (C) 2018-2024 LaTeX3 project
+%% luatex.def Copyright (C) 2000-2015 David Carlisle, Sebastian Rahtz,
+%%                                    Hans Hagen, Heiko Oberdiek and
+%%                                    Martin Schr\"oder
+%%            Copyright (C) 2016-2018 LaTeX3 project and Heiko Oberdiek
 %%
 %% This work may be distributed and/or modified under the
 %% conditions of the LaTeX Project Public License, either version 1.3c
@@ -20,7 +18,7 @@
 %% https://github.com/latex3/graphics-def/issues
 %%
 \ProvidesFile{luatex.def}
-  [2024/04/13 v1.2e Graphics/color driver for luatex]
+  [2018/01/08 v1.0l Graphics/color driver for luatex]
 \def\GPT@space{ }
 \def\c@lor@arg#1{%
   \dimen@#1\p@
@@ -73,7 +71,7 @@
   \aftergroup\reset@color}
 \def\reset@color{\pdfextension colorstack\@pdfcolorstack pop\relax}
 \newif\ifGPT@pagecolor
-
+\begingroup\expandafter\expandafter\expandafter\endgroup
 \def\set@page@color{%
   \global\GPT@pagecolortrue
   \global\let\current@page@color\current@color
@@ -127,84 +125,23 @@
 \def\no@page@color{%
   \global\GPT@pagecolorfalse
 }
-\def\@tempa{LaTeX2e}%
-\ifx\fmtname\@tempa
-  \expandafter\@firstofone
-\else
-  \expandafter\@gobble
-\fi
- {%
- \@ifl@t@r\fmtversion{2020/10/01}
-  {%
-    \def\set@page@color{%
-     \global\GPT@pagecolortrue
-     \global\let\current@page@color\current@color
-     \IfHookEmptyTF{shipout/background}{\AddToHook{shipout/background}{\relax}}{}%
-    }%
-    \g@addto@macro\@kernel@before@shipout@background
-     {%
-      \ifGPT@pagecolor
-        \put(-\hoffset,-\pageheight+\voffset)%
-          {%
-            \let\current@color\current@page@color
-            \set@color
-            \rule{\pagewidth}{\pageheight}%
-          }%
-      \fi
-     }%
-  }{}%
- }
 \AtBeginDocument{%
   \def\KV@Gin@bbllx{%
     \PackageError{luatex.def}{%
-      Options `bblly', `bblly', `bburx', `bbury',\MessageBreak
-      `natheight' and `natwidth' are not\MessageBreak
-      supported by luatex driver:\MessageBreak
+      Options `bblly', `bblly', `bburx' and `bbury'\MessageBreak
+      are not supported by luatex driver:\MessageBreak
       use `viewport' instead%
     }\@ehc
   }%
   \let\KV@Gin@bblly\KV@Gin@bbllx
   \let\KV@Gin@bburx\KV@Gin@bbllx
   \let\KV@Gin@bbury\KV@Gin@bbllx
-  \let\KV@Gin@natwidth\KV@Gin@bbllx
-  \let\KV@Gin@natheight\KV@Gin@bbllx
   \def\KV@Gin@bb{%
     \PackageInfo{luatex.def}%
-      {Option `bb' equivalent to `viewport' with the luatex driver}%
+      {Option `bb' equivalent to `viewport' for luatex driver}%
     \KV@Gin@viewport
   }%
-  \let\Gin@iii\Gin@iii@vp
 }
-
-%%% this definition will be added to graphics.sty
-\def\Gin@iii@vp[#1,#2][#3,#4]#5{%
-  \begingroup
-  \let\Gin@viewport@code\Gin@viewport
-  \Gin@defaultbp\Gin@vllx{#1}%
-  \Gin@defaultbp\Gin@vlly{#2}%
-  \Gin@defaultbp\Gin@vurx{#3}%
-  \Gin@defaultbp\Gin@vury{#4}%
-  \Ginclude@graphics{#5}%
-  \endgroup}
-
-
-%%% this definition needs moving from graphicx.sty to graphics.sty
-\def\Gin@viewport{%
-  \let\Gin@ollx\Gin@llx
-  \let\Gin@olly\Gin@lly
-  \let\Gin@ourx\Gin@urx
-  \let\Gin@oury\Gin@ury
-  \dimen@\Gin@llx\p@\advance\dimen@ \Gin@vurx\p@
-                      \edef\Gin@urx{\strip@pt\dimen@}%
-  \dimen@\Gin@lly\p@\advance\dimen@ \Gin@vury\p@
-                      \edef\Gin@ury{\strip@pt\dimen@}%
-  \dimen@\Gin@llx\p@\advance\dimen@ \Gin@vllx\p@
-                      \edef\Gin@llx{\strip@pt\dimen@}%
-  \dimen@\Gin@lly\p@\advance\dimen@ \Gin@vlly\p@
-                      \edef\Gin@lly{\strip@pt\dimen@}}
-%%% end of temp addition
-
-
 \def\Gread@pdftex#1{%
 % Use low level test here not \IfFileExists to match \Gread@pdftex in
 % pdftex.def  and \Gread@eps test in graphics.
@@ -563,26 +500,10 @@
 }{%
   \ifdim\stockwidth>0pt\relax
     \ifdim\stockheight>0pt\relax
-       \setlength{\pagewidth}{\stockwidth}%
-       \setlength{\pageheight}{\stockheight}%
-    \else
-      \ifdim\paperwidth>0pt\relax
-        \ifdim\paperheight>0pt\relax
-          \setlength{\pagewidth}{\paperwidth}%
-          \setlength{\pageheight}{\paperheight}%
-        \fi
-      \fi
+      \pagewidth=\stockwidth
+      \pageheight=\stockheight
     \fi
-   \else
-    \ifdim\stockwidth=0pt\relax
-      \ifdim\paperwidth>0pt\relax
-        \ifdim\paperheight>0pt\relax
-          \setlength{\pagewidth}{\paperwidth}%
-          \setlength{\pageheight}{\paperheight}%
-        \fi
-      \fi
-    \fi
-   \fi
+  \fi
 }%
 \fi
 }
@@ -651,24 +572,21 @@
 }
 % Load package epstopdf if
 % a) LaTeX is running (plain TeX users are on their own),
-% b) and \DoNotLoadEpstopdf either does not exist or is not \relax,
-% c) and neither pst-pdf nor pdftricks is loaded (by \begin{document}).
-%
+% b) and shell escape is enabled (possibly restricted),
+% c) and \DoNotLoadEpstopdf either does not exist or is not \relax,
+% d) and neither pst-pdf nor pdftricks is loaded (by \begin{document}).
+% 
 % In other words, by default .eps files will be automatically
 % converted to .pdf files when outputting pdf.  This can be wrong!
 % If the .pdf is the source, rather than the .eps, you should put
 %  \newcommand{\DoNotLoadEpstopdf}{}
 % before even the \documentclass line of your document.
-%
-% Earlier versions did not load epstopdf if shell escape was disabled.
-% Now load, for better error reporting and to allow inclusion of pre-existing
-% converted files: see gh/38
-%
+% 
 % More information about the epstopdf run will be in the .log file;
 % see http://ctan.org/pkg/epstopdf-pkg for more info about the
 % epstopdf package itself.  In turn, it calls the epstopdf script
 % (http://ctan.org/pkg/epstopdf).
-%
+% 
 % For the first discussion and background on this, see the thread on latex-l:
 % http://thread.gmane.org/gmane.comp.tex.latex.latex3/1465
 %
@@ -683,9 +601,11 @@
         \@ifpackageloaded{pst-pdf}{}{%
           \@ifpackageloaded{pdftricks}{}{%
             \@ifpackageloaded{graphics}{%
+              \ifnum\directlua{tex.sprint(status.shell_escape)}>0 %
+          % only add .eps to file extension list if epstopdf is loaded
                 \edef\Gin@extensions{\Gin@extensions,.eps}%
                 \RequirePackage{epstopdf-base}[2009/07/12]%
-	     }{}
+              \fi}{}
           }% pdftricks not loaded
         }% pst-pdf not loaded
         \fi

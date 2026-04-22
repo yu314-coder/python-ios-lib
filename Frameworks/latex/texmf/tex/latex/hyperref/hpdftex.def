@@ -6,16 +6,17 @@
 %%
 %% hyperref.dtx  (with options: `pdftex,pdfform,outlines')
 %% 
+%% File: hyperref.dtx
 %% Copyright
-%% 1995-2001 Sebastian Rahtz, with portions written by David Carlisle and Heiko Oberdiek
-%% 2001-2015 Heiko Oberdiek
+%% 1995-2001 Sebastian Rahtz, with portions written by David Carlisle and Heiko Oberdiek,
+%% 2001-2015 Heiko Oberdiek.
 %% 2016-2019 Oberdiek Package Support Group
-%% 2019-2024 LaTeX Project
+%% 2019-2020 LaTeX3 Project
 %%      https://github.com/latex3/hyperref/issues
-%% 
+%%
 %% This file is part of the `Hyperref Bundle'.
 %% -------------------------------------------
-%% 
+%%
 %% This work may be distributed and/or modified under the
 %% conditions of the LaTeX Project Public License, either version 1.3
 %% of this license or (at your option) any later version.
@@ -23,21 +24,20 @@
 %%   http://www.latex-project.org/lppl.txt
 %% and version 1.3 or later is part of all distributions of LaTeX
 %% version 2005/12/01 or later.
-%% 
+%%
 %% This work has the LPPL maintenance status `maintained'.
-%% 
-%% The Current Maintainer of this work is the LaTeX Project.
-%% 
+%%
+%% The Current Maintainer of this work is the LaTeX3 Project.
+%%
 %% The list of all files belonging to the `Hyperref Bundle' is
 %% given in the file `manifest.txt'.
-%% 
-%% File: hyperref.dtx
+%%
 \ProvidesFile{hpdftex.def}
-  [2024-11-05 v7.01l %
+  [2020/01/14 v7.00d %
   Hyperref driver for pdfTeX]
 \Hy@VersionCheck{hpdftex.def}
 \pdf@ifdraftmode{%
-  \let\Hy@PutCatalog\@gobble
+  \let\Hy@PutCatalog\ltx@gobble
 }{%
   \let\Hy@PutCatalog\pdfcatalog
 }
@@ -76,7 +76,7 @@
       |ifx|\#2|\%%
       |else
         \\%
-        |Hy@ReturnAfterFi{%
+        |ltx@ReturnAfterFi{%
           |Hy@ExchangeBackslash#2|@nil
         }%
       |fi
@@ -87,7 +87,7 @@
     \ifx\\#2\\%
     \else
       \@backslashchar(%
-      \Hy@ReturnAfterFi{%
+      \ltx@ReturnAfterFi{%
         \Hy@ExchangeLeftParenthesis#2\@nil
       }%
     \fi
@@ -97,7 +97,7 @@
     \ifx\\#2\\%
     \else
       \@backslashchar)%
-      \Hy@ReturnAfterFi{%
+      \ltx@ReturnAfterFi{%
         \Hy@ExchangeRightParenthesis#2\@nil
       }%
     \fi
@@ -116,96 +116,111 @@
 \def\HyPat@ObjRef{%
   [0-9]*[1-9][0-9]* 0 R%
 }
-\def\Hy@pdfminorversion{\pdfoptionpdfminorversion}%
-\def\Hy@pdfminorversion{\pdfminorversion}%
-\ifHy@ocgcolorlinks
-  \ifnum\Hy@pdfmajorminor@version<105 %
-    \kvsetkeys{Hyp}{pdfversion=1.5}%
-  \fi
-\fi
-\ifHy@setpdfversion
-  \ifnum\Hy@pdf@majorminor@version<105 %
-    \@ifundefined{pdfobjcompresslevel}{%
-    }{%
-      \ifHy@verbose
-        \Hy@InfoNoLine{%
-          PDF object streams are disabled, because they are%
-          \MessageBreak
-          not supported in requested PDF version %
-          \Hy@pdf@majorversion.\Hy@pdf@minorversion
-        }%
-      \fi
-      \pdfobjcompresslevel=\z@
-    }%
-  \fi
-  \ifnum\Hy@pdfmajorminor@version=\Hy@pdf@majorminor@version\relax
+\let\Hy@pdfminorversion\relax
+\begingroup\expandafter\expandafter\expandafter\endgroup
+\expandafter\ifx\csname pdfminorversion\endcsname\relax
+  \begingroup\expandafter\expandafter\expandafter\endgroup
+  \expandafter\ifx\csname pdfoptionpdfminorversion\endcsname\relax
   \else
-    \let\Hy@temp\@empty
-    \def\Hy@temp@A#1#2{%
-      \ifnum#1>\z@
-        \edef\Hy@temp{%
-          \Hy@temp
-          \space\space
-          \the#1\space #2%
-          \ifnum#1=\@ne\else s\fi
-          \MessageBreak
-        }%
-      \fi
-    }%
-    \Hy@temp@A\pdflastobj{PDF object}%
-    \Hy@temp@A\pdflastxform{form XObject}%
-    \Hy@temp@A\pdflastximage{image XObject}%
-    \Hy@temp@A\pdflastannot{annotation}%
-    \@ifundefined{pdflastlink}{%
-    }{%
-       \Hy@temp@A\pdflastlink{link}%
-    }%
-    \ifx\Hy@temp\@empty
-      \Hy@pdfmajorversion=\Hy@pdf@majorversion\relax
-      \Hy@pdfminorversion=\Hy@pdf@minorversion\relax
-    \else
-      \let\Hy@temp@A\@empty
-      \ifnum\Hy@pdf@majorminor@version=104 %
-        \IfFileExists{pdf14.sty}{%
-          \def\Hy@temp@A{%
-            \MessageBreak
-            Or \string\RequirePackage{pdf14} can be used%
-            \MessageBreak
-            before \string\documentclass\space as shortcut%
-          }%
-        }{}%
-      \fi
-      \Hy@WarningNoLine{%
-        The PDF version number could not be set,\MessageBreak
-        because some PDF objects are already written:%
-        \MessageBreak
-        \Hy@temp
-        The version should be set as early as possible:%
-        \MessageBreak
-        \space\space
-        \expandafter\string\Hy@pdfmajorversion=\Hy@pdf@majorversion, %
-        \expandafter\string\Hy@pdfminorversion=\Hy@pdf@minorversion
-        \string\relax
-        \ifnum\Hy@pdf@majorminor@version<105 %
-          \@ifundefined{pdfobjcompresslevel}{%
-          }{%
-            \MessageBreak
-            \space\space
-            \string\pdfobjcompresslevel=0\string\relax
-          }%
-        \fi
-        \Hy@temp@A
-      }%
+    \def\Hy@pdfminorversion{\pdfoptionpdfminorversion}%
+  \fi
+\else
+  \def\Hy@pdfminorversion{\pdfminorversion}%
+\fi
+\@ifundefined{Hy@pdfminorversion}{%
+  \PackageInfo{hyperref}{%
+    PDF version is not set, because pdfTeX is too old (<1.10a)%
+  }%
+}{%
+  \ifHy@ocgcolorlinks
+    \ifnum\Hy@pdfmajorminor@version<105 %
+      \kvsetkeys{Hyp}{pdfversion=1.5}%
     \fi
   \fi
-  \PackageInfo{hyperref}{%
-    \expandafter\string\Hy@pdfmajorversion.%
-    \expandafter\string\Hy@pdfminorversion
-    :=\number\Hy@pdf@majorversion.\number\Hy@pdf@minorversion\space
-  }%
-\fi
-\edef\Hy@pdf@majorversion{\number\Hy@pdfmajorversion}%
-\edef\Hy@pdf@minorversion{\number\Hy@pdfminorversion}%
+  \ifHy@setpdfversion
+    \ifnum\Hy@pdf@majorminor@version<105 %
+      \ltx@IfUndefined{pdfobjcompresslevel}{%
+      }{%
+        \ifHy@verbose
+          \Hy@InfoNoLine{%
+            PDF object streams are disabled, because they are%
+            \MessageBreak
+            not supported in requested PDF version %
+            \Hy@pdf@majorversion.\Hy@pdf@minorversion
+          }%
+        \fi
+        \pdfobjcompresslevel=\ltx@zero
+      }%
+    \fi
+    \ifnum\Hy@pdfmajorminor@version=\Hy@pdf@majorminor@version\relax
+    \else
+      \let\Hy@temp\ltx@empty
+      \def\Hy@temp@A#1#2{%
+        \ifnum#1>\ltx@zero
+          \edef\Hy@temp{%
+            \Hy@temp
+            \space\space
+            \the#1\space #2%
+            \ifnum#1=\ltx@one\else s\fi
+            \MessageBreak
+          }%
+        \fi
+      }%
+      \Hy@temp@A\pdflastobj{PDF object}%
+      \Hy@temp@A\pdflastxform{form XObject}%
+      \Hy@temp@A\pdflastximage{image XObject}%
+      \Hy@temp@A\pdflastannot{annotation}%
+      \ltx@IfUndefined{pdflastlink}{%
+      }{%
+         \Hy@temp@A\pdflastlink{link}%
+      }%
+      \ifx\Hy@temp\ltx@empty
+        \Hy@pdfmajorversion=\Hy@pdf@majorversion\relax
+        \Hy@pdfminorversion=\Hy@pdf@minorversion\relax
+      \else
+        \let\Hy@temp@A\ltx@empty
+        \ifnum\Hy@pdf@majorminor@version=104 %
+          \IfFileExists{pdf14.sty}{%
+            \def\Hy@temp@A{%
+              \MessageBreak
+              Or \string\RequirePackage{pdf14} can be used%
+              \MessageBreak
+              before \string\documentclass\space as shortcut%
+            }%
+          }{}%
+        \fi
+        \Hy@WarningNoLine{%
+          The PDF version number could not be set,\MessageBreak
+          because some PDF objects are already written:%
+          \MessageBreak
+          \Hy@temp
+          The version should be set as early as possible:%
+          \MessageBreak
+          \space\space
+          \expandafter\string\Hy@pdfmajorversion=\Hy@pdf@majorversion, %
+          \expandafter\string\Hy@pdfminorversion=\Hy@pdf@minorversion
+          \string\relax
+          \ifnum\Hy@pdf@majorminor@version<105 %
+            \ltx@ifundefined{pdfobjcompresslevel}{%
+            }{%
+              \MessageBreak
+              \space\space
+              \string\pdfobjcompresslevel=0\string\relax
+            }%
+          \fi
+          \Hy@temp@A
+        }%
+      \fi
+    \fi
+    \PackageInfo{hyperref}{%
+      \expandafter\string\Hy@pdfmajorversion.%
+      \expandafter\string\Hy@pdfminorversion
+      :=\number\Hy@pdf@majorversion.\number\Hy@pdf@minorversion\space
+    }%
+  \fi
+  \edef\Hy@pdf@majorversion{\number\Hy@pdfmajorversion}%
+  \edef\Hy@pdf@minorversion{\number\Hy@pdfminorversion}%
+}
 \Hy@DisableOption{pdfversion}%
 \ifHy@ocgcolorlinks
   \pdf@ifdraftmode{}{%
@@ -318,7 +333,15 @@
   \expandafter\endgroup
   \expandafter\pdflinkmargin\the\dimen@\relax
 }
-\pdflinkmargin1pt %
+\ifx\pdfstartlink\@undefined% less than version 14
+  \let\pdfstartlink\pdfannotlink
+  \let\pdflinkmargin\@tempdima
+  \let\pdfxform\pdfform
+  \let\pdflastxform\pdflastform
+  \let\pdfrefxform\pdfrefform
+\else
+  \pdflinkmargin1pt %
+\fi
 \providecommand*\@pdfview{XYZ}
 \Hy@WrapperDef\new@pdflink#1{%
   \ifhmode
@@ -386,7 +409,7 @@
 }
 \def\hyper@linkstart#1#2{%
   \Hy@VerboseLinkStart{#1}{#2}%
-  \@ifundefined{@#1bordercolor}{%
+  \ltx@IfUndefined{@#1bordercolor}{%
     \let\CurrentBorderColor\relax
   }{%
     \edef\CurrentBorderColor{\csname @#1bordercolor\endcsname}%
@@ -396,7 +419,7 @@
 \def\hyper@linkend{\close@pdflink}
 \def\hyper@link#1#2#3{%
   \Hy@VerboseLinkStart{#1}{#2}%
-  \@ifundefined{@#1bordercolor}{%
+  \ltx@IfUndefined{@#1bordercolor}{%
     \let\CurrentBorderColor\relax
   }{%
     \edef\CurrentBorderColor{\csname @#1bordercolor\endcsname}%
@@ -665,10 +688,33 @@
     \Hy@RemoveDurPageAttr#1#4\END
   \fi
 }
+\def\hyper@pagehidden{%
+  \ifHy@useHidKey
+    \expandafter
+    \Hy@RemoveHidPageAttr\the\pdfpageattr^^J/Hid{} \END
+    \ifHy@pdfpagehidden
+      \edef\@processme{%
+        \global\pdfpageattr{%
+          \the\pdfpageattr
+          ^^J/Hid true % SPACE
+        }%
+      }%
+      \@processme
+    \fi
+  \fi
+}
+\gdef\Hy@RemoveHidPageAttr#1^^J/Hid#2#3 #4\END{%
+  \ifx\\#2\\%
+    \global\pdfpageattr{#1}%
+  \else
+    \Hy@RemoveHidPageAttr#1#4\END
+  \fi
+}
 \pdf@ifdraftmode{}{%
   \g@addto@macro\Hy@EveryPageHook{%
     \hyper@pagetransition
     \hyper@pageduration
+    \hyper@pagehidden
   }%
 }
 \Hy@AtBeginDocument{%
@@ -701,30 +747,21 @@
         \fi
       \fi
     }{%
-      \ifnum\mag=\@m
-        \ifdim\stockwidth>\z@
-          \ifdim\stockheight>\z@
-           \setlength{\pdfpagewidth}{\stockwidth}%
-           \setlength{\pdfpageheight}{\stockheight}%
-          \else
-            \ifdim\paperwidth>\z@
-              \ifdim\paperheight>\z@
-                \setlength{\pdfpagewidth}{\paperwidth}%
-                \setlength{\pdfpageheight}{\paperheight}%
-              \fi
-            \fi
-          \fi
-        \else
-          \ifdim\stockwidth=\z@
-            \ifdim\paperwidth>\z@
-              \ifdim\paperheight>\z@
-                \setlength{\pdfpagewidth}{\paperwidth}%
-                \setlength{\pdfpageheight}{\paperheight}%
-              \fi
-            \fi
-          \fi
+      \ltx@IfUndefined{stockwidth}{%
+        \ifdim\paperwidth>\z@
+          \setlength{\pdfpagewidth}{\paperwidth}%
         \fi
-      \fi
+        \ifdim\paperheight>\z@
+          \setlength{\pdfpageheight}{\paperheight}%
+        \fi
+      }{%
+        \ifdim\stockwidth>\z@
+          \setlength{\pdfpagewidth}{\stockwidth}%
+        \fi
+        \ifdim\stockheight>\z@
+          \setlength{\pdfpageheight}{\stockheight}%
+        \fi
+      }%
     }%
   }%
   \Hy@DisableOption{setpagesize}%
@@ -756,6 +793,17 @@
     \close@pdflink
   }%
 }
+\def\Hy@FixNotFirstPage{%
+  \gdef\Hy@FixNotFirstPage{%
+    \setbox\AtBeginShipoutBox=\hbox{%
+      \copy\AtBeginShipoutBox
+    }%
+  }%
+}
+\ltx@ifpackagelater{atbegshi}{2011/10/05}{%
+}{%
+  \AtBeginShipout{\Hy@FixNotFirstPage}%
+}
 \def\@Gauge[#1]#2#3#4{% parameters, label, minimum, maximum
   \Hy@Message{Sorry, pdftex does not support FORM gauges}%
 }
@@ -765,10 +813,10 @@
     \the\pdflastxform\space 0 R%
   }%
 }%
-\let\HyField@afields\@empty
-\let\HyField@cofields\@empty
-\@ifundefined{pdflastlink}
- {%
+\let\HyField@afields\ltx@empty
+\let\HyField@cofields\ltx@empty
+\begingroup\expandafter\expandafter\expandafter\endgroup
+\expandafter\ifx\csname pdflastlink\endcsname\relax
   \let\HyField@AddToFields\relax
   \PackageInfo{hyperref}{%
     You need pdfTeX 1.40.0 for setting the /Fields entry.%
@@ -776,39 +824,39 @@
     Adobe Reader/Acrobat accepts an empty /Field array,%
     \MessageBreak
     but other PDF viewers might complain%
-  }}%
- {%
-  \let\HyField@AuxAddToFields\@gobble
-  \let\HyField@AuxAddToCoFields\@gobbletwo
+  }%
+\else
+  \let\HyField@AuxAddToFields\ltx@gobble
+  \let\HyField@AuxAddToCoFields\ltx@gobbletwo
   \def\HyField@AfterAuxOpen{\Hy@AtBeginDocument}%
   \def\HyField@ABD@AuxAddToCoFields#1#2{%
     \begingroup
       \Hy@safe@activestrue
-      \let\@secondoftwo\relax
-      \ifx\HyField@cofields\@empty
+      \let\ltx@secondoftwo\relax
+      \ifx\HyField@cofields\ltx@empty
         \xdef\HyField@cofields{%
-          \@secondoftwo{#1}{ #2 0 R}%
+          \ltx@secondoftwo{#1}{ #2 0 R}%
         }%
       \else
-        \let\@secondoftwo\relax
+        \let\ltx@secondoftwo\relax
         \def\HyField@AddCoField##1##2##3{%
-          \ifx##1\@empty
-            \@secondoftwo{#1}{ #2 0 R}%
-            \expandafter\@gobble
+          \ifx##1\ltx@empty
+            \ltx@secondoftwo{#1}{ #2 0 R}%
+            \expandafter\ltx@gobble
           \else
-            \ifnum\pdfstrcmp{##2}{#1}>\z@
-              \@secondoftwo{#1}{ #2 0 R}%
-              \@secondoftwo{##2}{##3}%
-              \expandafter\expandafter\expandafter\@gobble
+            \ifnum\pdfstrcmp{##2}{#1}>\ltx@zero
+              \ltx@secondoftwo{#1}{ #2 0 R}%
+              \ltx@secondoftwo{##2}{##3}%
+              \expandafter\expandafter\expandafter\ltx@gobble
             \else
-              \@secondoftwo{##2}{##3}%
+              \ltx@secondoftwo{##2}{##3}%
             \fi
           \fi
           \HyField@AddCoField
         }%
         \xdef\HyField@cofields{%
           \expandafter\HyField@AddCoField
-          \HyField@cofields\@empty\@empty\@empty
+          \HyField@cofields\ltx@empty\ltx@empty\ltx@empty
         }%
       \fi
     \endgroup
@@ -839,7 +887,7 @@
     \expandafter\HyField@@AddToFields\expandafter{%
       \the\pdflastlink
     }%
-    \ifx\Fld@calculate@code\@empty
+    \ifx\Fld@calculate@code\ltx@empty
     \else
       \begingroup
         \Hy@safe@activestrue
@@ -867,7 +915,7 @@
       \fi
     }%
   }%
- }
+\fi
 \def\@Form[#1]{%
   \@ifundefined{textcolor}{\let\textcolor\@gobble}{}%
   \kvsetkeys{Form}{#1}%
@@ -882,7 +930,7 @@
       \immediate\pdfobj{%
         <<%
           /Fields[\HyField@afields]%
-          \ifx\HyField@cofields\@empty
+          \ifx\HyField@cofields\ltx@empty
           \else
             /CO[\romannumeral-`\Q\HyField@cofields]%
           \fi
@@ -922,16 +970,16 @@
     \fbox{\textcolor{yellow}{\textsf{SubmitP}}}%
   }{SubmitP}%
 }
-\let\@endForm\@empty
-\let\HyAnn@AbsPageLabel\@empty
-\let\Fld@pageobjref\@empty
-\@ifundefined{pdfpageref}{%
+\let\@endForm\ltx@empty
+\let\HyAnn@AbsPageLabel\ltx@empty
+\let\Fld@pageobjref\ltx@empty
+\ltx@IfUndefined{pdfpageref}{%
 }{%
-  \@ifpackageloaded{zref-abspage}{%
+  \ltx@ifpackageloaded{zref-abspage}{%
     \newcount\HyAnn@Count
-    \HyAnn@Count=\z@
+    \HyAnn@Count=\ltx@zero
     \def\HyAnn@AbsPageLabel{%
-      \global\advance\HyAnn@Count by\@ne
+      \global\advance\HyAnn@Count by\ltx@one
       \zref@labelbyprops{HyAnn@\the\HyAnn@Count}{abspage}%
       \zref@refused{HyAnn@\the\HyAnn@Count}%
     }%
@@ -951,7 +999,7 @@
 }
 \def\@TextField[#1]#2{% parameters, label
   \def\Fld@name{#2}%
-  \let\Fld@default\@empty
+  \let\Fld@default\ltx@empty
   \let\Fld@value\@empty
   \def\Fld@width{\DefaultWidthofText}%
   \def\Fld@height{%
@@ -1201,7 +1249,6 @@
            /quotedblbase/quotedblleft/quotedblright/quoteleft%
            /quoteright/quotesinglbase/trademark/fi/fl/Lslash/OE%
            /Scaron/Ydieresis/Zcaron/dotlessi/lslash/oe/scaron/zcaron %
-        160/Euro %
         164/currency %
         166/brokenbar %
         168/dieresis/copyright/ordfeminine %
@@ -1245,8 +1292,8 @@
   \global\let\Hy@FormObjects\relax
 }
 \providecommand*{\Fld@pageobjref}{}
-\@ifundefined{pdf@escapestring}
- {%
+\begingroup\expandafter\expandafter\expandafter\endgroup
+\expandafter\ifx\csname pdf@escapestring\endcsname\relax
   \let\Hy@escapestring\@firstofone
   \def\Hy@escapeform#1{%
     \ifHy@pdfescapeform
@@ -1272,12 +1319,12 @@
     \else
       \expandafter
       \Hy@pstringdef\csname Hy@esc@\string#2\endcsname{#2}%
-      \Hy@ReturnAfterFi{%
+      \ltx@ReturnAfterFi{%
         \Hy@@escapeform#3\@nil
       }%
     \fi
   }%
- }{%
+\else
   \def\Hy@escapeform#1{%
     \ifHy@pdfescapeform
       \let\Hy@escapestring\pdfescapestring
@@ -1286,7 +1333,7 @@
     \fi
   }%
   \Hy@escapeform{}%
- }
+\fi
 \def\PDFForm@Name{%
   \PDFForm@@Name\Fld@name
   \ifx\Fld@altname\relax
@@ -1305,6 +1352,7 @@
         \Hy@unicodefalse
       \fi
     \fi
+    \HyPsd@XeTeXBigCharstrue
     \pdfstringdef\Hy@gtemp#1%
   \endgroup
   \let#1\Hy@gtemp
@@ -1660,6 +1708,7 @@
         \let\partnumberline\@gobble
         \let\chapternumberline\@gobble
       \fi
+      \HyPsd@XeTeXBigCharstrue
       \pdfstringdef\Hy@tempa{#2}%
       \HyPsd@SanitizeForOutFile\Hy@tempa
       \if@filesw
@@ -1705,9 +1754,9 @@
   \def\HyPsd@SanitizeOut@BraceLeft#1(#2\@nil{%
     #1%
     \ifx\\#2\\%
-      \expandafter\@gobble
+      \expandafter\ltx@gobble
     \else
-      \expandafter\@firstofone
+      \expandafter\ltx@firstofone
     \fi
     {%
       \string\173%
@@ -1717,9 +1766,9 @@
   \def\HyPsd@SanitizeOut@BraceRight#1)#2\@nil{%
     #1%
     \ifx\\#2\\%
-      \expandafter\@gobble
+      \expandafter\ltx@gobble
     \else
-      \expandafter\@firstofone
+      \expandafter\ltx@firstofone
     \fi
     {%
       \string\175%
@@ -1805,6 +1854,9 @@
       \newwrite\@outlinefile
       \Hy@OutlineRerunCheck
       \immediate\openout\@outlinefile=\jobname.out\relax
+      \ifHy@typexml
+        \immediate\write\@outlinefile{<relaxxml>\relax}%
+      \fi
     \fi
   \fi
 }
@@ -1843,9 +1895,6 @@
     \hss
   }%
 }
-\AddToNoCaseChangeList{\Hy@@SectionAnchor}
-\@ifundefined{hyper@nopatch@sectioning}
-{
 \let\H@old@ssect\@ssect
 \def\@ssect#1#2#3#4#5{%
   \Hy@MakeCurrentHrefAuto{section*}%
@@ -1871,7 +1920,7 @@
   \endgroup
   \H@old@schapter{#1}%
 }
-\@ifundefined{@chapter}{}{%
+\ltx@IfUndefined{@chapter}{}{%
   \let\Hy@org@chapter\@chapter
   \def\@chapter{%
     \def\Hy@next{%
@@ -1881,7 +1930,7 @@
       }%
     }%
     \ifnum\c@secnumdepth>\m@ne
-      \@ifundefined{if@mainmatter}%
+      \ltx@IfUndefined{if@mainmatter}%
       \iftrue{\csname if@mainmatter\endcsname}%
         \let\Hy@next\relax
       \fi
@@ -1891,9 +1940,12 @@
   }%
 }
 \let\H@old@part\@part
-\@ifundefined{chapter}
-  {\let\Hy@secnum@part\z@}
-  {\let\Hy@secnum@part\m@ne}
+\begingroup\expandafter\expandafter\expandafter\endgroup
+\expandafter\ifx\csname chapter\endcsname\relax
+  \let\Hy@secnum@part\z@
+\else
+  \let\Hy@secnum@part\m@ne
+\fi
 \def\@part{%
   \ifnum\Hy@secnum@part>\c@secnumdepth
     \phantomsection
@@ -1931,7 +1983,6 @@
     \H@old@sect{#1}{#2}{#3}{#4}{#5}{#6}[{#7}]{#8}%
   }%
 }
-}{}
 \expandafter\def\csname Parent-4\endcsname{}
 \expandafter\def\csname Parent-3\endcsname{}
 \expandafter\def\csname Parent-2\endcsname{}
@@ -1941,6 +1992,43 @@
 \expandafter\def\csname Parent2\endcsname{}
 \expandafter\def\csname Parent3\endcsname{}
 \expandafter\def\csname Parent4\endcsname{}
+\def\Hy@tempa{%
+  \def\@addchap[##1]##2{%
+    \typeout{##2}%
+    \if@twoside
+      \@mkboth{##1}{}%
+    \else
+      \@mkboth{}{##1}%
+    \fi
+    \addtocontents{lof}{\protect\addvspace{10\p@}}%
+    \addtocontents{lot}{\protect\addvspace{10\p@}}%
+    \Hy@MakeCurrentHrefAuto{\Hy@chapapp*}%
+    \Hy@raisedlink{%
+      \hyper@anchorstart{\@currentHref}\hyper@anchorend
+    }%
+    \if@twocolumn
+       \@topnewpage[\@makeschapterhead{##2}]%
+    \else
+       \@makeschapterhead{##2}%
+       \@afterheading
+    \fi
+    \addcontentsline{toc}{chapter}{##1}%
+  }%
+}
+\@ifclassloaded{scrbook}{%
+  \@ifclasslater{scrbook}{2001/01/01}{%
+    \let\Hy@tempa\@empty
+  }{}%
+}{%
+  \@ifclassloaded{scrreprt}{%
+    \@ifclasslater{scrreprt}{2001/01/01}{%
+      \let\Hy@tempa\@empty
+    }{}%
+  }{%
+    \let\Hy@tempa\@empty
+  }%
+}%
+\Hy@tempa
 \endinput
 %%
 %% End of file `hpdftex.def'.

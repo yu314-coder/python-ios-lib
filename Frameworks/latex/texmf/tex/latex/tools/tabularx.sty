@@ -12,8 +12,8 @@
 %% reports for it can be opened at https://latex-project.org/bugs/
 %% (but please observe conditions on bug reports sent to that address!)
 %% 
-%% Copyright (C) 1993-2024
-%% The LaTeX Project and any individual authors listed elsewhere
+%% Copyright (C) 1993-2020
+%% The LaTeX3 Project and any individual authors listed elsewhere
 %% in this file.
 %% 
 %% This file was generated from file(s) of the Standard LaTeX `Tools Bundle'.
@@ -37,8 +37,7 @@
 %% File: tabularx.dtx Copyright (C) 1991-1999 2012 2014 2016 2017 David Carlisle
 \NeedsTeXFormat{LaTeX2e}
 \ProvidesPackage{tabularx}
-          [2023/12/11 v2.12a `tabularx' package (DPC)]
-\NeedsTeXFormat{LaTeX2e}[2024/06/01]
+          [2020/01/15 v2.11c `tabularx' package (DPC)]
 \DeclareOption{infoshow}{\AtEndOfPackage\tracingtabularx}
 \DeclareOption{debugshow}{\AtEndOfPackage\tracingtabularx}
 \ProcessOptions
@@ -97,7 +96,6 @@
   \global\TX@cols\@ne
   \TX@typeout@
     {\@spaces Table Width\@spaces Column Width\@spaces X Columns}%
-   \SuspendTagging {tabularx}%
   \TX@trial{\def\NC@rewrite@X{%
           \global\advance\TX@cols\@ne\NC@find p{\TX@col@width}}}%
   \loop
@@ -105,7 +103,6 @@
     \ifTX@
     \TX@trial{}%
   \repeat
-  \ResumeTagging {tabularx}%
   {\let\@footnotetext\TX@ftntext\let\@xfootnotenext\TX@xftntext
     \csname tabular*\expandafter\endcsname\expandafter\TX@target
       \the\toks@
@@ -170,7 +167,7 @@
     \hfuzz\maxdimen
     \let\hbadness\@tempcnta
     \let\hfuzz\@tempdima
-   \expandafter\tabular\the\toks@
+    \expandafter\tabular\the\toks@
     \endtabular}%
   \TX@ckpt
   \TX@typeout@{\@spaces

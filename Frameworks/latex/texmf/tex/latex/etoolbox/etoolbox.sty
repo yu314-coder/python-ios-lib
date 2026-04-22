@@ -1,5 +1,5 @@
 % Copyright (c) 2007-2011 Philipp Lehman.
-%           (c) 2015-2020 Joseph Wright
+%           (c) 2015-2019 Joseph Wright
 %
 % Permission is granted to copy, distribute and/or modify this
 % software under the terms of the LaTeX Project Public License
@@ -12,7 +12,7 @@
 
 \NeedsTeXFormat{LaTeX2e}
 \ProvidesPackage{etoolbox}
-  [2025/02/11 v2.5l e-TeX tools for LaTeX (JAW)]
+  [2019/09/21 v2.5h e-TeX tools for LaTeX (JAW)]
 
 \begingroup
 \@ifundefined{eTeXversion}
@@ -878,45 +878,6 @@
      \csname#2\endcsname}
     {\csundef{#1}}}
 
-\ifdef\NewCommandCopy
-  {%
-    \long\def\etb@carsquare#1#2#3\@nil{#1#2}
-    %
-    % {<cstoken>}{<true>}{<false>}
-    %
-    \newrobustcmd*{\etb@if@robustcmd}[1]{%
-      \begingroup
-        \escapechar=`\\
-        \edef\etb@tempa{%
-      \endgroup
-      \def\noexpand\etb@tempa{\noexpand\@testopt
-        \expandafter\noexpand\csname\string#1\endcsname}%
-      \def\noexpand\etb@tempb{\unexpanded\expandafter\expandafter\expandafter
-        {\expandafter\etb@carsquare#1{}{}\@nil}}%
-      }\etb@tempa
-      \ifx\etb@tempa\etb@tempb
-        \expandafter\@firstoftwo
-      \else
-        \expandafter\@secondoftwo
-      \fi}
-    %
-    % {<cstoken>}{<cstoken>}
-    %
-    \newrobustcmd*{\etb@copy@robustcmd}[2]{%
-      \begingroup
-        \escapechar=`\\
-        \edef\etb@tempa{%
-      \endgroup
-      \protected\def\noexpand#1{\noexpand\@testopt
-        \expandafter\noexpand\csname\string#1\endcsname
-        \unexpanded\expandafter\expandafter\expandafter
-          {\expandafter\@gobbletwo#2}}%
-      \let\expandafter\noexpand\csname\string#1\endcsname
-          \expandafter\noexpand\csname\string#2\endcsname
-      }\etb@tempa}
-    \g@addto@macro\@declarecommandcopylisthook
-      {{\etb@if@robustcmd\etb@copy@robustcmd}}
-  }{}
 % {<csname>}
 
 \newcommand*{\csuse}[1]{%
@@ -1735,17 +1696,6 @@
 % {<listcsname>} => \do{<item1>}\do{<item2>}...
 
 \newcommand*{\dolistcsloop}{\forlistcsloop\do}
-
-\providecommand\IfFormatAtLeastTF{\@ifl@t@r\fmtversion}
-\IfFormatAtLeastTF{2020-10-01}
-  {%
-    \newrobustcmd*{\AtEndPreamble}{\AddToHook{begindocument/before}}%
-    \let\AfterPreamble\AtBeginDocument
-    \newrobustcmd*{\AfterEndPreamble}{\AddToHook{begindocument/end}}%
-    \newrobustcmd*{\AfterEndDocument}{\AddToHook{enddocument/end}}%
-    \endinput
-  }
-  {}
 
 % {<code>}
 
