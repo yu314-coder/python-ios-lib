@@ -1,4 +1,4 @@
-# C++ Interpreter (offlinai_cpp)
+# C++ Interpreter
 
 > **Type:** Tree-walking C++17 interpreter | **Location:** `gcc/offlinai_cpp.c`, `gcc/offlinai_cpp.h` | **Language:** C++17 subset | **App Store safe**
 

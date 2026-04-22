@@ -54,7 +54,7 @@ All four share the same Monaco-based code editor (WKWebView) with IntelliSense (
 | **Cairo** (pycairo) | Native iOS (2.8 MB) | 2D vector graphics: SVG, PDF, PNG, patterns, text paths |
 | **Pillow** | 12.2.0, Native iOS | Image processing: resize, crop, filter, draw, 15 formats |
 | **ManimPango** | Cairo-based fallback | Text → SVG vector outlines (11 font weights) |
-| **offlinai_latex** | SwiftMath + 33 MB texmf | Math-mode LaTeX via SwiftMath (unlimited). `\documentclass`-level `pdflatex` gated off — bundled lib-tex v1.40.20 crashes; see [Media docs](libs/media.md#offlinai_latex--local-latex-engine) |
+| **Local LaTeX** (`offlinai_latex` module) | SwiftMath + 33 MB texmf | Math-mode LaTeX via SwiftMath (unlimited). `\documentclass`-level `pdflatex` gated off — bundled lib-tex v1.40.20 crashes; see [Media docs](libs/media.md#local-latex-engine-offlinai_latex) |
 
 ### Data & Web
 

@@ -1,4 +1,4 @@
-# Fortran Interpreter (offlinai_fortran)
+# Fortran Interpreter
 
 > **Type:** Tree-walking Fortran 90/95/2003 interpreter | **Location:** `gcc/offlinai_fortran.c`, `gcc/offlinai_fortran.h` | **Language:** Fortran 90/95/2003 subset | **App Store safe**
 

@@ -323,7 +323,7 @@ Text string → Font selection → Cairo text_path() → SVG vector outlines →
 
 ---
 
-## offlinai_latex — Local LaTeX Engine
+## Local LaTeX Engine (`offlinai_latex`)
 
 **pdftex C library** | **texmf bundle: 33 MB, ~2,000 files** | Zero network
 

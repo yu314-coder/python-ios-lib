@@ -1,4 +1,4 @@
-# C Interpreter (offlinai_cc)
+# C Interpreter
 
 > **Type:** Tree-walking C89/C99/C23 interpreter | **Location:** `gcc/offlinai_cc.c`, `gcc/offlinai_cc.h` | **Size:** ~3,450 lines | **Tests:** 48/49 passing
 
