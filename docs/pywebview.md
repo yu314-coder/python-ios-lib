@@ -60,8 +60,9 @@ import webview
 webview.create_window("Hello", html="<h1 style='color:dodgerblue'>Hi</h1>")
 webview.start()
 
-# Show a URL — http(s):// gets a meta-refresh redirect page,
-# file:// and absolute paths render directly so sibling CSS/JS resolve
+# Show a URL — http(s):// loads directly via WKWebView (real origin,
+# cookies/CSP/JS controls all work); file:// and absolute paths render
+# from disk so sibling CSS/JS/img resolve via loadFileURL
 webview.create_window("Docs", "https://docs.python.org")
 webview.create_window("App",  "/path/to/Documents/myapp/index.html")
 
@@ -94,11 +95,11 @@ for i in range(10):
 
 | Method | What it does |
 |---|---|
-| `w.load_url(url)` | Navigate. http(s) → meta-refresh; file:// or path → direct |
+| `w.load_url(url)` | Navigate. http(s) → direct WKWebView URLRequest (real origin); file:// or path → loadFileURL |
 | `w.load_html(content)` | Replace content with raw HTML |
 | `w.evaluate_js(script, callback=None)` | Append `<script>` and reload (NOT a real eval — no return-value bridge) |
 | `w.set_title(title)` / `w.title` | Cached title (preview pane has no title bar) |
-| `w.get_current_url()` | `file://` URL of last scratch HTML |
+| `w.get_current_url()` | the http(s) URL (direct loads) or `file://` URL of last scratch HTML |
 | `w.get_size()` | `(0, 0)` — preview is pane-sized |
 | `w.show()` / `w.hide()` / `w.destroy()` | Re-signal / blank / mark dead |
 
@@ -166,10 +167,8 @@ so you can trace what the shim is doing in the in-app terminal:
 
 ```
 [pywebview] create_window(uid=1e2dc5bd, title='T', url='https://example.com')
-[pywebview]   injecting 1 cookie(s) for example.com: ['session']
-[pywebview] load_url(uid=1e2dc5bd, url='https://example.com')  → http(s) → meta-refresh redirect page
-[pywebview]   scratch html → .../pywebview_scratch/redirect_c9539991.html
-[pywebview]   signal → .../latex_signals/preview_request.txt  (412 bytes)
+[pywebview] load_url(uid=1e2dc5bd, url='https://example.com')  → http(s) → direct WKWebView URLRequest (real origin)
+[pywebview]   signal → .../latex_signals/preview_request.txt  (url: https://example.com)
 [pywebview] start()  — 1 window(s) registered, returning immediately
 ```
 
@@ -212,12 +211,19 @@ export CODEBENCH_PYWEBVIEW_QUIET=1
 
 | You call | Shim does |
 |---|---|
-| `load_url("https://example.com")` | Writes a meta-refresh redirect HTML, signals it. WebKit follows the refresh to the real URL. |
+| `load_url("https://example.com")` | Sends the URL to Swift verbatim. WKWebView loads it via `URLRequest(url:)` so the page gets its real http origin (cookies, referer, CSP, JS controls all behave correctly). |
 | `load_url("file:///path/index.html")` | Strips the `file://`, signals the path directly so sibling CSS/JS/img resolve via `loadFileURL(allowingReadAccessTo: parent)`. |
 | `load_url("/abs/path/index.html")` | Same as `file://` — direct signal. |
 | `load_url("custom://...")` | Best-effort: build a redirect page and let WebKit decide. |
 | `load_html("<h1>x</h1>")` | Writes raw HTML to a scratch file, signals it. |
-| `evaluate_js("...")` | Appends `<script>try { ... } catch(_e){}</script>` to the current scratch HTML, re-signals. |
+| `evaluate_js("...")` | For local scratch HTML: appends `<script>...</script>` and re-signals. For direct http(s) loads: no-op (no live WKScriptMessage bridge in this shim). |
+
+**Caveat for direct URL loads:** the shim's cookie jar can't be
+injected before the page loads (there's no HTML wrapper to hold the
+`document.cookie = ...` JS, and we have no `WKHTTPCookieStore` bridge
+from Python). If you need cookies on a remote URL, set them via
+`evaluate_js` — but only on a page where cookie-via-JS works (httpOnly
+cookies are off-limits anyway).
 
 Scratch files live in `$TMPDIR/pywebview_scratch/` and accumulate over
 the session. Auto-pruned when iOS reaps app temp storage; you can
