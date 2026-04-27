@@ -172,9 +172,11 @@ Transformers also bundles huggingface_hub, filelock, safetensors
 | Library | Description |
 |---------|-------------|
 | **requests** | HTTP client |
+| **urllib3** | HTTP transport (under requests) |
 | **BeautifulSoup4** | HTML parsing |
 | **NetworkX** | Graph algorithms |
 | **jsonschema** | JSON validation |
+| **PyWebView** | Render HTML/CSS/JS in the host app's preview pane (CodeBench shim) |
 
 ### Interpreters
 
@@ -186,21 +188,82 @@ Transformers also bundles huggingface_hub, filelock, safetensors
 
 ---
 
-## Detailed Docs
+## Documentation index
 
-### Machine Learning
-- [**PyTorch**](docs/libs/pytorch.md) — native iOS build with full `import torch` (95/95 asserts)
-- [**transformers**](docs/libs/transformers.md) — HuggingFace models, on-device train + generate
-- [**tokenizers**](docs/libs/tokenizers.md) — Rust BPE/WordPiece/Unigram trainers
-- [scikit-learn](docs/libs/sklearn.md) — 40 modules, common ML workflows
+Per-library reference docs in `docs/`. Each file covers usage examples,
+iOS-specific notes, limitations, and troubleshooting.
 
-### Scientific + Viz + Media
-- [NumPy](docs/libs/numpy.md) | [SciPy](docs/libs/scipy.md) | [SymPy](docs/libs/sympy.md)
-- [matplotlib](docs/libs/matplotlib.md) | [manim](docs/libs/manim.md)
-- [Media & Rendering](docs/libs/media.md) — PyAV, FFmpeg, Cairo, Pillow, LaTeX
+### Big libraries (one doc each)
+
+| Library | Doc | Status |
+|---|---|---|
+| NumPy | [docs/numpy.md](docs/numpy.md) + [docs/libs/numpy.md](docs/libs/numpy.md) | native iOS arm64 |
+| SciPy | [docs/scipy-ios.md](docs/scipy-ios.md) + [docs/libs/scipy.md](docs/libs/scipy.md) | native, Fortran I/O preload |
+| SymPy | [docs/sympy.md](docs/sympy.md) + [docs/libs/sympy.md](docs/libs/sympy.md) | pure Python |
+| Mpmath | [docs/mpmath.md](docs/mpmath.md) | pure Python |
+| NetworkX | [docs/networkx.md](docs/networkx.md) | pure Python |
+| scikit-learn | [docs/sklearn.md](docs/sklearn.md) + [docs/libs/sklearn.md](docs/libs/sklearn.md) | native, n_jobs=1 only |
+| PyTorch | [docs/libs/pytorch.md](docs/libs/pytorch.md) | native iOS, **Git LFS required** |
+| transformers | [docs/libs/transformers.md](docs/libs/transformers.md) | pure Python (deps: torch, tokenizers, hf_hub) |
+| tokenizers | [docs/libs/tokenizers.md](docs/libs/tokenizers.md) | native iOS (Rust) |
+| Plotly | [docs/plotly.md](docs/plotly.md) | pure Python |
+| matplotlib | [docs/matplotlib.md](docs/matplotlib.md) + [docs/libs/matplotlib.md](docs/libs/matplotlib.md) | Plotly-backend shim |
+| manim | [docs/manim.md](docs/manim.md) + [docs/libs/manim.md](docs/libs/manim.md) | iOS memory + opacity-ramp patches |
+| PIL/Pillow | [docs/pillow.md](docs/pillow.md) | native iOS |
+| PyAV / FFmpeg | [docs/av-pyav.md](docs/av-pyav.md) + [docs/ffmpeg-pyav.md](docs/ffmpeg-pyav.md) | native, VideoToolbox H.264 |
+| Cairo / Pango | [docs/cairographics.md](docs/cairographics.md) | native iOS arm64 .a |
+| LaTeX engine | [docs/latex-engine.md](docs/latex-engine.md) | pdftex.xcframework + 33 MB texmf |
+| pydub | [docs/pydub.md](docs/pydub.md) | pure Python (uses audioop) |
+
+### Web / network
+
+| Library | Doc | Status |
+|---|---|---|
+| requests | [docs/requests.md](docs/requests.md) | pure Python |
+| urllib3 | [docs/urllib3.md](docs/urllib3.md) | pure Python |
+| BeautifulSoup | [docs/beautifulsoup.md](docs/beautifulsoup.md) | pure Python |
+| huggingface_hub | [docs/huggingface-hub.md](docs/huggingface-hub.md) | pure Python, sandbox-aware cache path |
+| PyWebView (CodeBench shim) | [docs/webview.md](docs/webview.md) | full cookie API + verbose logging |
+| charset_normalizer + idna | [docs/encoding.md](docs/encoding.md) | both pure Python |
+
+### ML / data
+
+| Library | Doc | Status |
+|---|---|---|
+| safetensors | [docs/safetensors.md](docs/safetensors.md) | NumPy I/O works; PyTorch I/O shimmed (workaround inside) |
+| jsonschema | [docs/jsonschema.md](docs/jsonschema.md) | pure Python |
+| svgelements | [docs/svgelements.md](docs/svgelements.md) | pure Python |
+
+### Utilities
+
+| Library | Doc | Status |
+|---|---|---|
+| rich | [docs/rich.md](docs/rich.md) | pure Python |
+| click | [docs/click.md](docs/click.md) | pure Python |
+| pygments | [docs/pygments.md](docs/pygments.md) | pure Python |
+| pyyaml | [docs/pyyaml.md](docs/pyyaml.md) | native iOS |
+| psutil + filelock + watchdog | [docs/process-and-io.md](docs/process-and-io.md) | psutil native, others pure Python |
+| regex + typing_extensions | [docs/regex-and-typing.md](docs/regex-and-typing.md) | regex shimmed to `re`, typing_extensions full |
+| cffi + pycparser | [docs/cffi.md](docs/cffi.md) | cffi native (ABI mode only on iOS) |
+| audioop (LTS backport) | [docs/audioop.md](docs/audioop.md) | native iOS |
+| decorator (CodeBench shim) | [docs/decorator.md](docs/decorator.md) | pure Python — covers manim's two needed functions |
+| moderngl + moderngl_window + screeninfo | [docs/moderngl.md](docs/moderngl.md) | stubbed on iOS (no GPU context for embedded Python) |
+| manim deps (pathops + mapbox_earcut + isosurfaces) | [docs/manim-deps.md](docs/manim-deps.md) | mostly working with caveats |
+| attrs / packaging / narwhals / referencing | [docs/minor-libs.md](docs/minor-libs.md) | all pure Python |
 
 ### Interpreters
-- [C / C++ / Fortran](docs/libs/interpreters.md) — 11,800 lines, full language support
+
+| Language | Doc |
+|---|---|
+| C | [docs/c-interpreter.md](docs/c-interpreter.md) + [docs/libs/interpreters.md](docs/libs/interpreters.md) |
+| C++ | [docs/cpp-interpreter.md](docs/cpp-interpreter.md) |
+| Fortran | [docs/fortran-interpreter.md](docs/fortran-interpreter.md) + [docs/fortran-runtime.md](docs/fortran-runtime.md) |
+
+### CodeBench glue layer
+
+| Module | Doc | What it is |
+|---|---|---|
+| offlinai_shell + offlinai_ai + offlinai_latex | [docs/codebench-extras.md](docs/codebench-extras.md) | The 108-builtin in-app shell, AI chat REPL, and LaTeX bridge that wire python-ios-lib into CodeBench |
 
 ## Requirements
 
