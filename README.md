@@ -188,82 +188,187 @@ Transformers also bundles huggingface_hub, filelock, safetensors
 
 ---
 
-## Documentation index
+## Documentation index — every bundled package
 
-Per-library reference docs in `docs/`. Each file covers usage examples,
-iOS-specific notes, limitations, and troubleshooting.
+Every Python library + native engine + interpreter shipped here has a
+documentation file in `docs/`. Each file covers usage examples, iOS-specific
+notes, limitations, troubleshooting, and build provenance.
 
-### Big libraries (one doc each)
+### Interpreters (no Python runtime needed)
 
-| Library | Doc | Status |
-|---|---|---|
-| NumPy | [docs/numpy.md](docs/numpy.md) + [docs/libs/numpy.md](docs/libs/numpy.md) | native iOS arm64 |
-| SciPy | [docs/scipy-ios.md](docs/scipy-ios.md) + [docs/libs/scipy.md](docs/libs/scipy.md) | native, Fortran I/O preload |
-| SymPy | [docs/sympy.md](docs/sympy.md) + [docs/libs/sympy.md](docs/libs/sympy.md) | pure Python |
-| Mpmath | [docs/mpmath.md](docs/mpmath.md) | pure Python |
-| NetworkX | [docs/networkx.md](docs/networkx.md) | pure Python |
-| scikit-learn | [docs/sklearn.md](docs/sklearn.md) + [docs/libs/sklearn.md](docs/libs/sklearn.md) | native, n_jobs=1 only |
-| PyTorch | [docs/libs/pytorch.md](docs/libs/pytorch.md) | native iOS, **Git LFS required** |
-| transformers | [docs/libs/transformers.md](docs/libs/transformers.md) | pure Python (deps: torch, tokenizers, hf_hub) |
-| tokenizers | [docs/libs/tokenizers.md](docs/libs/tokenizers.md) | native iOS (Rust) |
-| Plotly | [docs/plotly.md](docs/plotly.md) | pure Python |
-| matplotlib | [docs/matplotlib.md](docs/matplotlib.md) + [docs/libs/matplotlib.md](docs/libs/matplotlib.md) | Plotly-backend shim |
-| manim | [docs/manim.md](docs/manim.md) + [docs/libs/manim.md](docs/libs/manim.md) | iOS memory + opacity-ramp patches |
-| PIL/Pillow | [docs/pillow.md](docs/pillow.md) | native iOS |
-| PyAV / FFmpeg | [docs/av-pyav.md](docs/av-pyav.md) + [docs/ffmpeg-pyav.md](docs/ffmpeg-pyav.md) | native, VideoToolbox H.264 |
-| Cairo / Pango | [docs/cairographics.md](docs/cairographics.md) | native iOS arm64 .a |
-| LaTeX engine | [docs/latex-engine.md](docs/latex-engine.md) | pdftex.xcframework + 33 MB texmf |
-| pydub | [docs/pydub.md](docs/pydub.md) | pure Python (uses audioop) |
-
-### Web / network
-
-| Library | Doc | Status |
-|---|---|---|
-| requests | [docs/requests.md](docs/requests.md) | pure Python |
-| urllib3 | [docs/urllib3.md](docs/urllib3.md) | pure Python |
-| BeautifulSoup | [docs/beautifulsoup.md](docs/beautifulsoup.md) | pure Python |
-| huggingface_hub | [docs/huggingface-hub.md](docs/huggingface-hub.md) | pure Python, sandbox-aware cache path |
-| PyWebView (CodeBench shim) | [docs/webview.md](docs/webview.md) | full cookie API + verbose logging |
-| charset_normalizer + idna | [docs/encoding.md](docs/encoding.md) | both pure Python |
-
-### ML / data
-
-| Library | Doc | Status |
-|---|---|---|
-| safetensors | [docs/safetensors.md](docs/safetensors.md) | NumPy I/O works; PyTorch I/O shimmed (workaround inside) |
-| jsonschema | [docs/jsonschema.md](docs/jsonschema.md) | pure Python |
-| svgelements | [docs/svgelements.md](docs/svgelements.md) | pure Python |
-
-### Utilities
-
-| Library | Doc | Status |
-|---|---|---|
-| rich | [docs/rich.md](docs/rich.md) | pure Python |
-| click | [docs/click.md](docs/click.md) | pure Python |
-| pygments | [docs/pygments.md](docs/pygments.md) | pure Python |
-| pyyaml | [docs/pyyaml.md](docs/pyyaml.md) | native iOS |
-| psutil + filelock + watchdog | [docs/process-and-io.md](docs/process-and-io.md) | psutil native, others pure Python |
-| regex + typing_extensions | [docs/regex-and-typing.md](docs/regex-and-typing.md) | regex shimmed to `re`, typing_extensions full |
-| cffi + pycparser | [docs/cffi.md](docs/cffi.md) | cffi native (ABI mode only on iOS) |
-| audioop (LTS backport) | [docs/audioop.md](docs/audioop.md) | native iOS |
-| decorator (CodeBench shim) | [docs/decorator.md](docs/decorator.md) | pure Python — covers manim's two needed functions |
-| moderngl + moderngl_window + screeninfo | [docs/moderngl.md](docs/moderngl.md) | stubbed on iOS (no GPU context for embedded Python) |
-| manim deps (pathops + mapbox_earcut + isosurfaces) | [docs/manim-deps.md](docs/manim-deps.md) | mostly working with caveats |
-| attrs / packaging / narwhals / referencing | [docs/minor-libs.md](docs/minor-libs.md) | all pure Python |
-
-### Interpreters
-
-| Language | Doc |
+| Lang | Doc |
 |---|---|
-| C | [docs/c-interpreter.md](docs/c-interpreter.md) + [docs/libs/interpreters.md](docs/libs/interpreters.md) |
-| C++ | [docs/cpp-interpreter.md](docs/cpp-interpreter.md) |
-| Fortran | [docs/fortran-interpreter.md](docs/fortran-interpreter.md) + [docs/fortran-runtime.md](docs/fortran-runtime.md) |
+| **C** | [docs/c-interpreter.md](docs/c-interpreter.md) |
+| **C++** | [docs/cpp-interpreter.md](docs/cpp-interpreter.md) |
+| **Fortran** | [docs/fortran-interpreter.md](docs/fortran-interpreter.md) + [docs/fortran-runtime.md](docs/fortran-runtime.md) |
+| All three (overview) | [docs/libs/interpreters.md](docs/libs/interpreters.md) |
 
-### CodeBench glue layer
+### Native engines (C/C++ libs)
 
-| Module | Doc | What it is |
-|---|---|---|
-| offlinai_shell + offlinai_ai + offlinai_latex | [docs/codebench-extras.md](docs/codebench-extras.md) | The 108-builtin in-app shell, AI chat REPL, and LaTeX bridge that wire python-ios-lib into CodeBench |
+| Engine | Doc |
+|---|---|
+| **CairoGraphics** (Cairo + Pango + HarfBuzz + FreeType + GLib + libffi) | [docs/cairographics.md](docs/cairographics.md) |
+| **FFmpeg + PyAV** (video encode/decode, VideoToolbox H.264) | [docs/ffmpeg-pyav.md](docs/ffmpeg-pyav.md) |
+| **LaTeXEngine** (pdftex.xcframework + 33 MB texmf) | [docs/latex-engine.md](docs/latex-engine.md) |
+
+### Scientific computing
+
+| Library | Doc |
+|---|---|
+| **NumPy** | [docs/numpy.md](docs/numpy.md) — also [docs/libs/numpy.md](docs/libs/numpy.md) |
+| **SciPy** | [docs/scipy-ios.md](docs/scipy-ios.md) — also [docs/libs/scipy.md](docs/libs/scipy.md) |
+| **SymPy** | [docs/sympy.md](docs/sympy.md) — also [docs/libs/sympy.md](docs/libs/sympy.md) |
+| **mpmath** | [docs/mpmath.md](docs/mpmath.md) |
+| **NetworkX** | [docs/networkx.md](docs/networkx.md) |
+| **scikit-learn** | [docs/sklearn.md](docs/sklearn.md) — also [docs/libs/sklearn.md](docs/libs/sklearn.md) |
+
+### Machine learning
+
+| Library | Doc |
+|---|---|
+| **PyTorch** (99 MB dylib via Git LFS) | [docs/torch.md](docs/torch.md) — also [docs/libs/pytorch.md](docs/libs/pytorch.md) |
+| **transformers** | [docs/transformers.md](docs/transformers.md) — also [docs/libs/transformers.md](docs/libs/transformers.md) |
+| **tokenizers** (Rust via PyO3) | [docs/tokenizers.md](docs/tokenizers.md) — also [docs/libs/tokenizers.md](docs/libs/tokenizers.md) |
+| **safetensors** | [docs/safetensors.md](docs/safetensors.md) |
+| **huggingface_hub** | [docs/huggingface-hub.md](docs/huggingface-hub.md) |
+
+### Visualization
+
+| Library | Doc |
+|---|---|
+| **matplotlib** (Plotly-backend shim) | [docs/matplotlib.md](docs/matplotlib.md) — also [docs/libs/matplotlib.md](docs/libs/matplotlib.md) |
+| **Plotly** | [docs/plotly.md](docs/plotly.md) |
+| **manim** | [docs/manim.md](docs/manim.md) — also [docs/libs/manim.md](docs/libs/manim.md) |
+| **manim deps** (pathops + mapbox_earcut + isosurfaces) | [docs/manim-deps.md](docs/manim-deps.md) |
+| **manimpango** | [docs/manimpango.md](docs/manimpango.md) |
+
+### Media (image / audio / video)
+
+| Library | Doc |
+|---|---|
+| **Pillow / PIL** | [docs/pillow.md](docs/pillow.md) |
+| **PyAV** | [docs/av-pyav.md](docs/av-pyav.md) — also [docs/ffmpeg-pyav.md](docs/ffmpeg-pyav.md) |
+| **pydub** (audio, uses audioop) | [docs/pydub.md](docs/pydub.md) |
+| **audioop** (LTS backport — removed from Python 3.13 stdlib) | [docs/audioop.md](docs/audioop.md) |
+| **svgelements** | [docs/svgelements.md](docs/svgelements.md) |
+| **Media overview** | [docs/libs/media.md](docs/libs/media.md) |
+
+### Web & network
+
+| Library | Doc |
+|---|---|
+| **requests** | [docs/requests.md](docs/requests.md) |
+| **urllib3** | [docs/urllib3.md](docs/urllib3.md) |
+| **BeautifulSoup4** | [docs/beautifulsoup.md](docs/beautifulsoup.md) |
+| **certifi** (CA bundle for HTTPS) | [docs/certifi.md](docs/certifi.md) |
+| **charset_normalizer + idna** | [docs/encoding.md](docs/encoding.md) |
+| **PyWebView (CodeBench shim)** — full cookie API + verbose logging | [docs/pywebview.md](docs/pywebview.md) |
+
+### Data / config
+
+| Library | Doc |
+|---|---|
+| **PyYAML** | [docs/pyyaml.md](docs/pyyaml.md) |
+| **jsonschema** | [docs/jsonschema.md](docs/jsonschema.md) |
+
+### Terminal / CLI
+
+| Library | Doc |
+|---|---|
+| **rich** (colors, tables, markdown rendering) | [docs/rich.md](docs/rich.md) |
+| **click** | [docs/click.md](docs/click.md) |
+| **tqdm** (progress bars) | [docs/tqdm.md](docs/tqdm.md) |
+| **pygments** (syntax highlighting) | [docs/pygments.md](docs/pygments.md) |
+| **markdown_it + mdurl** | [docs/markdown-it.md](docs/markdown-it.md) |
+
+### System / process
+
+| Library | Doc |
+|---|---|
+| **psutil + filelock + watchdog** (combined) | [docs/process-and-io.md](docs/process-and-io.md) |
+| **moderngl + moderngl_window + screeninfo** (all stubbed on iOS) | [docs/moderngl.md](docs/moderngl.md) |
+
+### C interop / language utilities
+
+| Library | Doc |
+|---|---|
+| **cffi + pycparser** | [docs/cffi.md](docs/cffi.md) |
+| **regex + typing_extensions** | [docs/regex-and-typing.md](docs/regex-and-typing.md) |
+| **decorator** (CodeBench shim — manim's only deps) | [docs/decorator.md](docs/decorator.md) |
+
+### Build / packaging
+
+| Library | Doc |
+|---|---|
+| **pip** (with the in-shell wrapper) | [docs/pip.md](docs/pip.md) |
+
+### Smaller utilities (transitive deps)
+
+| Lib | Doc |
+|---|---|
+| **attrs / packaging / narwhals / referencing** | [docs/minor-libs.md](docs/minor-libs.md) |
+| **cloup / soupsieve / rpds / srt / pylab / torchgen / setuptools / wheel / pkg_resources / _distutils_hack** | [docs/small-utils.md](docs/small-utils.md) |
+
+### CodeBench glue layer (host-app integration)
+
+| Module | Doc |
+|---|---|
+| **offlinai_shell** (108 builtins) + **offlinai_ai** (chat REPL) + **offlinai_latex** (math/doc bridge) | [docs/codebench-extras.md](docs/codebench-extras.md) |
+
+---
+
+## Quick lib lookup
+
+If you're looking for a specific package and forgot which doc it's in:
+
+| `import X` | Doc |
+|---|---|
+| `attr` / `attrs` | [minor-libs.md](docs/minor-libs.md) |
+| `audioop` | [audioop.md](docs/audioop.md) |
+| `av` | [av-pyav.md](docs/av-pyav.md) / [ffmpeg-pyav.md](docs/ffmpeg-pyav.md) |
+| `bs4` | [beautifulsoup.md](docs/beautifulsoup.md) |
+| `cairo` | [cairographics.md](docs/cairographics.md) |
+| `certifi` | [certifi.md](docs/certifi.md) |
+| `cffi` / `pycparser` | [cffi.md](docs/cffi.md) |
+| `charset_normalizer` / `idna` | [encoding.md](docs/encoding.md) |
+| `click` / `cloup` | [click.md](docs/click.md) / [small-utils.md](docs/small-utils.md) |
+| `decorator` | [decorator.md](docs/decorator.md) |
+| `filelock` / `psutil` / `watchdog` | [process-and-io.md](docs/process-and-io.md) |
+| `huggingface_hub` | [huggingface-hub.md](docs/huggingface-hub.md) |
+| `isosurfaces` / `mapbox_earcut` / `pathops` | [manim-deps.md](docs/manim-deps.md) |
+| `jsonschema` / `jsonschema_specifications` / `referencing` / `rpds` | [jsonschema.md](docs/jsonschema.md) / [small-utils.md](docs/small-utils.md) |
+| `manim` | [manim.md](docs/manim.md) |
+| `manimpango` | [manimpango.md](docs/manimpango.md) |
+| `markdown_it` / `mdurl` | [markdown-it.md](docs/markdown-it.md) |
+| `matplotlib` / `mpl_toolkits` / `pylab` | [matplotlib.md](docs/matplotlib.md) / [small-utils.md](docs/small-utils.md) |
+| `moderngl` / `moderngl_window` / `screeninfo` | [moderngl.md](docs/moderngl.md) |
+| `mpmath` | [mpmath.md](docs/mpmath.md) |
+| `narwhals` / `packaging` | [minor-libs.md](docs/minor-libs.md) |
+| `networkx` | [networkx.md](docs/networkx.md) |
+| `numpy` | [numpy.md](docs/numpy.md) |
+| `offlinai_ai` / `offlinai_latex` / `offlinai_shell` | [codebench-extras.md](docs/codebench-extras.md) |
+| `PIL` (Pillow) | [pillow.md](docs/pillow.md) |
+| `pip` (and the shell wrapper) | [pip.md](docs/pip.md) |
+| `plotly` / `_plotly_utils` | [plotly.md](docs/plotly.md) |
+| `pydub` | [pydub.md](docs/pydub.md) |
+| `pygments` | [pygments.md](docs/pygments.md) |
+| `regex` / `typing_extensions` | [regex-and-typing.md](docs/regex-and-typing.md) |
+| `requests` / `urllib3` | [requests.md](docs/requests.md) / [urllib3.md](docs/urllib3.md) |
+| `rich` | [rich.md](docs/rich.md) |
+| `safetensors` | [safetensors.md](docs/safetensors.md) |
+| `scipy` | [scipy-ios.md](docs/scipy-ios.md) |
+| `setuptools` / `wheel` / `pkg_resources` / `_distutils_hack` | [small-utils.md](docs/small-utils.md) |
+| `sklearn` | [sklearn.md](docs/sklearn.md) |
+| `soupsieve` | [small-utils.md](docs/small-utils.md) |
+| `srt` | [small-utils.md](docs/small-utils.md) |
+| `svgelements` | [svgelements.md](docs/svgelements.md) |
+| `sympy` | [sympy.md](docs/sympy.md) |
+| `tokenizers` | [tokenizers.md](docs/tokenizers.md) |
+| `torch` / `torchgen` | [torch.md](docs/torch.md) / [small-utils.md](docs/small-utils.md) |
+| `tqdm` | [tqdm.md](docs/tqdm.md) |
+| `transformers` | [transformers.md](docs/transformers.md) |
+| `webview` (PyWebView shim) | [pywebview.md](docs/pywebview.md) |
+| `yaml` (PyYAML) | [pyyaml.md](docs/pyyaml.md) |
 
 ## Requirements
 
