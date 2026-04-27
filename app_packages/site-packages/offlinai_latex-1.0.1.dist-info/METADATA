@@ -1,0 +1,7 @@
+Metadata-Version: 2.1
+Name: offlinai-latex
+Version: 1.0.1
+Summary: OfflinAi LaTeX bridge — Busytex driver for manim/MathTex
+Author: OfflinAi (vendored)
+License: see upstream package
+Requires-Python: >=3.8

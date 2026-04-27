@@ -1,0 +1,7 @@
+Metadata-Version: 2.1
+Name: scikit-learn
+Version: 1.8.0
+Summary: Machine learning algorithms in Python
+Author: OfflinAi (vendored)
+License: see upstream package
+Requires-Python: >=3.8

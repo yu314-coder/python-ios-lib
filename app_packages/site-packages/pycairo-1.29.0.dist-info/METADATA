@@ -1,0 +1,7 @@
+Metadata-Version: 2.1
+Name: pycairo
+Version: 1.29.0
+Summary: Python interface to the Cairo 2D graphics library
+Author: OfflinAi (vendored)
+License: see upstream package
+Requires-Python: >=3.8

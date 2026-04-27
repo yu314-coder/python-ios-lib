@@ -1,0 +1,7 @@
+Metadata-Version: 2.1
+Name: decorator
+Version: 5.1.1
+Summary: Minimal shim for the `decorator` package — just `decorate` and `decorator` (manim's only deps from it)
+Author: OfflinAi (vendored)
+License: see upstream package
+Requires-Python: >=3.8

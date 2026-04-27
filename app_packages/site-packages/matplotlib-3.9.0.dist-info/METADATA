@@ -1,0 +1,7 @@
+Metadata-Version: 2.1
+Name: matplotlib
+Version: 3.9.0
+Summary: Python plotting package
+Author: OfflinAi (vendored)
+License: see upstream package
+Requires-Python: >=3.8

@@ -1,0 +1,7 @@
+Metadata-Version: 2.1
+Name: av
+Version: 17.0.1
+Summary: PyAV — Python bindings for FFmpeg
+Author: OfflinAi (vendored)
+License: see upstream package
+Requires-Python: >=3.8
