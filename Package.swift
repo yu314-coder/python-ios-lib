@@ -33,6 +33,8 @@ let package = Package(
         .library(name: "JsonSchema", targets: ["JsonSchema"]),
         .library(name: "CairoGraphics", targets: ["CairoGraphics"]),
         .library(name: "FFmpegPyAV", targets: ["FFmpegPyAV"]),
+        .library(name: "Decorator", targets: ["Decorator"]),
+        .library(name: "PyWebView", targets: ["PyWebView"]),
 
         // ── Requires NumPy ──
         .library(name: "Sklearn", targets: ["Sklearn"]),
@@ -125,6 +127,17 @@ let package = Package(
 
         // jsonschema — JSON validation (pure Python)
         .target(name: "JsonSchema", path: "Sources/JsonSchema", resources: [.copy("jsonschema")]),
+
+        // decorator — single-file shim of Michele Simionato's decorator
+        // package; provides `decorate` + `decorator` (manim's only deps
+        // from it). Pure Python, ~150 LOC.
+        .target(name: "Decorator", path: "Sources/Decorator", resources: [.copy("decorator.py")]),
+
+        // pywebview — CodeBench shim of pywebview that routes
+        // create_window/load_url/load_html into the host app's preview
+        // pane via file-IPC instead of spawning a real native window
+        // (which iOS forbids). Pure Python.
+        .target(name: "PyWebView", path: "Sources/PyWebView", resources: [.copy("webview")]),
 
         // Cairo + Pango + HarfBuzz — 2D vector graphics (native iOS)
         .target(name: "CairoGraphics", path: "Sources/CairoGraphics", resources: [.copy("cairo"), .copy("pango"), .copy("harfbuzz")]),
