@@ -12,62 +12,145 @@ Full Python 3.14 runtime for iOS/iPadOS with **30+ offline libraries including r
 - **LaTeX bundle expanded** — 33 MB texmf tree now ships with full Latin Modern Type 1 fonts, expl3 code (1.3 MB), firstaid, graphics-def, hyphenation, stringenc, unicode-data, and pdftex.map. Math-mode rendering via SwiftMath is unlimited and reliable; the native `pdflatex` builtin is gated off pending replacement of the 2019-era `pdftex.xcframework` (see [Media docs](docs/libs/media.md#local-latex-engine-offlinai_latex)).
 - **Shell builtins**: `pdflatex` / `latex` / `tex` / `pdftex` / `xelatex` / `latex-diagnose`, `ncdu` with raw arrow-key navigation and real-ncdu styling, `top` with Apple-chip detection, `git clone` via zipball fetch, and universal `--help` / `-h` interception.
 
-## Quick Start — Add via Xcode
+## Quick Start — adding python-ios-lib to your iOS app
 
-In Xcode: **File → Add Package Dependencies** → paste:
+This is a Swift Package — works with Xcode and SwiftPM. Steps:
+
+### 1. Install Git LFS (only once per machine)
+
+The PyTorch dylib is 99 MB and lives in Git LFS. Without LFS, the
+file arrives as a 134-byte pointer stub and `import torch` will
+crash at load. Skip this step ONLY if you don't use the PyTorch
+target.
+
+```bash
+brew install git-lfs && git lfs install
+```
+
+### 2. Add the package in Xcode
+
+In Xcode: **File → Add Package Dependencies…** → paste this URL:
 
 ```
 https://github.com/yu314-coder/python-ios-lib
 ```
 
-Then select which packages you need:
+Pick a version (use the latest tag, or "Branch: main" for the bleeding edge).
+
+### 3. Pick the products you actually need
+
+Xcode shows a checklist of every library product. Tick only what your
+app imports — each product copies its Python files into the app
+bundle, so adding everything bloats the binary unnecessarily.
+
+For example, just want to use `import webview` (the pywebview shim)?
+Check **PyWebView** and nothing else.
+
+Need PyTorch + transformers + numpy? Check **Transformers** —
+`PyTorch`, `Tokenizers`, `huggingface_hub`, `safetensors`, and
+`filelock` get auto-included as dependencies.
+
+### 4. Wire up Python at app launch
+
+You need a Python runtime to actually `import` these. The simplest
+path is [BeeWare's Python-Apple-support](https://github.com/beeware/Python-Apple-support)
+binary — set up a `Py_Initialize()` once at startup, then run
+arbitrary Python code via `PyRun_SimpleString`. CodeBench's
+`PythonRuntime.swift` is a working reference.
+
+### 5. (Optional) Use the SwiftPM CLI instead
+
+If you prefer `Package.swift`:
+
+```swift
+dependencies: [
+    .package(url: "https://github.com/yu314-coder/python-ios-lib", from: "1.0.0"),
+],
+targets: [
+    .target(name: "MyApp", dependencies: [
+        .product(name: "PyWebView", package: "python-ios-lib"),
+        .product(name: "NumPy",     package: "python-ios-lib"),
+        // … add as many products as you want
+    ]),
+],
+```
+
+### 6. (For Mac "Designed for iPad" only) Add the network entitlement
+
+Designed-for-iPad runs your iOS app under the macOS sandbox, which
+blocks outbound network by default. If `pip install` or
+`requests.get` returns `PermissionError(1, 'Operation not
+permitted')`, create a `MyApp.entitlements` file with:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>com.apple.security.network.client</key>
+    <true/>
+</dict>
+</plist>
+```
+
+…and set Project → Build Settings → **Code Signing Entitlements** to
+this file. Real iOS devices and the iOS Simulator don't need this.
+
+---
+
+## Available products (29 in Xcode's checklist)
+
+Pick whichever combination you need. Dependencies auto-resolve.
 
 ### Standalone packages (no dependencies)
 
-| Package | What you get |
-|---------|-------------|
-| **CInterpreter** | C89/C99/C23 tree-walking interpreter (~3,661 lines) |
-| **CppInterpreter** | C++ interpreter — classes, STL, templates, inheritance (~4,287 lines) |
-| **FortranInterpreter** | Fortran — modules, allocatable arrays, 45+ intrinsics (~3,876 lines) |
-| **NumPy** | NumPy 2.3.5 — arrays, linalg, FFT, random (native iOS) |
-| **SymPy** | SymPy 1.14 — symbolic math, calculus, solving |
-| **Plotly** | Plotly 6.6 — interactive charts, 3D plots |
-| **NetworkX** | NetworkX 3.6 — graph theory, algorithms |
-| **Pillow** | Pillow 12.2 — image processing (native iOS) |
-| **BeautifulSoup** | BeautifulSoup4 — HTML/XML parsing |
-| **Requests** | HTTP client (GET, POST, sessions, JSON) |
-| **PyYAML** | YAML parser (native iOS) |
-| **Rich** | Rich text, tables, progress bars |
-| **Tqdm** | Progress bars for loops |
-| **Click** | CLI framework |
-| **Pygments** | Syntax highlighting (500+ languages) |
-| **Mpmath** | Arbitrary-precision arithmetic |
-| **Pydub** | Audio manipulation |
-| **JsonSchema** | JSON Schema validation |
-| **CairoGraphics** | Cairo + Pango + HarfBuzz (2D graphics, native iOS) |
-| **FFmpegPyAV** | FFmpeg (7 dylibs) + PyAV video encoding (native iOS) |
+| Package | What you get | Doc |
+|---|---|---|
+| **CInterpreter** | C89/C99/C23 tree-walking interpreter (~3,661 lines) | [doc](docs/c-interpreter.md) |
+| **CppInterpreter** | C++ interpreter — classes, STL, templates, inheritance (~4,287 lines) | [doc](docs/cpp-interpreter.md) |
+| **FortranInterpreter** | Fortran — modules, allocatable arrays, 45+ intrinsics (~3,876 lines) | [doc](docs/fortran-interpreter.md) |
+| **NumPy** | NumPy 2.3.5 — arrays, linalg, FFT, random (native iOS) | [doc](docs/numpy.md) |
+| **SymPy** | SymPy 1.14 — symbolic math, calculus, solving | [doc](docs/sympy.md) |
+| **Plotly** | Plotly 6.6 — interactive charts, 3D plots | [doc](docs/plotly.md) |
+| **NetworkX** | NetworkX 3.6 — graph theory, algorithms | [doc](docs/networkx.md) |
+| **Pillow** | Pillow 12.2 — image processing (native iOS) | [doc](docs/pillow.md) |
+| **BeautifulSoup** | BeautifulSoup4 — HTML/XML parsing | [doc](docs/beautifulsoup.md) |
+| **Requests** | HTTP client (GET, POST, sessions, JSON) | [doc](docs/requests.md) |
+| **PyYAML** | YAML parser (native iOS) | [doc](docs/pyyaml.md) |
+| **Rich** | Rich text, tables, progress bars | [doc](docs/rich.md) |
+| **Tqdm** | Progress bars for loops | [doc](docs/tqdm.md) |
+| **Click** | CLI framework | [doc](docs/click.md) |
+| **Pygments** | Syntax highlighting (500+ languages) | [doc](docs/pygments.md) |
+| **Mpmath** | Arbitrary-precision arithmetic | [doc](docs/mpmath.md) |
+| **Pydub** | Audio manipulation | [doc](docs/pydub.md) |
+| **JsonSchema** | JSON Schema validation | [doc](docs/jsonschema.md) |
+| **CairoGraphics** | Cairo + Pango + HarfBuzz (2D graphics, native iOS) | [doc](docs/cairographics.md) |
+| **FFmpegPyAV** | FFmpeg (7 dylibs) + PyAV video encoding (native iOS) | [doc](docs/ffmpeg-pyav.md) |
+| **Decorator** | Single-file shim of Michele Simionato's `decorator` package — covers manim's needs | [doc](docs/decorator.md) |
+| **PyWebView** | pywebview shim — embed HTML/CSS/JS UI in your iOS app from Python via the host's preview pane (full cookie API + file IPC) | [doc](docs/pywebview.md) |
 
 ### Packages with dependencies (auto-included when you select)
 
-| Package | What you get | Auto-includes |
-|---------|-------------|---------------|
-| **Sklearn** | scikit-learn (40 modules, 12K+ lines) | + NumPy |
-| **SciPy** | SciPy (optimize, integrate, signal, stats) | + NumPy |
-| **Matplotlib** | matplotlib (64 modules, Plotly backend) | + Plotly |
-| **Manim** | manim (145+ mobjects, 73 animations) | + NumPy, Matplotlib, FFmpegPyAV, CairoGraphics |
-| **LaTeXEngine** | SwiftMath-based math renderer + 33 MB bundled texmf tree (134 .sty, 596 tfm, 92 Latin Modern pfb, LaTeX3 kernel). Full-document `pdflatex` via bundled lib-tex is currently gated off (crashes) — math-mode rendering is unaffected. | + CairoGraphics |
+| Package | What you get | Auto-includes | Doc |
+|---|---|---|---|
+| **Sklearn** | scikit-learn (40 modules, 12K+ lines) | + NumPy | [doc](docs/sklearn.md) |
+| **SciPy** | SciPy (optimize, integrate, signal, stats) | + NumPy | [doc](docs/scipy-ios.md) |
+| **Matplotlib** | matplotlib (64 modules, Plotly backend) | + Plotly | [doc](docs/matplotlib.md) |
+| **Manim** | manim (145+ mobjects, 73 animations) | + NumPy, Matplotlib, FFmpegPyAV, CairoGraphics | [doc](docs/manim.md) |
+| **LaTeXEngine** | pdftex.xcframework + 33 MB bundled texmf tree (Latin Modern, amsmath, hyperref, expl3, …). `\documentclass{article}` end-to-end. | + CairoGraphics | [doc](docs/latex-engine.md) |
 
 ### Machine Learning stack (PyTorch + HuggingFace)
 
 First public iOS builds of each. Once added, `import torch`, `import transformers`, `import tokenizers` all work on-device with no extra setup.
 
-| Package | What you get | Auto-includes |
-|---------|-------------|---------------|
-| **PyTorch** | [PyTorch 2.1.2](docs/libs/pytorch.md) native iOS — tensors, autograd, nn, optim, JIT, FFT, LAPACK via Accelerate. **95/95 correctness asserts.** Ships `libtorch_python.dylib` (99 MB) via Git LFS. | regex shim |
-| **Tokenizers** | [HuggingFace tokenizers 0.19.1](docs/libs/tokenizers.md) — real Rust BPE/WordPiece/Unigram trainers cross-compiled for iOS arm64 (PyO3). First public iOS build. | (none) |
-| **Transformers** | [HuggingFace transformers 4.41.2](docs/libs/transformers.md) — BERT, GPT-2, T5, BART. Construct + train + `.generate()` + save/load on-device. | + PyTorch, Tokenizers, `huggingface_hub`, `filelock`, `safetensors` |
+| Package | What you get | Auto-includes | Doc |
+|---|---|---|---|
+| **PyTorch** | PyTorch 2.1.2 native iOS — tensors, autograd, nn, optim, JIT, FFT, LAPACK via Accelerate. **95/95 correctness asserts.** Ships `libtorch_python.dylib` (99 MB) via Git LFS. | regex shim | [doc](docs/torch.md) |
+| **Tokenizers** | HuggingFace tokenizers 0.19.1 — real Rust BPE/WordPiece/Unigram trainers cross-compiled for iOS arm64 (PyO3). First public iOS build. | (none) | [doc](docs/tokenizers.md) |
+| **Transformers** | HuggingFace transformers 4.41.2 — BERT, GPT-2, T5, BART, Llama, Qwen. Construct + train + `.generate()` + save/load on-device. | + PyTorch, Tokenizers, `huggingface_hub`, `filelock`, `safetensors` | [doc](docs/transformers.md) |
 
-> **Requires Git LFS** — install `brew install git-lfs && git lfs install` before cloning so the 99 MB PyTorch binary pulls correctly. Without it, `libtorch_python.dylib` arrives as a 134-byte LFS pointer stub and `import torch` crashes at load.
+> **Git LFS required for PyTorch / Transformers** — see [step 1 of Quick Start](#1-install-git-lfs-only-once-per-machine). Other targets work without LFS.
 
 ### After adding the package
 
