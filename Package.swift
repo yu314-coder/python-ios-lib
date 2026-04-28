@@ -28,6 +28,13 @@ let package = Package(
         .library(name: "Tqdm", targets: ["Tqdm"]),
         .library(name: "Click", targets: ["Click"]),
         .library(name: "Cloup", targets: ["Cloup", "Click"]),
+        .library(name: "Mapbox_earcut", targets: ["Mapbox_earcut"]),
+        .library(name: "Isosurfaces", targets: ["Isosurfaces"]),
+        .library(name: "Markupsafe", targets: ["Markupsafe"]),
+        .library(name: "Jinja2", targets: ["Jinja2", "Markupsafe"]),
+        .library(name: "Screeninfo", targets: ["Screeninfo"]),
+        .library(name: "Watchdog", targets: ["Watchdog"]),
+        .library(name: "Fsspec", targets: ["Fsspec"]),
         .library(name: "Pygments", targets: ["Pygments"]),
         .library(name: "Mpmath", targets: ["Mpmath"]),
         .library(name: "Pydub", targets: ["Pydub"]),
@@ -47,7 +54,10 @@ let package = Package(
         // not embedded" — this is the standard workaround.)
 
         // ── Requires NumPy ──
-        .library(name: "Sklearn", targets: ["Sklearn", "NumPy"]),
+        .library(name: "Sklearn", targets: ["Sklearn", "NumPy", "SciPy"]),
+        // SciPy auto-bundles its Fortran runtime (libfortran_io_stubs +
+        // libsf_error_state) as resources of the SciPy target itself,
+        // so this product needs no separate "ScipyRuntime" target.
         .library(name: "SciPy",   targets: ["SciPy",   "NumPy"]),
 
         // ── Requires Plotly ──
@@ -56,18 +66,33 @@ let package = Package(
         // ── Requires multiple deps ──
         // Manim covers the entire animation stack. Hard-imports at
         // module load (every entry below crashes `import manim` if
-        // missing — found by tracing manim/__init__.py + _config):
-        //   numpy, cloup, click, rich, PIL (Pillow)
-        // Required at runtime:
-        //   matplotlib (mobject backends), plotly (matplotlib backend
-        //   on iOS), ffmpeg/pyav (Scene.render → mp4), cairo/pango/
-        //   harfbuzz (manimpango text), tqdm (render progress bar),
+        // missing — traced from manim/__init__.py through
+        // utils/space_ops.py and _config):
+        //   numpy, scipy, mapbox_earcut, cloup, click, rich, PIL,
+        //   decorator
+        // Required by specific mobjects / features:
+        //   matplotlib + plotly (plot mobjects)
+        //   ffmpeg/pyav (Scene.render → mp4)
+        //   cairo/pango/harfbuzz (manimpango text shaping)
+        //   tqdm (render progress bar)
         //   latex (MathTex/Tex compile)
-        // One tick → all 12 ride along.
+        //   pillow (image_mobject, camera, scene_file_writer)
+        //   networkx (Graph mobject)
+        //   pygments (Code mobject syntax highlighting)
+        //   jinja2 (manim's HTML/SVG export templating)
+        //   isosurfaces (3D surface plotting)
+        //   screeninfo (camera defaults — multi-monitor query)
+        //   watchdog (--auto-rerun file-watch mode)
+        // One tick → all 21 ride along.
         .library(name: "Manim",
-                 targets: ["Manim", "NumPy", "Matplotlib", "Plotly",
+                 targets: ["Manim", "NumPy", "SciPy",
+                           "Matplotlib", "Plotly",
                            "FFmpegPyAV", "CairoGraphics", "LaTeXEngine",
-                           "Pillow", "Tqdm", "Rich", "Click", "Cloup"]),
+                           "Pillow", "Tqdm", "Rich", "Click", "Cloup",
+                           "NetworkX", "Pygments", "SymPy", "Sklearn",
+                           "Decorator", "Mapbox_earcut", "Isosurfaces",
+                           "Jinja2", "Markupsafe",
+                           "Screeninfo", "Watchdog"]),
         // LaTeXEngine renders SVG via cairo — bundle it together.
         .library(name: "LaTeXEngine",
                  targets: ["LaTeXEngine", "CairoGraphics"]),
@@ -151,6 +176,43 @@ let package = Package(
                 path: "Sources/Cloup",
                 resources: [.copy("cloup")]),
 
+        // mapbox_earcut — polygon triangulation (164 KB, native .so).
+        // Hard-imported by manim/utils/space_ops.py at module load.
+        .target(name: "Mapbox_earcut", path: "Sources/Mapbox_earcut",
+                resources: [.copy("mapbox_earcut")]),
+
+        // isosurfaces — 3D surface algorithm. Hard-imported by manim's
+        // surface mobjects.
+        .target(name: "Isosurfaces", path: "Sources/Isosurfaces",
+                resources: [.copy("isosurfaces")]),
+
+        // markupsafe — XML/HTML escape utilities. Required by Jinja2
+        // (Jinja2 hard-imports `markupsafe` at module load).
+        .target(name: "Markupsafe", path: "Sources/Markupsafe",
+                resources: [.copy("markupsafe")]),
+
+        // jinja2 — templating engine. Used by manim for its HTML/SVG
+        // export templates and by torch's inductor codegen path.
+        .target(name: "Jinja2",
+                dependencies: ["Markupsafe"],
+                path: "Sources/Jinja2",
+                resources: [.copy("jinja2")]),
+
+        // screeninfo — multi-monitor query. manim's camera reads this
+        // to decide default frame size if not configured.
+        .target(name: "Screeninfo", path: "Sources/Screeninfo",
+                resources: [.copy("screeninfo")]),
+
+        // watchdog — file-system event observer. Used by manim's
+        // --auto-rerun and `manim render` hot-reload modes.
+        .target(name: "Watchdog", path: "Sources/Watchdog",
+                resources: [.copy("watchdog")]),
+
+        // fsspec — filesystem-spec abstraction. Required by torch's
+        // distributed checkpoint loaders + huggingface_hub's downloads.
+        .target(name: "Fsspec", path: "Sources/Fsspec",
+                resources: [.copy("fsspec")]),
+
         // Pygments — syntax highlighting (pure Python)
         .target(name: "Pygments", path: "Sources/Pygments", resources: [.copy("pygments")]),
 
@@ -187,8 +249,15 @@ let package = Package(
         // scikit-learn — ML (40 modules). Needs: NumPy
         .target(name: "Sklearn", dependencies: ["NumPy"], path: "Sources/Sklearn", resources: [.copy("sklearn")]),
 
-        // SciPy — scientific computing. Needs: NumPy
-        .target(name: "SciPy", dependencies: ["NumPy"], path: "Sources/SciPy", resources: [.copy("scipy")]),
+        // SciPy — scientific computing. Needs: NumPy.
+        // Bundles libfortran_io_stubs.dylib + libsf_error_state.dylib
+        // (Fortran runtime for scipy's BLAS/LAPACK/sparse paths). Without
+        // these, `import scipy.spatial` / `scipy.sparse` / `scipy.linalg`
+        // crash at load with "symbol not found".
+        .target(name: "SciPy",
+                dependencies: ["NumPy"],
+                path: "Sources/SciPy",
+                resources: [.copy("scipy"), .copy("scipy_runtime")]),
 
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
         //  REQUIRES PLOTLY
@@ -211,9 +280,13 @@ let package = Package(
         // every transitive resource bundle below — Xcode's Product
         // Picker only needs Manim ticked.
         .target(name: "Manim",
-                dependencies: ["NumPy", "Matplotlib", "FFmpegPyAV",
+                dependencies: ["NumPy", "SciPy",
+                               "Matplotlib", "FFmpegPyAV",
                                "CairoGraphics", "LaTeXEngine",
-                               "Pillow", "Tqdm", "Rich", "Click", "Cloup"],
+                               "Pillow", "Tqdm", "Rich", "Click", "Cloup",
+                               "NetworkX", "Pygments", "SymPy", "Sklearn",
+                               "Decorator", "Mapbox_earcut", "Isosurfaces",
+                               "Jinja2", "Screeninfo", "Watchdog"],
                 path: "Sources/Manim",
                 resources: [
             .copy("manim"), .copy("manimpango"), .copy("offlinai_latex"),

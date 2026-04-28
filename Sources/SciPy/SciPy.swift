@@ -1,15 +1,15 @@
 import Foundation
 import NumPy
 
-/// SciPy — scientific computing. Auto-includes: NumPy.
+/// SciPy — scientific computing.
+/// Auto-includes: NumPy. Bundles libfortran_io_stubs.dylib +
+/// libsf_error_state.dylib (scipy's BLAS/LAPACK/sparse Fortran
+/// runtime — without these, scipy.spatial / scipy.sparse / scipy.linalg
+/// crash with "symbol not found" at import).
 public enum SciPyLib {
     public static var resourceBundle: Bundle { Bundle.module }
     public static var resourcePath: String? { resourceBundle.resourcePath }
 
-    /// Force the linker to keep NumPy's resource bundle in the final
-    /// .app. See Manim.swift for the full rationale — TL;DR is that
-    /// SwiftPM's pure-resource targets get dead-stripped unless an
-    /// explicit symbol reference pins them.
     public static let _bundledDependencies: [Bundle] = [
         NumPyLib.resourceBundle,
     ]
