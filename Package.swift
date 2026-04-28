@@ -166,9 +166,22 @@ let package = Package(
         //  REQUIRES MULTIPLE DEPS — all auto-included
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-        // manim — math animations. Needs: NumPy + Matplotlib + FFmpeg + Cairo
-        .target(name: "Manim", dependencies: ["NumPy", "Matplotlib", "FFmpegPyAV", "CairoGraphics"], path: "Sources/Manim", resources: [
-            .copy("manim"), .copy("manimpango"), .copy("offlinai_latex"), .copy("svgelements"), .copy("pathops"),
+        // manim — math animations.
+        // Needs: NumPy + Matplotlib + FFmpeg + Cairo + LaTeXEngine.
+        // (LaTeXEngine is required because manim's `Tex` / `MathTex`
+        // mobjects shell out to pdflatex via offlinai_latex, which is
+        // the bridge target inside LaTeXEngine. Without it those
+        // mobjects raise "pdflatex not found" at runtime.)
+        // Adding `Manim` as a SwiftPM product dependency auto-includes
+        // every transitive resource bundle below — Xcode's Product
+        // Picker only needs Manim ticked.
+        .target(name: "Manim",
+                dependencies: ["NumPy", "Matplotlib", "FFmpegPyAV",
+                               "CairoGraphics", "LaTeXEngine"],
+                path: "Sources/Manim",
+                resources: [
+            .copy("manim"), .copy("manimpango"), .copy("offlinai_latex"),
+            .copy("svgelements"), .copy("pathops"),
         ]),
 
         // LaTeX engine — pdftex + texmf. Needs: Cairo
@@ -192,6 +205,12 @@ let package = Package(
                 .copy("torch"),
                 .copy("regex"),
                 .copy("typing_extensions.py"),
+                // libtorch_python.dylib (103MB) ships as an LZMA blob
+                // because GitHub rejects raw blobs over 100MB and Git
+                // LFS is incompatible with SwiftPM's checkout machinery.
+                // Materialized to ~/Library/Caches at first use via
+                // PyTorchLib.bootstrap() — see PyTorch.swift.
+                .copy("torch_dylib"),
             ]
         ),
 
