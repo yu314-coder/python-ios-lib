@@ -36,21 +36,38 @@ let package = Package(
         .library(name: "Decorator", targets: ["Decorator"]),
         .library(name: "PyWebView", targets: ["PyWebView"]),
 
+        // ── Multi-target umbrella products ──
+        // Each tick in Xcode's product picker adds EVERY listed target's
+        // framework + resource bundle to the consumer's project.pbxproj.
+        // Without these, SPM's `target.dependencies` only build them
+        // — Xcode never writes them into Frameworks/Libraries/Embedded
+        // Content, so the .app ships missing every transitive dep.
+        // (See https://forums.swift.org for "SPM transitive resources
+        // not embedded" — this is the standard workaround.)
+
         // ── Requires NumPy ──
-        .library(name: "Sklearn", targets: ["Sklearn"]),
-        .library(name: "SciPy", targets: ["SciPy"]),
+        .library(name: "Sklearn", targets: ["Sklearn", "NumPy"]),
+        .library(name: "SciPy",   targets: ["SciPy",   "NumPy"]),
 
         // ── Requires Plotly ──
-        .library(name: "Matplotlib", targets: ["Matplotlib"]),
+        .library(name: "Matplotlib", targets: ["Matplotlib", "Plotly"]),
 
         // ── Requires multiple deps ──
-        .library(name: "Manim", targets: ["Manim"]),
-        .library(name: "LaTeXEngine", targets: ["LaTeXEngine"]),
+        // Manim covers the entire animation stack — picking it gives
+        // numpy + matplotlib + plotly + ffmpeg/pyav + cairo/pango +
+        // latex (for MathTex) in one click.
+        .library(name: "Manim",
+                 targets: ["Manim", "NumPy", "Matplotlib", "Plotly",
+                           "FFmpegPyAV", "CairoGraphics", "LaTeXEngine"]),
+        // LaTeXEngine renders SVG via cairo — bundle it together.
+        .library(name: "LaTeXEngine",
+                 targets: ["LaTeXEngine", "CairoGraphics"]),
 
         // ── Machine Learning: PyTorch + HuggingFace stack ──
-        .library(name: "PyTorch", targets: ["PyTorch"]),
-        .library(name: "Tokenizers", targets: ["Tokenizers"]),
-        .library(name: "Transformers", targets: ["Transformers"]),
+        .library(name: "PyTorch",      targets: ["PyTorch"]),
+        .library(name: "Tokenizers",   targets: ["Tokenizers"]),
+        .library(name: "Transformers",
+                 targets: ["Transformers", "PyTorch", "Tokenizers"]),
     ],
     targets: [
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
