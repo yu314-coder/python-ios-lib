@@ -149,9 +149,13 @@ let package = Package(
         .target(name: "SymPy", path: "Sources/SymPy", resources: [.copy("sympy"),
             .copy("sympy-1.14.0.dist-info")]),
 
-        // Plotly 6.6 — interactive charts (pure Python)
-        .target(name: "Plotly", path: "Sources/Plotly", resources: [.copy("plotly"),
-            .copy("plotly-6.6.0.dist-info")]),
+        // Plotly 6.6 — interactive charts (pure Python).
+        // Bundles the sibling _plotly_utils package too — plotly's
+        // __init__.py imports from _plotly_utils.basevalidators et al.,
+        // which ships as a separate top-level package.
+        .target(name: "Plotly", path: "Sources/Plotly",
+                resources: [.copy("plotly"), .copy("_plotly_utils"),
+                            .copy("plotly-6.6.0.dist-info")]),
 
         // NetworkX 3.6 — graph theory (pure Python)
         .target(name: "NetworkX", path: "Sources/NetworkX", resources: [.copy("networkx"),
