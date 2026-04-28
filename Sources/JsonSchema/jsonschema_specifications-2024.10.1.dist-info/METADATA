@@ -1,0 +1,7 @@
+Metadata-Version: 2.1
+Name: jsonschema-specifications
+Version: 2024.10.1
+Summary: JSON Schema meta-schemas and vocabularies
+Author: OfflinAi (vendored)
+License: see upstream package
+Requires-Python: >=3.8

@@ -135,37 +135,56 @@ let package = Package(
         ),
 
         // NumPy 2.3.5 — native iOS build (arrays, linalg, FFT, random)
-        .target(name: "NumPy", path: "Sources/NumPy", resources: [.copy("numpy")]),
+        .target(name: "NumPy", path: "Sources/NumPy", resources: [.copy("numpy"),
+            .copy("numpy-2.3.5.post1.dist-info")]),
 
         // SymPy 1.14 — symbolic math (pure Python)
-        .target(name: "SymPy", path: "Sources/SymPy", resources: [.copy("sympy")]),
+        .target(name: "SymPy", path: "Sources/SymPy", resources: [.copy("sympy"),
+            .copy("sympy-1.14.0.dist-info")]),
 
         // Plotly 6.6 — interactive charts (pure Python)
-        .target(name: "Plotly", path: "Sources/Plotly", resources: [.copy("plotly")]),
+        .target(name: "Plotly", path: "Sources/Plotly", resources: [.copy("plotly"),
+            .copy("plotly-6.6.0.dist-info")]),
 
         // NetworkX 3.6 — graph theory (pure Python)
-        .target(name: "NetworkX", path: "Sources/NetworkX", resources: [.copy("networkx")]),
+        .target(name: "NetworkX", path: "Sources/NetworkX", resources: [.copy("networkx"),
+            .copy("networkx-3.6.1.dist-info")]),
 
         // Pillow 12.2 — image processing (native iOS build)
-        .target(name: "Pillow", path: "Sources/Pillow", resources: [.copy("PIL")]),
+        .target(name: "Pillow", path: "Sources/Pillow", resources: [.copy("PIL"),
+            .copy("pillow-11.0.0.dist-info")]),
 
         // BeautifulSoup4 — HTML/XML parsing (pure Python)
-        .target(name: "BeautifulSoup", path: "Sources/BeautifulSoup", resources: [.copy("bs4")]),
+        .target(name: "BeautifulSoup", path: "Sources/BeautifulSoup", resources: [.copy("bs4"),
+            .copy("beautifulsoup4-4.14.3.dist-info"),
+            .copy("bs4-4.14.3.dist-info"),
+            .copy("soupsieve-2.8.dist-info")]),
 
         // requests — HTTP client (pure Python)
-        .target(name: "Requests", path: "Sources/Requests", resources: [.copy("requests")]),
+        .target(name: "Requests", path: "Sources/Requests", resources: [.copy("requests"),
+            .copy("certifi-2026.2.25.dist-info"),
+            .copy("charset_normalizer-3.4.7.dist-info"),
+            .copy("idna-3.11.dist-info"),
+            .copy("requests-2.33.1.dist-info"),
+            .copy("urllib3-2.6.3.dist-info")]),
 
         // PyYAML — YAML parser (native build)
-        .target(name: "PyYAML", path: "Sources/PyYAML", resources: [.copy("yaml")]),
+        .target(name: "PyYAML", path: "Sources/PyYAML", resources: [.copy("yaml"),
+            .copy("pyyaml-6.0.3.dist-info")]),
 
         // rich — rich text, tables, progress bars (pure Python)
-        .target(name: "Rich", path: "Sources/Rich", resources: [.copy("rich")]),
+        .target(name: "Rich", path: "Sources/Rich", resources: [.copy("rich"),
+            .copy("markdown_it_py-3.0.0.dist-info"),
+            .copy("mdurl-0.1.2.dist-info"),
+            .copy("rich-13.7.0.dist-info")]),
 
         // tqdm — progress bars (pure Python)
-        .target(name: "Tqdm", path: "Sources/Tqdm", resources: [.copy("tqdm")]),
+        .target(name: "Tqdm", path: "Sources/Tqdm", resources: [.copy("tqdm"),
+            .copy("tqdm-4.67.3.dist-info")]),
 
         // click — CLI framework (pure Python)
-        .target(name: "Click", path: "Sources/Click", resources: [.copy("click")]),
+        .target(name: "Click", path: "Sources/Click", resources: [.copy("click"),
+            .copy("click-8.1.7.dist-info")]),
 
         // cloup — click extension (option groups, constraints, sub-command
         // groups with section headers). Hard-imported by manim/_config at
@@ -174,80 +193,103 @@ let package = Package(
         .target(name: "Cloup",
                 dependencies: ["Click"],
                 path: "Sources/Cloup",
-                resources: [.copy("cloup")]),
+                resources: [.copy("cloup"),
+            .copy("cloup-3.0.5.dist-info")]),
 
         // mapbox_earcut — polygon triangulation (164 KB, native .so).
         // Hard-imported by manim/utils/space_ops.py at module load.
         .target(name: "Mapbox_earcut", path: "Sources/Mapbox_earcut",
-                resources: [.copy("mapbox_earcut")]),
+                resources: [.copy("mapbox_earcut"),
+            .copy("mapbox_earcut-1.0.3.dist-info")]),
 
         // isosurfaces — 3D surface algorithm. Hard-imported by manim's
         // surface mobjects.
         .target(name: "Isosurfaces", path: "Sources/Isosurfaces",
-                resources: [.copy("isosurfaces")]),
+                resources: [.copy("isosurfaces"),
+            .copy("isosurfaces-0.1.2.dist-info")]),
 
         // markupsafe — XML/HTML escape utilities. Required by Jinja2
         // (Jinja2 hard-imports `markupsafe` at module load).
         .target(name: "Markupsafe", path: "Sources/Markupsafe",
-                resources: [.copy("markupsafe")]),
+                resources: [.copy("markupsafe"),
+            .copy("markupsafe-3.0.3.dist-info")]),
 
         // jinja2 — templating engine. Used by manim for its HTML/SVG
         // export templates and by torch's inductor codegen path.
         .target(name: "Jinja2",
                 dependencies: ["Markupsafe"],
                 path: "Sources/Jinja2",
-                resources: [.copy("jinja2")]),
+                resources: [.copy("jinja2"),
+            .copy("jinja2-3.1.6.dist-info")]),
 
         // screeninfo — multi-monitor query. manim's camera reads this
         // to decide default frame size if not configured.
         .target(name: "Screeninfo", path: "Sources/Screeninfo",
-                resources: [.copy("screeninfo")]),
+                resources: [.copy("screeninfo"),
+            .copy("screeninfo-0.8.1.dist-info")]),
 
         // watchdog — file-system event observer. Used by manim's
         // --auto-rerun and `manim render` hot-reload modes.
         .target(name: "Watchdog", path: "Sources/Watchdog",
-                resources: [.copy("watchdog")]),
+                resources: [.copy("watchdog"),
+            .copy("watchdog-4.0.0.dist-info")]),
 
         // fsspec — filesystem-spec abstraction. Required by torch's
         // distributed checkpoint loaders + huggingface_hub's downloads.
         .target(name: "Fsspec", path: "Sources/Fsspec",
-                resources: [.copy("fsspec")]),
+                resources: [.copy("fsspec"),
+            .copy("fsspec-2026.3.0.dist-info")]),
 
         // Pygments — syntax highlighting (pure Python)
-        .target(name: "Pygments", path: "Sources/Pygments", resources: [.copy("pygments")]),
+        .target(name: "Pygments", path: "Sources/Pygments", resources: [.copy("pygments"),
+            .copy("pygments-2.18.0.dist-info")]),
 
         // mpmath — arbitrary precision math (pure Python)
-        .target(name: "Mpmath", path: "Sources/Mpmath", resources: [.copy("mpmath")]),
+        .target(name: "Mpmath", path: "Sources/Mpmath", resources: [.copy("mpmath"),
+            .copy("mpmath-1.4.1.dist-info")]),
 
         // pydub — audio manipulation (pure Python)
-        .target(name: "Pydub", path: "Sources/Pydub", resources: [.copy("pydub")]),
+        .target(name: "Pydub", path: "Sources/Pydub", resources: [.copy("pydub"),
+            .copy("audioop_lts-0.2.1.dist-info"),
+            .copy("pydub-0.25.1.dist-info")]),
 
         // jsonschema — JSON validation (pure Python)
-        .target(name: "JsonSchema", path: "Sources/JsonSchema", resources: [.copy("jsonschema")]),
+        .target(name: "JsonSchema", path: "Sources/JsonSchema", resources: [.copy("jsonschema"),
+            .copy("attr-24.2.0.dist-info"),
+            .copy("attrs-24.2.0.dist-info"),
+            .copy("jsonschema-4.26.0.dist-info"),
+            .copy("jsonschema_specifications-2024.10.1.dist-info"),
+            .copy("referencing-0.36.2.dist-info"),
+            .copy("rpds_py-0.22.3.dist-info")]),
 
         // decorator — single-file shim of Michele Simionato's decorator
         // package; provides `decorate` + `decorator` (manim's only deps
         // from it). Pure Python, ~150 LOC.
-        .target(name: "Decorator", path: "Sources/Decorator", resources: [.copy("decorator.py")]),
+        .target(name: "Decorator", path: "Sources/Decorator", resources: [.copy("decorator.py"),
+            .copy("decorator-5.1.1.dist-info")]),
 
         // pywebview — CodeBench shim of pywebview that routes
         // create_window/load_url/load_html into the host app's preview
         // pane via file-IPC instead of spawning a real native window
         // (which iOS forbids). Pure Python.
-        .target(name: "PyWebView", path: "Sources/PyWebView", resources: [.copy("webview")]),
+        .target(name: "PyWebView", path: "Sources/PyWebView", resources: [.copy("webview"),
+            .copy("pywebview-5.4.0.dist-info")]),
 
         // Cairo + Pango + HarfBuzz — 2D vector graphics (native iOS)
-        .target(name: "CairoGraphics", path: "Sources/CairoGraphics", resources: [.copy("cairo"), .copy("pango"), .copy("harfbuzz")]),
+        .target(name: "CairoGraphics", path: "Sources/CairoGraphics", resources: [.copy("cairo"), .copy("pango"), .copy("harfbuzz"),
+            .copy("pycairo-1.29.0.dist-info")]),
 
         // FFmpeg 62 + PyAV — video encoding/decoding (native iOS, 7 dylibs)
-        .target(name: "FFmpegPyAV", path: "Sources/FFmpegPyAV", resources: [.copy("ffmpeg"), .copy("av")]),
+        .target(name: "FFmpegPyAV", path: "Sources/FFmpegPyAV", resources: [.copy("ffmpeg"), .copy("av"),
+            .copy("av-17.0.1.dist-info")]),
 
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
         //  REQUIRES NUMPY — auto-included when you select these
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
         // scikit-learn — ML (40 modules). Needs: NumPy
-        .target(name: "Sklearn", dependencies: ["NumPy"], path: "Sources/Sklearn", resources: [.copy("sklearn")]),
+        .target(name: "Sklearn", dependencies: ["NumPy"], path: "Sources/Sklearn", resources: [.copy("sklearn"),
+            .copy("scikit_learn-1.8.0.dist-info")]),
 
         // SciPy — scientific computing. Needs: NumPy.
         // Bundles libfortran_io_stubs.dylib + libsf_error_state.dylib
@@ -257,14 +299,18 @@ let package = Package(
         .target(name: "SciPy",
                 dependencies: ["NumPy"],
                 path: "Sources/SciPy",
-                resources: [.copy("scipy"), .copy("scipy_runtime")]),
+                resources: [.copy("scipy"), .copy("scipy_runtime"),
+            .copy("scipy-1.15.0.dist-info")]),
 
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
         //  REQUIRES PLOTLY
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
         // matplotlib — Plotly backend (64 modules). Needs: Plotly
-        .target(name: "Matplotlib", dependencies: ["Plotly"], path: "Sources/Matplotlib", resources: [.copy("matplotlib")]),
+        .target(name: "Matplotlib", dependencies: ["Plotly"], path: "Sources/Matplotlib", resources: [.copy("matplotlib"),
+            .copy("matplotlib-3.9.0.dist-info"),
+            .copy("narwhals-1.16.0.dist-info"),
+            .copy("packaging-26.0.dist-info")]),
 
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
         //  REQUIRES MULTIPLE DEPS — all auto-included
@@ -291,6 +337,11 @@ let package = Package(
                 resources: [
             .copy("manim"), .copy("manimpango"), .copy("offlinai_latex"),
             .copy("svgelements"), .copy("pathops"),
+            .copy("manim-0.19.0.dist-info"),
+            .copy("manimpango-0.6.1.dist-info"),
+            .copy("offlinai_latex-1.0.1.dist-info"),
+            .copy("skia_pathops-0.9.2.dist-info"),
+            .copy("svgelements-1.9.6.dist-info"),
         ]),
 
         // LaTeX engine — pdftex + texmf. Needs: Cairo
@@ -320,6 +371,9 @@ let package = Package(
                 // Materialized to ~/Library/Caches at first use via
                 // PyTorchLib.bootstrap() — see PyTorch.swift.
                 .copy("torch_dylib"),
+            .copy("regex-2024.11.6.dist-info"),
+            .copy("torch-2.1.0.dist-info"),
+            .copy("typing_extensions-4.15.0.dist-info"),
             ]
         ),
 
@@ -329,7 +383,8 @@ let package = Package(
         .target(
             name: "Tokenizers",
             path: "Sources/Tokenizers",
-            resources: [.copy("tokenizers")]
+            resources: [.copy("tokenizers"),
+            .copy("tokenizers-0.19.1.dist-info")]
         ),
 
         // transformers 4.41.2 — HuggingFace models (BERT, GPT-2, T5, BART).
@@ -343,6 +398,10 @@ let package = Package(
                 .copy("huggingface_hub"),
                 .copy("filelock"),
                 .copy("safetensors"),
+            .copy("filelock-3.28.0.dist-info"),
+            .copy("huggingface_hub-0.24.7.dist-info"),
+            .copy("safetensors-0.4.5.dist-info"),
+            .copy("transformers-4.41.2.dist-info"),
             ]
         ),
     ]

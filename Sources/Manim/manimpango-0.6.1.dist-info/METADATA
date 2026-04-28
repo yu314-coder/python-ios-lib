@@ -1,0 +1,7 @@
+Metadata-Version: 2.1
+Name: manimpango
+Version: 0.6.1
+Summary: Bindings for Pango (text layout) for use by manim
+Author: OfflinAi (vendored)
+License: see upstream package
+Requires-Python: >=3.8

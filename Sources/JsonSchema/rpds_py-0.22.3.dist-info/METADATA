@@ -1,0 +1,7 @@
+Metadata-Version: 2.1
+Name: rpds-py
+Version: 0.22.3
+Summary: Python bindings to the Rust 'rpds' persistent data-structure library
+Author: OfflinAi (vendored)
+License: see upstream package
+Requires-Python: >=3.8

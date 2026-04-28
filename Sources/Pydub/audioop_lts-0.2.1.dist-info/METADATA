@@ -1,0 +1,7 @@
+Metadata-Version: 2.1
+Name: audioop-lts
+Version: 0.2.1
+Summary: audioop module from the Python standard library — backport
+Author: OfflinAi (vendored)
+License: see upstream package
+Requires-Python: >=3.8

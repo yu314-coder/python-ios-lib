@@ -1,0 +1,7 @@
+Metadata-Version: 2.1
+Name: referencing
+Version: 0.36.2
+Summary: JSON Referencing + Schema Resolution
+Author: OfflinAi (vendored)
+License: see upstream package
+Requires-Python: >=3.8

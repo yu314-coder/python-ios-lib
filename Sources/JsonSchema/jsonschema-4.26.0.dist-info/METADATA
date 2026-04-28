@@ -1,0 +1,7 @@
+Metadata-Version: 2.1
+Name: jsonschema
+Version: 4.26.0
+Summary: An implementation of JSON Schema validation for Python
+Author: OfflinAi (vendored)
+License: see upstream package
+Requires-Python: >=3.8

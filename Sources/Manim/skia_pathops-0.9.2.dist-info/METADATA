@@ -1,0 +1,7 @@
+Metadata-Version: 2.1
+Name: skia-pathops
+Version: 0.9.2
+Summary: Python bindings for the Skia path-operations library
+Author: OfflinAi (vendored)
+License: see upstream package
+Requires-Python: >=3.8

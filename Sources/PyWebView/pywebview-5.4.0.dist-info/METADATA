@@ -1,0 +1,7 @@
+Metadata-Version: 2.1
+Name: pywebview
+Version: 5.4.0
+Summary: CodeBench shim: routes pywebview windows into the in-app preview pane via file IPC
+Author: CodeBench (vendored)
+License: see upstream package
+Requires-Python: >=3.8
