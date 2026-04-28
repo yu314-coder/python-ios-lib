@@ -20,13 +20,17 @@ import Isosurfaces
 import Jinja2
 import Screeninfo
 import Watchdog
+import Typing_extensions
+import Psutil
+import Moderngl
+import Moderngl_window
 
 /// Manim — math animations.
 ///
 /// One tick in Xcode's product picker links every Python module manim
-/// touches anywhere in its codebase: hard imports at module load,
+/// imports anywhere in its codebase: hard imports at module load,
 /// per-mobject runtime imports, render-pipeline tools, optional
-/// surface algorithms, file-watch reload — the works.
+/// surface algorithms, file-watch reload, OpenGL renderer, the works.
 public enum ManimLib {
     public static var resourceBundle: Bundle { Bundle.module }
     public static var resourcePath: String? { resourceBundle.resourcePath }
@@ -57,5 +61,9 @@ public enum ManimLib {
         Jinja2Lib.resourceBundle,
         ScreeninfoLib.resourceBundle,
         WatchdogLib.resourceBundle,
+        Typing_extensionsLib.resourceBundle,
+        PsutilLib.resourceBundle,
+        ModernglLib.resourceBundle,
+        Moderngl_windowLib.resourceBundle,
     ]
 }

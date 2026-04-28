@@ -35,6 +35,10 @@ let package = Package(
         .library(name: "Screeninfo", targets: ["Screeninfo"]),
         .library(name: "Watchdog", targets: ["Watchdog"]),
         .library(name: "Fsspec", targets: ["Fsspec"]),
+        .library(name: "Moderngl",         targets: ["Moderngl"]),
+        .library(name: "Moderngl_window",  targets: ["Moderngl_window", "Moderngl"]),
+        .library(name: "Typing_extensions",targets: ["Typing_extensions"]),
+        .library(name: "Psutil",           targets: ["Psutil"]),
         .library(name: "Pygments", targets: ["Pygments"]),
         .library(name: "Mpmath", targets: ["Mpmath"]),
         .library(name: "Pydub", targets: ["Pydub"]),
@@ -92,7 +96,9 @@ let package = Package(
                            "NetworkX", "Pygments", "SymPy", "Sklearn",
                            "Decorator", "Mapbox_earcut", "Isosurfaces",
                            "Jinja2", "Markupsafe",
-                           "Screeninfo", "Watchdog"]),
+                           "Screeninfo", "Watchdog",
+                           "Typing_extensions", "Psutil",
+                           "Moderngl", "Moderngl_window"]),
         // LaTeXEngine renders SVG via cairo — bundle it together.
         .library(name: "LaTeXEngine",
                  targets: ["LaTeXEngine", "CairoGraphics"]),
@@ -158,7 +164,8 @@ let package = Package(
         .target(name: "BeautifulSoup", path: "Sources/BeautifulSoup", resources: [.copy("bs4"),
             .copy("beautifulsoup4-4.14.3.dist-info"),
             .copy("bs4-4.14.3.dist-info"),
-            .copy("soupsieve-2.8.dist-info")]),
+            .copy("soupsieve-2.8.dist-info"),
+            .copy("soupsieve")]),
 
         // requests — HTTP client (pure Python)
         .target(name: "Requests", path: "Sources/Requests", resources: [.copy("requests"),
@@ -166,7 +173,11 @@ let package = Package(
             .copy("charset_normalizer-3.4.7.dist-info"),
             .copy("idna-3.11.dist-info"),
             .copy("requests-2.33.1.dist-info"),
-            .copy("urllib3-2.6.3.dist-info")]),
+            .copy("urllib3-2.6.3.dist-info"),
+            .copy("charset_normalizer"),
+            .copy("certifi"),
+            .copy("idna"),
+            .copy("urllib3")]),
 
         // PyYAML — YAML parser (native build)
         .target(name: "PyYAML", path: "Sources/PyYAML", resources: [.copy("yaml"),
@@ -176,7 +187,9 @@ let package = Package(
         .target(name: "Rich", path: "Sources/Rich", resources: [.copy("rich"),
             .copy("markdown_it_py-3.0.0.dist-info"),
             .copy("mdurl-0.1.2.dist-info"),
-            .copy("rich-13.7.0.dist-info")]),
+            .copy("rich-13.7.0.dist-info"),
+            .copy("markdown_it"),
+            .copy("mdurl")]),
 
         // tqdm — progress bars (pure Python)
         .target(name: "Tqdm", path: "Sources/Tqdm", resources: [.copy("tqdm"),
@@ -251,7 +264,8 @@ let package = Package(
         // pydub — audio manipulation (pure Python)
         .target(name: "Pydub", path: "Sources/Pydub", resources: [.copy("pydub"),
             .copy("audioop_lts-0.2.1.dist-info"),
-            .copy("pydub-0.25.1.dist-info")]),
+            .copy("pydub-0.25.1.dist-info"),
+            .copy("audioop")]),
 
         // jsonschema — JSON validation (pure Python)
         .target(name: "JsonSchema", path: "Sources/JsonSchema", resources: [.copy("jsonschema"),
@@ -260,7 +274,12 @@ let package = Package(
             .copy("jsonschema-4.26.0.dist-info"),
             .copy("jsonschema_specifications-2024.10.1.dist-info"),
             .copy("referencing-0.36.2.dist-info"),
-            .copy("rpds_py-0.22.3.dist-info")]),
+            .copy("rpds_py-0.22.3.dist-info"),
+            .copy("attr"),
+            .copy("attrs"),
+            .copy("referencing"),
+            .copy("rpds"),
+            .copy("jsonschema_specifications")]),
 
         // decorator — single-file shim of Michele Simionato's decorator
         // package; provides `decorate` + `decorator` (manim's only deps
@@ -310,7 +329,10 @@ let package = Package(
         .target(name: "Matplotlib", dependencies: ["Plotly"], path: "Sources/Matplotlib", resources: [.copy("matplotlib"),
             .copy("matplotlib-3.9.0.dist-info"),
             .copy("narwhals-1.16.0.dist-info"),
-            .copy("packaging-26.0.dist-info")]),
+            .copy("packaging-26.0.dist-info"),
+            .copy("narwhals"),
+            .copy("packaging"),
+            .copy("mpl_toolkits")]),
 
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
         //  REQUIRES MULTIPLE DEPS — all auto-included
@@ -332,7 +354,9 @@ let package = Package(
                                "Pillow", "Tqdm", "Rich", "Click", "Cloup",
                                "NetworkX", "Pygments", "SymPy", "Sklearn",
                                "Decorator", "Mapbox_earcut", "Isosurfaces",
-                               "Jinja2", "Screeninfo", "Watchdog"],
+                               "Jinja2", "Screeninfo", "Watchdog",
+                               "Typing_extensions", "Psutil",
+                               "Moderngl", "Moderngl_window"],
                 path: "Sources/Manim",
                 resources: [
             .copy("manim"), .copy("manimpango"), .copy("offlinai_latex"),
@@ -386,6 +410,27 @@ let package = Package(
             resources: [.copy("tokenizers"),
             .copy("tokenizers-0.19.1.dist-info")]
         ),
+
+
+        // moderngl — OpenGL bindings (alternative renderer to Cairo).
+        // Only loaded by manim.renderer.opengl_renderer; lazy-imported.
+        .target(name: "Moderngl", path: "Sources/Moderngl",
+                resources: [.copy("moderngl")]),
+
+        // moderngl_window — windowing layer for moderngl. Lazy-imported.
+        .target(name: "Moderngl_window", path: "Sources/Moderngl_window",
+                resources: [.copy("moderngl_window")]),
+
+        // typing_extensions — backports of typing features. Many libs
+        // (huggingface_hub, narwhals, pydantic-style codebases) hard-import
+        // this at module load.
+        .target(name: "Typing_extensions", path: "Sources/Typing_extensions",
+                resources: [.copy("typing_extensions.py")]),
+
+        // psutil — process/system info. Used by manim's render-pipeline
+        // memory-tracking and by transformers' device introspection.
+        .target(name: "Psutil", path: "Sources/Psutil",
+                resources: [.copy("psutil")]),
 
         // transformers 4.41.2 — HuggingFace models (BERT, GPT-2, T5, BART).
         // Construct + train + generate + save/load on-device. Needs: PyTorch + Tokenizers.
