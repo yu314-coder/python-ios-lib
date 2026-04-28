@@ -294,9 +294,21 @@ let package = Package(
         .target(name: "PyWebView", path: "Sources/PyWebView", resources: [.copy("webview"),
             .copy("pywebview-5.4.0.dist-info")]),
 
-        // Cairo + Pango + HarfBuzz — 2D vector graphics (native iOS)
-        .target(name: "CairoGraphics", path: "Sources/CairoGraphics", resources: [.copy("cairo"), .copy("pango"), .copy("harfbuzz"),
-            .copy("pycairo-1.29.0.dist-info")]),
+        // pycairo Python bindings to cairo. Ships the full Python module
+        // (cairo/__init__.py + _cairo.cpython-314-iphoneos.so), which
+        // statically links libcairo + libpixman + libfreetype + libfribidi
+        // into the .so. So `import cairo` gives the full Pythonic API
+        // (cairo.LineJoin, cairo.LineCap, cairo.Context, …) without
+        // needing any separate libcairo.dylib at runtime.
+        //
+        // pango / harfbuzz come along inside manimpango's own .so files
+        // (manimpango is shipped via the Manim target). We don't ship
+        // them as separate Python modules because there's no pycairo-
+        // style Python binding for them — they're consumed via manimpango
+        // and via cairo's text APIs.
+        .target(name: "CairoGraphics", path: "Sources/CairoGraphics",
+                resources: [.copy("cairo"),
+                            .copy("pycairo-1.29.0.dist-info")]),
 
         // FFmpeg 62 + PyAV — video encoding/decoding (native iOS, 7 dylibs)
         .target(name: "FFmpegPyAV", path: "Sources/FFmpegPyAV", resources: [.copy("ffmpeg"), .copy("av"),
