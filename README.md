@@ -12,80 +12,138 @@ Full Python 3.14 runtime for iOS/iPadOS with **30+ offline libraries including r
 - **LaTeX bundle expanded** — 33 MB texmf tree now ships with full Latin Modern Type 1 fonts, expl3 code (1.3 MB), firstaid, graphics-def, hyphenation, stringenc, unicode-data, and pdftex.map. Math-mode rendering via SwiftMath is unlimited and reliable; the native `pdflatex` builtin is gated off pending replacement of the 2019-era `pdftex.xcframework` (see [Media docs](docs/libs/media.md#local-latex-engine-offlinai_latex)).
 - **Shell builtins**: `pdflatex` / `latex` / `tex` / `pdftex` / `xelatex` / `latex-diagnose`, `ncdu` with raw arrow-key navigation and real-ncdu styling, `top` with Apple-chip detection, `git clone` via zipball fetch, and universal `--help` / `-h` interception.
 
-## Quick Start — adding python-ios-lib to your iOS app
+## Setup — wiring this package with BeeWare's Python runtime
 
-This is a Swift Package — works with Xcode and SwiftPM. Steps:
+This SPM package only ships the **Python libraries** (numpy/manim/sklearn/…).
+The **CPython 3.14 C runtime** itself comes from
+[BeeWare's Python-Apple-support](https://github.com/beeware/Python-Apple-support)
+— a separate one-time download. Below is the full recipe for a fresh
+Xcode project.
 
-### 1. Install Git LFS (only once per machine)
-
-The PyTorch dylib is 99 MB and lives in Git LFS. Without LFS, the
-file arrives as a 134-byte pointer stub and `import torch` will
-crash at load. Skip this step ONLY if you don't use the PyTorch
-target.
+### 1. Get BeeWare's `Python.xcframework`
 
 ```bash
-brew install git-lfs && git lfs install
+mkdir -p _vendor/beeware && cd _vendor/beeware
+gh release download 3.14-b9 -R beeware/Python-Apple-support \
+    -p "Python-3.14-iOS-support.b9.tar.gz"
+tar -xzf Python-3.14-iOS-support.b9.tar.gz
+# You now have: Python.xcframework  (124 MB, 3 slices: ios-arm64,
+# ios-arm64_x86_64-simulator, plus shared lib/)
 ```
 
-### 2. Add the package in Xcode
+### 2. Add `Python.xcframework` to your Xcode project
 
-In Xcode: **File → Add Package Dependencies…** → paste this URL:
+- Drag `_vendor/beeware/Python.xcframework` into the Xcode sidebar
+  (uncheck **Copy items if needed**)
+- Target → General → **Frameworks, Libraries, and Embedded Content** →
+  set its **Embed** to **Embed & Sign**
 
+### 3. Add this SPM package + its products
+
+- **File → Add Package Dependencies** →
+  `https://github.com/yu314-coder/python-ios-lib`
+- Tick the products you need — e.g. `Manim`, `Sklearn`, `SciPy`, `NumPy`,
+  `Matplotlib`, `Pillow`, `CairoGraphics`, `FFmpegPyAV`, `SymPy`,
+  `NetworkX`, `Tqdm`, `Rich`, `Click`, `Pygments`, `Decorator`, …
+- Each product gets bundled at
+  `<App>.app/python-ios-lib_<Product>.bundle/<package_name>/`
+
+### 4. Install the Python stdlib at build time
+
+BeeWare's xcframework keeps the stdlib **outside** the framework slices
+(at `Python.xcframework/lib/python3.14/`). Xcode does NOT auto-bundle
+it. Add a Run Script build phase that copies it into the app bundle:
+
+**Build Phases → + → New Run Script Phase**, paste:
+
+```sh
+SRC="${SRCROOT}/_vendor/beeware/Python.xcframework"
+DST="${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}/python-stdlib"
+
+case "$PLATFORM_NAME" in
+    iphoneos)        SLICE="ios-arm64" ;;
+    iphonesimulator) SLICE="ios-arm64_x86_64-simulator" ;;
+esac
+ARCH="${CURRENT_ARCH:-arm64}"
+[ "$ARCH" = "undefined_arch" ] && ARCH="arm64"
+
+mkdir -p "$DST"
+rsync -a --delete --exclude '__pycache__' --exclude 'lib-dynload' \
+    "$SRC/lib/python3.14/" "$DST/"
+rsync -a --delete \
+    "$SRC/$SLICE/lib-$ARCH/python3.14/lib-dynload/" "$DST/lib-dynload/"
 ```
-https://github.com/yu314-coder/python-ios-lib
-```
 
-Pick a version (use the latest tag, or "Branch: main" for the bleeding edge).
+In **Build Settings**, set **`ENABLE_USER_SCRIPT_SANDBOXING = NO`** so
+the script can write into the `.app` bundle.
 
-### 3. Pick the products you actually need
+### 5. Wire `Py_Initialize` to the bundled stdlib + auto-discover the SPM bundles
 
-Xcode shows a checklist of every library product. Tick only what your
-app imports — each product copies its Python files into the app
-bundle, so adding everything bloats the binary unnecessarily.
-
-For example, just want to use `import webview` (the pywebview shim)?
-Check **PyWebView** and nothing else.
-
-Need PyTorch + transformers + numpy? Check **Transformers** —
-`PyTorch`, `Tokenizers`, `huggingface_hub`, `safetensors`, and
-`filelock` get auto-included as dependencies.
-
-### 4. Wire up Python at app launch
-
-You need a Python runtime to actually `import` these. The simplest
-path is [BeeWare's Python-Apple-support](https://github.com/beeware/Python-Apple-support)
-binary — set up a `Py_Initialize()` once at startup, then run
-arbitrary Python code via `PyRun_SimpleString`. CodeBench's
-`PythonRuntime.swift` is a working reference.
-
-### 5. (Optional) Use the SwiftPM CLI instead
-
-If you prefer `Package.swift`:
+Before `Py_Initialize()`, set the env vars:
 
 ```swift
-dependencies: [
-    .package(url: "https://github.com/yu314-coder/python-ios-lib", from: "1.0.0"),
-],
-targets: [
-    .target(name: "MyApp", dependencies: [
-        .product(name: "PyWebView", package: "python-ios-lib"),
-        .product(name: "NumPy",     package: "python-ios-lib"),
-        // … add as many products as you want
-    ]),
-],
+let bundleURL = Bundle.main.bundleURL
+let stdlib    = bundleURL.appendingPathComponent("python-stdlib")
+let dynload   = stdlib.appendingPathComponent("lib-dynload")
+
+// Auto-discover every python-ios-lib_*.bundle sibling
+var libBundles: [String] = []
+if let entries = try? FileManager.default.contentsOfDirectory(atPath: bundleURL.path) {
+    for n in entries where n.hasPrefix("python-ios-lib_") && n.hasSuffix(".bundle") {
+        libBundles.append(bundleURL.appendingPathComponent(n).path)
+    }
+}
+
+let pythonPath = ([stdlib.path, dynload.path] + libBundles).joined(separator: ":")
+setenv("PYTHONHOME",             stdlib.path,            1)
+setenv("PYTHONPATH",             pythonPath,             1)
+setenv("PYTHONNOUSERSITE",       "1",                    1)
+setenv("PYTHONDONTWRITEBYTECODE","1",                    1)
+setenv("PYTHONMALLOC",           "malloc",               1)   // CRITICAL — must be before Py_Initialize
+setenv("TMPDIR",                 NSTemporaryDirectory(), 1)
+
+Py_Initialize()
+PyEval_SaveThread()   // release GIL so manim threads can run
 ```
 
-### 6. (For Mac "Designed for iPad" only) Add the network entitlement
+After this, `import numpy`, `import manim`, `import sklearn` etc. all
+just work.
+
+### 6. (Optional) Verify with `importlib.metadata`
+
+```python
+import importlib.metadata
+for d in importlib.metadata.distributions():
+    print(d.metadata["Name"], d.version)
+```
+
+Should list every SPM product you ticked. If empty, your `PYTHONPATH`
+isn't including the `.bundle/` siblings — re-check step 5.
+
+### 7. (For PyTorch only) Decompress the bundled libtorch_python
+
+The PyTorch C extension (`libtorch_python.dylib`, 103 MB) ships
+LZMA-compressed because GitHub rejects raw blobs over 100 MB and Git
+LFS breaks SwiftPM's checkout. Decompress on first launch:
+
+```swift
+import PyTorch
+try PyTorchLib.bootstrap()    // ~0.5 s on A14, ~1.5 s on A12; idempotent
+```
+
+After this, `import torch` works.
+
+### 8. (For Mac "Designed for iPad" only) Add the network entitlement
 
 Designed-for-iPad runs your iOS app under the macOS sandbox, which
-blocks outbound network by default. If `pip install` or
-`requests.get` returns `PermissionError(1, 'Operation not
-permitted')`, create a `MyApp.entitlements` file with:
+blocks outbound network by default. If `pip install` or `requests.get`
+returns `PermissionError(1, 'Operation not permitted')`, create a
+`MyApp.entitlements` file with:
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
-  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+    "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
     <key>com.apple.security.network.client</key>
@@ -96,6 +154,51 @@ permitted')`, create a `MyApp.entitlements` file with:
 
 …and set Project → Build Settings → **Code Signing Entitlements** to
 this file. Real iOS devices and the iOS Simulator don't need this.
+
+### Bundle layout reference
+
+After build, the `.app` contains:
+
+```
+ManimStudio.app/
+├── ManimStudio                              ← executable
+├── Frameworks/Python.framework/Python       ← BeeWare CPython dylib
+├── python-stdlib/                           ← step 4 copies stdlib here
+│   ├── os.py, json/, encodings/, …
+│   └── lib-dynload/*.so
+├── python-ios-lib_NumPy.bundle/numpy/       ← SPM products
+├── python-ios-lib_Manim.bundle/{manim,manimpango,offlinai_latex,svgelements,pathops}
+├── python-ios-lib_SciPy.bundle/scipy/
+├── python-ios-lib_Sklearn.bundle/sklearn/
+├── python-ios-lib_Matplotlib.bundle/matplotlib/
+├── python-ios-lib_FFmpegPyAV.bundle/{av,ffmpeg/*.dylib}
+├── python-ios-lib_CairoGraphics.bundle/{cairo,pango,harfbuzz}
+└── python-ios-lib_Pillow.bundle/PIL/
+```
+
+`PYTHONPATH` should include `python-stdlib/`, `python-stdlib/lib-dynload/`,
+and every `python-ios-lib_*.bundle/` directory. Step 5's auto-discovery
+loop handles that automatically.
+
+### Alternative: `Package.swift` instead of Xcode UI
+
+If you prefer the SwiftPM CLI:
+
+```swift
+dependencies: [
+    .package(url: "https://github.com/yu314-coder/python-ios-lib", branch: "main"),
+],
+targets: [
+    .target(name: "MyApp", dependencies: [
+        .product(name: "Manim",   package: "python-ios-lib"),
+        .product(name: "Sklearn", package: "python-ios-lib"),
+        // … add as many products as you want
+    ]),
+],
+```
+
+You still need steps 1, 2, 4, 5 (BeeWare xcframework + stdlib copy +
+`Py_Initialize` wiring) — those don't get automated by SPM.
 
 ---
 
