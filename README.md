@@ -168,6 +168,67 @@ if let path = PythonIOSLib.resourcePath {
 }
 ```
 
+### LaTeX engine choice — native pdftex vs busytex (WASM)
+
+The bundled `LaTeXEngine` product ships **native pdftex** (`pdftex.xcframework` +
+`kpathsea.xcframework` + `ios_system.xcframework` + a 48 MB texmf tree).
+This is what Manim's `MathTex` / `Tex` shells out to via `offlinai_latex`.
+
+**This is NOT what CodeBench itself uses.** The CodeBench app routes
+manim's MathTex compile requests through **busytex** — a WebAssembly
+build of pdflatex that runs inside a hidden WKWebView. Two engines for
+two situations:
+
+|                | Native pdftex (this package) | Busytex (CodeBench's choice) |
+|---|---|---|
+| Process model | `ios_system` PTY emulator | WASM in WKWebView |
+| Mac "Designed for iPad" / Catalyst | brittle (sandbox blocks fork-like syscalls) | works |
+| Real iOS device | works, ~80 ms / render | works, ~500 ms / render |
+| Cold start | ~50 ms | ~1 s |
+| Bundle cost | ~48 MB | ~30 MB compressed (busytex.wasm + minimal texmf) → ~150 MB raw with full texlive |
+
+If you're targeting **only real iPhones / iPads**, the bundled native pdftex
+is faster and smaller — leave the package as-is and you're done.
+
+If you're targeting **Mac "Designed for iPad" / Mac Catalyst**, native pdftex
+will probably crash on first MathTex render (the `ios_system` POSIX shim
+fails inside the macOS sandbox). You need busytex. To add it manually:
+
+1. Grab the busytex assets from CodeBench's repo:
+   ```sh
+   git clone --depth 1 https://github.com/yu314-coder/CodeBench /tmp/cb
+   ```
+2. Copy `/tmp/cb/CodeBench/Resources/Busytex/` (~237 MB) into your iOS
+   app target's resources. Minimum viable subset (drops the optional
+   texlive packages, ~58 MB raw):
+   ```
+   busytex.html / busytex.js / busytex.wasm
+   busytex_pipeline.js / busytex_worker.js
+   dvipdfmx.cfg / texmf.cnf / updmap.cfg / versions.txt
+   offlinai-texmf.{data,js}                  ← Computer Modern + AMS
+   ubuntu-texlive-latex-base.{data,js}       ← article/standalone classes
+   ```
+   Skip `texlive-basic.data` (100 MB), `latex-extra.data` (47 MB),
+   `latex-recommended.data`, `fonts-recommended.data`, `science.data`
+   unless you need tikz / chemistry / fancy fonts.
+3. Copy `/tmp/cb/CodeBench/BusytexEngine.swift` and the relevant pieces of
+   `LaTeXEngine.swift` (the `checkForMathCompileRequest` poller — see
+   line 686+) into your app's Swift source.
+4. At app launch, call `BusytexEngine.shared.preload()` so the WASM
+   engine boots before the first MathTex.
+5. (Optional) tell `offlinai_latex` to prefer busytex:
+   ```python
+   import os
+   os.environ["OFFLINAI_LATEX_BACKEND"] = "busytex"
+   ```
+
+We don't bundle busytex into this package directly because it would
+add 30–150 MB to every consumer's download even when targeting real
+iOS where native pdftex is the better choice. The native xcframework
+is the sensible default; busytex is opt-in for Catalyst-like targets.
+
+---
+
 ### C Interpreters (no Python needed)
 
 ```swift
