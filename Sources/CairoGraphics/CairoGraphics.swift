@@ -2,7 +2,7 @@ import Foundation
 
 /// Resource bundle accessor for this package.
 /// Use Bundle.module to access bundled Python libraries.
-public enum PythonIOSLib {
+public enum CairoGraphicsLib {
     /// The bundle containing the Python library resources.
     public static var resourceBundle: Bundle { Bundle.module }
     
