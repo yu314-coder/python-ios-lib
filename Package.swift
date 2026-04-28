@@ -27,6 +27,7 @@ let package = Package(
         .library(name: "Rich", targets: ["Rich"]),
         .library(name: "Tqdm", targets: ["Tqdm"]),
         .library(name: "Click", targets: ["Click"]),
+        .library(name: "Cloup", targets: ["Cloup", "Click"]),
         .library(name: "Pygments", targets: ["Pygments"]),
         .library(name: "Mpmath", targets: ["Mpmath"]),
         .library(name: "Pydub", targets: ["Pydub"]),
@@ -53,12 +54,20 @@ let package = Package(
         .library(name: "Matplotlib", targets: ["Matplotlib", "Plotly"]),
 
         // ── Requires multiple deps ──
-        // Manim covers the entire animation stack — picking it gives
-        // numpy + matplotlib + plotly + ffmpeg/pyav + cairo/pango +
-        // latex (for MathTex) in one click.
+        // Manim covers the entire animation stack. Hard-imports at
+        // module load (every entry below crashes `import manim` if
+        // missing — found by tracing manim/__init__.py + _config):
+        //   numpy, cloup, click, rich, PIL (Pillow)
+        // Required at runtime:
+        //   matplotlib (mobject backends), plotly (matplotlib backend
+        //   on iOS), ffmpeg/pyav (Scene.render → mp4), cairo/pango/
+        //   harfbuzz (manimpango text), tqdm (render progress bar),
+        //   latex (MathTex/Tex compile)
+        // One tick → all 12 ride along.
         .library(name: "Manim",
                  targets: ["Manim", "NumPy", "Matplotlib", "Plotly",
-                           "FFmpegPyAV", "CairoGraphics", "LaTeXEngine"]),
+                           "FFmpegPyAV", "CairoGraphics", "LaTeXEngine",
+                           "Pillow", "Tqdm", "Rich", "Click", "Cloup"]),
         // LaTeXEngine renders SVG via cairo — bundle it together.
         .library(name: "LaTeXEngine",
                  targets: ["LaTeXEngine", "CairoGraphics"]),
@@ -133,6 +142,15 @@ let package = Package(
         // click — CLI framework (pure Python)
         .target(name: "Click", path: "Sources/Click", resources: [.copy("click")]),
 
+        // cloup — click extension (option groups, constraints, sub-command
+        // groups with section headers). Hard-imported by manim/_config at
+        // module load — without it `import manim` fails before any code
+        // runs. Pure Python, ~212 KB.
+        .target(name: "Cloup",
+                dependencies: ["Click"],
+                path: "Sources/Cloup",
+                resources: [.copy("cloup")]),
+
         // Pygments — syntax highlighting (pure Python)
         .target(name: "Pygments", path: "Sources/Pygments", resources: [.copy("pygments")]),
 
@@ -194,7 +212,8 @@ let package = Package(
         // Picker only needs Manim ticked.
         .target(name: "Manim",
                 dependencies: ["NumPy", "Matplotlib", "FFmpegPyAV",
-                               "CairoGraphics", "LaTeXEngine"],
+                               "CairoGraphics", "LaTeXEngine",
+                               "Pillow", "Tqdm", "Rich", "Click", "Cloup"],
                 path: "Sources/Manim",
                 resources: [
             .copy("manim"), .copy("manimpango"), .copy("offlinai_latex"),
