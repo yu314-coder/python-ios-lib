@@ -24,6 +24,7 @@ import Typing_extensions
 import Psutil
 import Moderngl
 import Moderngl_window
+import Pydub
 
 /// Manim — math animations.
 ///
@@ -65,5 +66,6 @@ public enum ManimLib {
         PsutilLib.resourceBundle,
         ModernglLib.resourceBundle,
         Moderngl_windowLib.resourceBundle,
+        PydubLib.resourceBundle,
     ]
 }
