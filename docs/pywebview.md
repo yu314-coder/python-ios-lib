@@ -97,11 +97,119 @@ for i in range(10):
 |---|---|
 | `w.load_url(url)` | Navigate. http(s) → direct WKWebView URLRequest (real origin); file:// or path → loadFileURL |
 | `w.load_html(content)` | Replace content with raw HTML |
-| `w.evaluate_js(script, callback=None)` | Append `<script>` and reload (NOT a real eval — no return-value bridge) |
+| `w.evaluate_js(script, callback=None)` | **Real eval** — runs in the live WKWebView via WKScriptMessage bridge. Returns the JSON-decoded JS value. |
 | `w.set_title(title)` / `w.title` | Cached title (preview pane has no title bar) |
 | `w.get_current_url()` | the http(s) URL (direct loads) or `file://` URL of last scratch HTML |
 | `w.get_size()` | `(0, 0)` — preview is pane-sized |
 | `w.show()` / `w.hide()` / `w.destroy()` | Re-signal / blank / mark dead |
+| `w.events.loaded += cb` / `w.events.load_error += cb` | Subscribe to page-lifecycle events fired from WKNavigationDelegate. |
+
+---
+
+## JS ↔ Python bridge (`js_api`, `evaluate_js`, events)
+
+Backed by `WKScriptMessageHandler` + a document-start `WKUserScript`
+injected into every navigation. The shim exposes three round-trip
+features: JS calling Python, Python calling JS, and page-lifecycle
+events. Pages that don't use any of this pay nothing — the bootstrap
+defines an unused global and exits.
+
+### `js_api` — JS calls Python
+
+Pass `js_api=YourObject()` to `create_window`. Every public callable
+attribute becomes invokable from JS as `pywebview.api.<name>(args)`,
+which returns a JS Promise that resolves with the Python return value.
+
+```python
+import webview
+
+class Api:
+    def add(self, a, b):
+        return a + b
+    def stash(self, key, value):
+        with open(f"~/Documents/{key}.txt", "w") as f:
+            f.write(value)
+        return {"ok": True, "size": len(value)}
+
+w = webview.create_window("Calc", html="""
+    <input id="a" value="2"> + <input id="b" value="3">
+    <button onclick="go()">=</button>
+    <span id="r"></span>
+    <script>
+      async function go() {
+        const a = +document.getElementById('a').value;
+        const b = +document.getElementById('b').value;
+        const sum = await pywebview.api.add(a, b);
+        document.getElementById('r').textContent = sum;
+      }
+    </script>
+""", js_api=Api())
+webview.start()
+```
+
+A `pywebviewready` event fires on `window` once the bridge is wired,
+so JS that runs at document-start and wants to call the API can wait:
+
+```html
+<script>
+  window.addEventListener('pywebviewready', async () => {
+    const result = await pywebview.api.add(1, 2);
+    console.log(result);
+  });
+</script>
+```
+
+Notes:
+- Only ONE `js_api` registered at a time. Most-recent
+  `create_window(js_api=…)` wins (the preview pane only shows one
+  window anyway).
+- Method discovery is dynamic — anything that's a callable attribute
+  not starting with `_` is callable from JS.
+- Return values are JSON-encoded (`json.dumps(rv, default=str)`); if a
+  return value isn't JSON-serializable, the shim falls back to
+  `repr(rv)` and logs a warning.
+- Exceptions in your method become a JS `Error` rejecting the Promise.
+
+### `evaluate_js` — Python calls JS
+
+```python
+title = w.evaluate_js("document.title")
+print(title)             # → "Calc"
+
+w.evaluate_js("""
+  document.body.style.background = 'midnightblue';
+  document.body.style.color = 'white';
+""")
+
+vals = w.evaluate_js("[1, 2, 3].map(x => x * x)")
+print(vals)              # → [1, 4, 9]
+```
+
+The expression is wrapped in `JSON.stringify((function(){ return …; })())`
+on the JS side, so the return is whatever JSON gives you back — primitives,
+arrays, plain objects. Functions, DOM nodes, circular refs come back as
+`None`. Default timeout 10 s.
+
+`callback=` works for parity with the upstream API: it's invoked with
+the same value that's returned, on the calling thread.
+
+### Page lifecycle events
+
+```python
+def on_loaded(evt):
+    print("page loaded:", evt["url"])
+
+def on_error(evt):
+    print("load failed:", evt["url"], evt["error"])
+
+w = webview.create_window("App", "https://example.com")
+w.events.loaded     += on_loaded
+w.events.load_error += on_error
+```
+
+Subscriptions go to a single dispatcher thread that polls
+`pywebview_event.txt` at 50 ms; callbacks run on the dispatcher
+thread, so don't do long-blocking work inside them.
 
 ---
 
@@ -182,9 +290,6 @@ export CODEBENCH_PYWEBVIEW_QUIET=1
 
 ## What's stubbed (calls succeed silently with a one-line warning)
 
-- **`js_api=...`** — JS-to-Python callbacks need a WKScriptMessage
-  bridge; the shim doesn't ship one. The window still renders; calls
-  into your `js_api` object from JS just no-op.
 - **Confirmation / file dialogs** — no `webview.confirmation_dialog`,
   `webview.file_dialog`, etc. Use the host app's UIKit alerts instead.
 - **Window chrome flags** — `fullscreen`, `frameless`, `on_top`,
