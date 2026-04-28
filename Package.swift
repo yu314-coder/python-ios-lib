@@ -99,7 +99,7 @@ let package = Package(
                            "Screeninfo", "Watchdog",
                            "Typing_extensions", "Psutil",
                            "Moderngl", "Moderngl_window",
-                           "Pydub"]),
+                           "Pydub", "BeautifulSoup"]),
         // LaTeXEngine renders SVG via cairo — bundle it together.
         .library(name: "LaTeXEngine",
                  targets: ["LaTeXEngine", "CairoGraphics"]),
@@ -374,7 +374,7 @@ let package = Package(
                                "Jinja2", "Screeninfo", "Watchdog",
                                "Typing_extensions", "Psutil",
                                "Moderngl", "Moderngl_window",
-                               "Pydub"],
+                               "Pydub", "BeautifulSoup"],
                 path: "Sources/Manim",
                 resources: [
             .copy("manim"), .copy("manimpango"), .copy("offlinai_latex"),

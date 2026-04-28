@@ -25,6 +25,7 @@ import Psutil
 import Moderngl
 import Moderngl_window
 import Pydub
+import BeautifulSoup
 
 /// Manim — math animations.
 ///
@@ -67,5 +68,6 @@ public enum ManimLib {
         ModernglLib.resourceBundle,
         Moderngl_windowLib.resourceBundle,
         PydubLib.resourceBundle,
+        BeautifulSoupLib.resourceBundle,
     ]
 }
