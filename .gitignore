@@ -91,3 +91,8 @@ pandas_ios/pandas-*.tar.gz
 # psutil cross-compile scratch (keep build script + shim_include, skip source tree)
 psutil_ios/psutil-*/
 psutil_ios/psutil-*.tar.gz
+
+# Torch dylib (>100MB, exceeds GitHub's per-file limit; LFS is
+# incompatible with SwiftPM checkout — users must download separately)
+app_packages/site-packages/torch/lib/libtorch_python.dylib
+Sources/PyTorch/torch/lib/libtorch_python.dylib
