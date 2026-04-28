@@ -77,6 +77,67 @@ rsync -a --delete \
 In **Build Settings**, set **`ENABLE_USER_SCRIPT_SANDBOXING = NO`** so
 the script can write into the `.app` bundle.
 
+### 4b. Sign every bundled `.so` / `.dylib` (REQUIRED — fixes "unsigned library" crash)
+
+Xcode's normal code-signing pass does NOT recurse into the `.so`
+files that ship inside SwiftPM resource bundles
+(`python-ios-lib_*.bundle/...`). At runtime iOS refuses to `dlopen`
+them with:
+
+```
+ImportError: dlopen(.../numpy/_core/_multiarray_umath.cpython-314-iphoneos.so):
+  code signature ... not valid for use in process:
+  Trying to load an unsigned library
+```
+
+This affects **every native Python C extension** — numpy `.so`s,
+scipy `.so`s, pillow's `_imaging.so`, av's ffmpeg bindings, the
+manimpango/pathops/etc. extensions, plus the cairo/pango/harfbuzz
+dylibs in CairoGraphics. About 191 binaries total when ticking
+the full Manim umbrella.
+
+Fix: add a second Run Script Phase **after** the stdlib copy phase
+from step 4. **Build Phases → + → New Run Script Phase**, paste:
+
+```sh
+# Sign every Mach-O .so/.dylib inside python-ios-lib_*.bundle so
+# iOS will dlopen them at runtime. Xcode's --deep codesign skips
+# binaries nested inside SwiftPM resource bundles, leaving them
+# unsigned and unloadable.
+APP="${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}"
+IDENTITY="${EXPANDED_CODE_SIGN_IDENTITY:--}"   # fall back to ad-hoc (Simulator)
+
+find "$APP" -path "*python-ios-lib_*.bundle*" \
+    \( -name "*.so" -o -name "*.dylib" \) -print0 | \
+while IFS= read -r -d '' f; do
+    codesign --force --timestamp=none --sign "$IDENTITY" "$f" >/dev/null
+done
+echo "Signed $(find "$APP" -path "*python-ios-lib_*.bundle*" \
+    \( -name "*.so" -o -name "*.dylib" \) | wc -l | tr -d ' ') native binaries."
+```
+
+In **Build Settings**, you already set `ENABLE_USER_SCRIPT_SANDBOXING = NO`
+in step 4 — that lets this script write to the .app bundle too.
+
+**Phase ordering matters** — drag this script phase to:
+- AFTER "Copy Bundle Resources" (so the `.so`s are in place)
+- AFTER your stdlib-copy script from step 4
+- BEFORE Xcode's final implicit signing (which is the LAST phase)
+
+If the script appears in the wrong place, drag it in the Build
+Phases list. Without this script, `import numpy` (and therefore
+`import manim`, `import scipy`, anything with C extensions) crashes
+with the "unsigned library" error above.
+
+> **Why doesn't the package fix this itself?** SwiftPM doesn't allow
+> packages to register Run Script build phases on the consumer
+> project. The only structural alternative — wrapping each `.so` in
+> its own `.xcframework` `.binaryTarget` — would mean 191
+> xcframeworks (one per native binary) and break Python's expected
+> import paths (xcframeworks land in `.app/Frameworks/`, not the
+> bundle subdir Python looks under). The Run Script is the standard
+> workaround.
+
 ### 5. Wire `Py_Initialize` to the bundled stdlib + auto-discover the SPM bundles
 
 Before `Py_Initialize()`, set the env vars:
