@@ -246,6 +246,124 @@ loop handles that automatically.
 
 ---
 
+## App Store distribution
+
+Apple's archive validator rejects every loose `.so` / `.dylib` inside
+the `.app`, even ones nested in SPM resource bundles:
+
+```
+Invalid bundle structure. The "ManimStudio.app/python-ios-lib_NumPy.bundle/
+numpy/_core/_multiarray_umath.cpython-314-iphoneos.so" binary file is
+not permitted. Your app cannot contain standalone executables or
+libraries, other than a valid CFBundleExecutable of supported bundles.
+```
+
+Same error fires for ~250 other binaries (numpy, scipy, pillow,
+ffmpeg dylibs, BeeWare's stdlib, etc.). **TestFlight + dev builds
+work without this fix; only App Store submission requires it.**
+
+The fix: at archive time, wrap every Mach-O as a real
+`.framework` under `<App>.app/Frameworks/`, rewrite cross-extension
+`@rpath` references, and route Python imports to the frameworks via
+a runtime hook. Two ready-made scripts ship in this package under
+[`scripts/appstore/`](scripts/appstore/) — they're opt-in (dev
+builds keep working unchanged).
+
+### Step A — add a Run Script that wraps binaries
+
+After the existing stdlib-copy + signing Run Script (step 4 of the
+Setup), add a NEW Run Script Phase. **Build Phases → + → New Run
+Script Phase**, shell `/bin/bash`:
+
+```sh
+# Pull the wrap script straight from the SwiftPM checkout. Path
+# may differ depending on Xcode's checkout location — adjust as
+# needed (replace ManimStudio with your project name):
+WRAP="${BUILD_ROOT}/../../SourcePackages/checkouts/python-ios-lib/scripts/appstore/wrap-binaries-as-frameworks.sh"
+[ -f "$WRAP" ] && bash "$WRAP"
+```
+
+Place this phase AFTER "Copy Bundle Resources" + your existing
+stdlib-copy phase, BEFORE Xcode's final implicit code-sign step.
+This is what the script does:
+
+1. Walks `python-stdlib/lib-dynload/*.so` (BeeWare extensions) +
+   every `python-ios-lib_*.bundle/.../*.{so,dylib}` + loose dylibs
+   in `Frameworks/`
+2. For each Mach-O: creates `Frameworks/<sanitized>.framework/`
+   with the binary inside + a minimal Info.plist
+3. Rewrites `LC_LOAD_DYLIB` cross-references via
+   `install_name_tool -change` so `scipy.linalg._fblas` can still
+   find `scipy.linalg.cython_blas` after both got moved
+4. Lifts native xcframeworks (pdftex, kpathsea, ios_system) out of
+   `python-ios-lib_LaTeXEngine.bundle/latex/` and into
+   `Frameworks/`
+5. Leaves a 0-byte placeholder at every original `.so` path so
+   Python `__file__` introspection (matplotlib, scipy do this) keeps
+   working
+6. Signs every wrapped framework with the team identity
+7. Emits a manifest at `<App>.app/python-ios-lib_extension_manifest.txt`
+   mapping `numpy._core._multiarray_umath=numpy_core_multiarray_umath`
+
+### Step B — install the Python import hook
+
+The wrap script renames extension binaries so Python's normal import
+machinery can't find them. The hook does the routing.
+
+In step 4 of the Setup, modify the Run Script's stdlib-copy section
+to ALSO copy the hook into `python-stdlib/`:
+
+```sh
+# Add this near the end of step 4's existing Run Script:
+HOOK="${BUILD_ROOT}/../../SourcePackages/checkouts/python-ios-lib/scripts/appstore/python_ios_lib_import_hook.py"
+[ -f "$HOOK" ] && cp -f "$HOOK" "$DST/python_ios_lib_import_hook.py"
+```
+
+Then in step 5's `Py_Initialize` wiring, install the hook RIGHT after
+`Py_Initialize()`:
+
+```swift
+Py_Initialize()
+PyRun_SimpleString("""
+    try:
+        import python_ios_lib_import_hook
+        python_ios_lib_import_hook.install()
+    except Exception as e:
+        import sys
+        sys.stderr.write(f"[python-ios-lib] hook install failed: {e}\\n")
+""")
+PyEval_SaveThread()
+```
+
+The hook is idempotent and silently skips when the manifest doesn't
+exist, so dev builds (where the wrap script didn't run) are
+unaffected.
+
+### Step C — verify locally before archiving
+
+Before uploading to App Store Connect, run the test harness:
+
+```sh
+cd path/to/SourcePackages/checkouts/python-ios-lib
+bash scripts/appstore/test-wrap-locally.sh
+```
+
+It builds a fake `.app` with representative `.so` files, runs the
+wrap script, and verifies:
+- No non-empty loose `.so` / `.dylib` left outside `.framework/`
+- Every wrapped binary is a valid Mach-O
+- Every framework has a well-formed `Info.plist`
+- The manifest is non-empty and every entry resolves
+- No dangling `LC_LOAD_DYLIB` references
+
+This catches MOST issues before you spend 10 minutes on an archive
+upload. **Expect 1–3 archive iterations** — the first submission
+often surfaces a scipy / PyAV cross-reference the script's
+heuristics missed; copy the failing path from App Store Connect's
+validation report and we add it to the script's known-paths list.
+
+---
+
 ## Common gotchas
 
 | Symptom | Cause | Fix |
@@ -257,6 +375,9 @@ loop handles that automatically.
 | `Error importing numpy: you should not try to import numpy from its source directory` | numpy's `_multiarray_umath.so` failed to load (usually unsigned) | Re-check the codesign loop output in build log |
 | Empty `importlib.metadata.distributions()` | Your earlier Package.swift didn't ship `*.dist-info` dirs as resources | Fixed in current Package.swift |
 | Render appears to hang | iOS jetsam killing for memory pressure | `PYTHONMALLOC=malloc` is set in step 5; lower preview quality, avoid long `MathTex` chains |
+| App Store: `Invalid bundle structure. The 'X.so' binary file is not permitted.` | Apple validator rejects loose Mach-O outside `.framework/` | Add the wrap script + import hook from "App Store distribution" section above |
+| App Store: `Missing Info.plist value. The Info.plist key 'BGTaskSchedulerPermittedIdentifiers' must contain a list of identifiers when 'UIBackgroundModes' has a value of 'processing'.` | Required when `UIBackgroundModes` includes `processing` | Add `BGTaskSchedulerPermittedIdentifiers` array to your Info.plist |
+| `Upload Symbols Failed: archive did not include a dSYM for X.dylib` | Release archive is missing debug symbols | Build Settings → Debug Information Format = `DWARF with dSYM File` for Release; not a rejection — just no crash symbolication |
 
 ---
 
