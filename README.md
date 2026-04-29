@@ -12,146 +12,146 @@ Full Python 3.14 runtime for iOS/iPadOS with **30+ offline libraries including r
 - **LaTeX bundle expanded** — 33 MB texmf tree now ships with full Latin Modern Type 1 fonts, expl3 code (1.3 MB), firstaid, graphics-def, hyphenation, stringenc, unicode-data, and pdftex.map. Math-mode rendering via SwiftMath is unlimited and reliable; the native `pdflatex` builtin is gated off pending replacement of the 2019-era `pdftex.xcframework` (see [Media docs](docs/libs/media.md#local-latex-engine-offlinai_latex)).
 - **Shell builtins**: `pdflatex` / `latex` / `tex` / `pdftex` / `xelatex` / `latex-diagnose`, `ncdu` with raw arrow-key navigation and real-ncdu styling, `top` with Apple-chip detection, `git clone` via zipball fetch, and universal `--help` / `-h` interception.
 
-## Setup — wiring this package with BeeWare's Python runtime
+## Setup — wiring this package into a fresh iOS app
 
-This SPM package only ships the **Python libraries** (numpy/manim/sklearn/…).
-The **CPython 3.14 C runtime** itself comes from
-[BeeWare's Python-Apple-support](https://github.com/beeware/Python-Apple-support)
-— a separate one-time download. Below is the full recipe for a fresh
-Xcode project.
+This SPM package only ships the Python *libraries* (numpy, manim, scipy,
+sklearn, matplotlib, …). The CPython 3.14 C runtime itself comes from
+BeeWare's [Python-Apple-support](https://github.com/beeware/Python-Apple-support).
+Below is the full one-time recipe.
 
 ### 1. Get BeeWare's `Python.xcframework`
 
 ```bash
 mkdir -p _vendor/beeware && cd _vendor/beeware
 gh release download 3.14-b9 -R beeware/Python-Apple-support \
-    -p "Python-3.14-iOS-support.b9.tar.gz"
+  -p "Python-3.14-iOS-support.b9.tar.gz"
 tar -xzf Python-3.14-iOS-support.b9.tar.gz
-# You now have: Python.xcframework  (124 MB, 3 slices: ios-arm64,
-# ios-arm64_x86_64-simulator, plus shared lib/)
+# You now have: Python.xcframework  (~124 MB, slices: ios-arm64,
+# ios-arm64_x86_64-simulator, plus a shared lib/ tree)
 ```
 
 ### 2. Add `Python.xcframework` to your Xcode project
 
 - Drag `_vendor/beeware/Python.xcframework` into the Xcode sidebar
-  (uncheck **Copy items if needed**)
-- Target → General → **Frameworks, Libraries, and Embedded Content** →
-  set its **Embed** to **Embed & Sign**
+  (uncheck "Copy items if needed" — leave it where it is)
+- Target → **General → Frameworks, Libraries, and Embedded Content** →
+  set its **Embed** column to **Embed & Sign**
 
-### 3. Add this SPM package + its products
+### 3. Add this SPM package + tick `Manim`
 
-- **File → Add Package Dependencies** →
-  `https://github.com/yu314-coder/python-ios-lib`
-- Tick the products you need — e.g. `Manim`, `Sklearn`, `SciPy`, `NumPy`,
-  `Matplotlib`, `Pillow`, `CairoGraphics`, `FFmpegPyAV`, `SymPy`,
-  `NetworkX`, `Tqdm`, `Rich`, `Click`, `Pygments`, `Decorator`, …
-- Each product gets bundled at
+- File → Add Package Dependencies → `https://github.com/yu314-coder/python-ios-lib`
+- Tick **Manim** — every transitive dep (NumPy, SciPy, Sklearn, Matplotlib,
+  Pillow, Cairo, FFmpegPyAV, SymPy, NetworkX, Pygments, Click, Cloup,
+  Decorator, Tqdm, Rich, Mapbox_earcut, Isosurfaces, Jinja2, Markupsafe,
+  Pydub, Psutil, Watchdog, Screeninfo, Moderngl, Moderngl_window,
+  Typing_extensions, BeautifulSoup, LaTeXEngine, Plotly) gets pulled in
+  automatically — ~30 bundles in total
+- After Xcode resolves, each product lands at
   `<App>.app/python-ios-lib_<Product>.bundle/<package_name>/`
 
-### 4. Install the Python stdlib at build time
+### 4. Install BeeWare's stdlib + re-sign every native lib
 
-BeeWare's xcframework keeps the stdlib **outside** the framework slices
-(at `Python.xcframework/lib/python3.14/`). Xcode does NOT auto-bundle
-it. Add a Run Script build phase that copies it into the app bundle:
+BeeWare keeps the stdlib **outside** the xcframework slices (at
+`Python.xcframework/lib/python3.14/`). Xcode does NOT auto-bundle it.
+Also, SwiftPM strips Mach-O code signatures when copying `.so`/`.dylib`
+resources, and iOS dlopen rejects unsigned dylibs — so a re-sign loop
+is mandatory.
 
-**Build Phases → + → New Run Script Phase**, paste:
+In Build Settings, set **`ENABLE_USER_SCRIPT_SANDBOXING = NO`** (the
+script writes into the .app bundle).
+
+Add a **Run Script build phase** (Build Phases → +) with shell `/bin/bash`:
 
 ```sh
-SRC="${SRCROOT}/_vendor/beeware/Python.xcframework"
-DST="${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}/python-stdlib"
+#!/bin/bash
+set -e
+BEEWARE="${SRCROOT}/_vendor/beeware/Python.xcframework"
+PYIOSLIB_FW="${SRCROOT}/_vendor/python-ios-lib/Frameworks"   # adjust if needed
+APP="${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}"
+DST="$APP/python-stdlib"
+FRAMEWORKS="${BUILT_PRODUCTS_DIR}/${FRAMEWORKS_FOLDER_PATH}"
+IDENT="${EXPANDED_CODE_SIGN_IDENTITY:--}"
 
 case "$PLATFORM_NAME" in
-    iphoneos)        SLICE="ios-arm64" ;;
-    iphonesimulator) SLICE="ios-arm64_x86_64-simulator" ;;
+  iphoneos)        SLICE="ios-arm64" ;;
+  iphonesimulator) SLICE="ios-arm64_x86_64-simulator" ;;
 esac
-ARCH="${CURRENT_ARCH:-arm64}"
-[ "$ARCH" = "undefined_arch" ] && ARCH="arm64"
+ARCH="${CURRENT_ARCH:-arm64}"; [ "$ARCH" = "undefined_arch" ] && ARCH="arm64"
 
+# 1. Copy stdlib + per-arch lib-dynload + sysconfigdata.
 mkdir -p "$DST"
 rsync -a --delete --exclude '__pycache__' --exclude 'lib-dynload' \
-    "$SRC/lib/python3.14/" "$DST/"
+  "$BEEWARE/lib/python3.14/" "$DST/"
 rsync -a --delete \
-    "$SRC/$SLICE/lib-$ARCH/python3.14/lib-dynload/" "$DST/lib-dynload/"
-```
+  "$BEEWARE/$SLICE/lib-$ARCH/python3.14/lib-dynload/" "$DST/lib-dynload/"
+find "$BEEWARE/$SLICE/lib-$ARCH/python3.14" -maxdepth 1 \
+  -name "_sysconfigdata__*.py" -exec cp -f {} "$DST/" \;
 
-In **Build Settings**, set **`ENABLE_USER_SCRIPT_SANDBOXING = NO`** so
-the script can write into the `.app` bundle.
+# 2. Copy standalone dylibs from python-ios-lib/Frameworks/ into app
+# Frameworks/ (libfortran_io_stubs.dylib for scipy.special, ffmpeg dylibs
+# for PyAV, etc.).
+mkdir -p "$FRAMEWORKS"
+if [ -d "$PYIOSLIB_FW" ]; then
+  while IFS= read -r -d '' src; do
+    base=$(basename "$src")
+    cp -f "$src" "$FRAMEWORKS/$base"
+    codesign --force --sign "$IDENT" --timestamp=none "$FRAMEWORKS/$base" 2>/dev/null || true
+  done < <(find "$PYIOSLIB_FW" -maxdepth 2 -name "*.dylib" -print0)
+fi
 
-### 4b. Sign every bundled `.so` / `.dylib` (real iOS device builds only)
-
-Every native binary in this package (216 `.so` / `.dylib` files —
-numpy, scipy, pillow's `_imaging`, av's ffmpeg bindings, manimpango,
-pathops, the cairo/pango/harfbuzz dylibs) ships **pre-signed with an
-ad-hoc signature**. That covers:
-
-- ✅ **iOS Simulator** — works as-is
-- ✅ **Mac "Designed for iPad" / Mac Catalyst** — works as-is
-- ✅ **App Store / TestFlight builds** — Apple re-signs everything
-  during their notary pass, so production deploys work as-is
-
-What it does NOT cover:
-
-- ❌ **Real iOS device dev builds** — iOS rejects ad-hoc on a real
-  device; needs your team's signing identity. Without the script
-  below you'll see at runtime:
-  ```
-  ImportError: dlopen(.../numpy/_core/_multiarray_umath...so):
-    code signature ... not valid for use in process:
-    Trying to load an unsigned library
-  ```
-
-For real-device dev builds, add this Run Script Phase **after** the
-stdlib copy phase from step 4. **Build Phases → + → New Run Script
-Phase**, paste:
-
-```sh
-# Sign every Mach-O .so/.dylib inside python-ios-lib_*.bundle so
-# iOS will dlopen them at runtime. Xcode's --deep codesign skips
-# binaries nested inside SwiftPM resource bundles, leaving them
-# unsigned and unloadable.
-APP="${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}"
-IDENTITY="${EXPANDED_CODE_SIGN_IDENTITY:--}"   # fall back to ad-hoc (Simulator)
-
-find "$APP" -path "*python-ios-lib_*.bundle*" \
-    \( -name "*.so" -o -name "*.dylib" \) -print0 | \
-while IFS= read -r -d '' f; do
-    codesign --force --timestamp=none --sign "$IDENTITY" "$f" >/dev/null
+# 3. Re-sign every .so/.dylib in stdlib + python-ios-lib_*.bundle.
+sign_lib() {
+  codesign --force --sign "$IDENT" --timestamp=none \
+    --preserve-metadata=identifier,entitlements,flags "$1" 2>/dev/null \
+    || codesign --force --sign "$IDENT" --timestamp=none "$1"
+}
+find "$DST/lib-dynload" -name "*.so" -print0 | while IFS= read -r -d '' so; do sign_lib "$so"; done
+for b in "$APP"/python-ios-lib_*.bundle; do
+  [ -d "$b" ] || continue
+  while IFS= read -r -d '' lib; do sign_lib "$lib"; done \
+    < <(find "$b" \( -name "*.so" -o -name "*.dylib" \) -print0)
 done
-echo "Signed $(find "$APP" -path "*python-ios-lib_*.bundle*" \
-    \( -name "*.so" -o -name "*.dylib" \) | wc -l | tr -d ' ') native binaries."
+
+# 4. Rewrite PyAV's hardcoded /tmp/ffmpeg-ios/ install_names → @rpath.
+AV="$APP/python-ios-lib_FFmpegPyAV.bundle"
+fix_names() {
+  for old in $(otool -L "$1" 2>/dev/null | awk '/\/tmp\/ffmpeg-ios/{print $1}'); do
+    install_name_tool -change "$old" "@rpath/$(basename "$old")" "$1" 2>/dev/null || true
+  done
+  for old in $(otool -D "$1" 2>/dev/null | awk 'NR==2 && /\/tmp\/ffmpeg-ios/{print $1}'); do
+    install_name_tool -id "@rpath/$(basename "$old")" "$1" 2>/dev/null || true
+  done
+}
+for lib in "$FRAMEWORKS"/libav*.dylib "$FRAMEWORKS"/libsw*.dylib; do
+  [ -f "$lib" ] && { fix_names "$lib"; sign_lib "$lib"; }
+done
+if [ -d "$AV/av" ]; then
+  while IFS= read -r -d '' so; do fix_names "$so"; sign_lib "$so"; done \
+    < <(find "$AV/av" -name "*.so" -print0)
+fi
+
+# 5. (Optional) Bundle Monaco editor with directory structure preserved.
+# Synchronized-folder mode flattens subdirs and Monaco has duplicate file
+# names across language subfolders — so rsync into the .app at build time
+# instead of adding it as a normal resource.
+MONACO_SRC="${SRCROOT}/_vendor/python-ios-lib/Monaco"
+if [ -d "$MONACO_SRC" ]; then
+  rsync -a --delete "$MONACO_SRC/" "$APP/Monaco/"
+fi
 ```
 
-In **Build Settings**, you already set `ENABLE_USER_SCRIPT_SANDBOXING = NO`
-in step 4 — that lets this script write to the .app bundle too.
+### 5. Boot Python and add the bundles to `sys.path`
 
-**Phase ordering matters** — drag this script phase to:
-- AFTER "Copy Bundle Resources" (so the `.so`s are in place)
-- AFTER your stdlib-copy script from step 4
-- BEFORE Xcode's final implicit signing (which is the LAST phase)
-
-If the script appears in the wrong place, drag it in the Build
-Phases list.
-
-> **Why isn't this fully automated?** SwiftPM doesn't let a package
-> register Run Script build phases on the consumer project. The only
-> structural alternative — wrapping each `.so` in its own
-> `.xcframework` `.binaryTarget` — would mean 216 xcframeworks (one
-> per native binary) and break Python's expected import paths
-> (xcframeworks land in `.app/Frameworks/`, not the bundle subdir
-> Python looks under). Pre-signing in the package handles every
-> non-real-device case automatically; the Run Script handles the
-> remaining one.
-
-### 5. Wire `Py_Initialize` to the bundled stdlib + auto-discover the SPM bundles
-
-Before `Py_Initialize()`, set the env vars:
+Set these env vars **before** `Py_Initialize()` — note the `_PYTHON_SYSCONFIGDATA_NAME`
+choice has to match the slice/arch you built for, otherwise `pydoc`
+(transitively imported by scipy) crashes with `AttributeError 'installed_base'`:
 
 ```swift
 let bundleURL = Bundle.main.bundleURL
 let stdlib    = bundleURL.appendingPathComponent("python-stdlib")
 let dynload   = stdlib.appendingPathComponent("lib-dynload")
 
-// Auto-discover every python-ios-lib_*.bundle sibling
+// Auto-discover every python-ios-lib_*.bundle sibling.
 var libBundles: [String] = []
 if let entries = try? FileManager.default.contentsOfDirectory(atPath: bundleURL.path) {
     for n in entries where n.hasPrefix("python-ios-lib_") && n.hasSuffix(".bundle") {
@@ -160,21 +160,35 @@ if let entries = try? FileManager.default.contentsOfDirectory(atPath: bundleURL.
 }
 
 let pythonPath = ([stdlib.path, dynload.path] + libBundles).joined(separator: ":")
-setenv("PYTHONHOME",             stdlib.path,            1)
-setenv("PYTHONPATH",             pythonPath,             1)
-setenv("PYTHONNOUSERSITE",       "1",                    1)
-setenv("PYTHONDONTWRITEBYTECODE","1",                    1)
-setenv("PYTHONMALLOC",           "malloc",               1)   // CRITICAL — must be before Py_Initialize
-setenv("TMPDIR",                 NSTemporaryDirectory(), 1)
+setenv("PYTHONHOME",            stdlib.path,  1)
+setenv("PYTHONPATH",            pythonPath,   1)
+setenv("PYTHONNOUSERSITE",      "1",          1)
+setenv("PYTHONDONTWRITEBYTECODE","1",         1)
+setenv("PYTHONMALLOC",          "malloc",     1)   // CRITICAL — must be before Py_Initialize
+setenv("TMPDIR",                NSTemporaryDirectory(), 1)
+
+// BeeWare per-arch sysconfigdata — pick the matching name for your build:
+//   sim arm64:  "_sysconfigdata__ios_arm64-iphonesimulator"
+//   sim x86_64: "_sysconfigdata__ios_x86_64-iphonesimulator"
+//   device:     "_sysconfigdata__ios_arm64-iphoneos"
+setenv("_PYTHON_SYSCONFIGDATA_NAME", "_sysconfigdata__ios_arm64-iphoneos", 1)
 
 Py_Initialize()
-PyEval_SaveThread()   // release GIL so manim threads can run
+PyEval_SaveThread()   // release GIL so manim's worker threads can run
 ```
 
-After this, `import numpy`, `import manim`, `import sklearn` etc. all
-just work.
+### 6. (For LaTeX / Manim's MathTex) — point `offlinai_latex` at busytex
 
-### 6. (Optional) Verify with `importlib.metadata`
+```swift
+setenv("OFFLINAI_LATEX_BACKEND",       "busytex", 1)
+setenv("OFFLINAI_LATEX_FORCE_BUSYTEX", "1",       1)
+setenv("OFFLINAI_LATEX_USE_PDFTEX",    "0",       1)
+```
+
+(Bundle CodeBench's `Resources/Busytex/` and `BusytexEngine.swift` +
+`LaTeXEngine.swift` per the LaTeX section earlier in this README.)
+
+### 7. Verify
 
 ```python
 import importlib.metadata
@@ -182,88 +196,67 @@ for d in importlib.metadata.distributions():
     print(d.metadata["Name"], d.version)
 ```
 
-Should list every SPM product you ticked. If empty, your `PYTHONPATH`
-isn't including the `.bundle/` siblings — re-check step 5.
+You should see ~30 distributions listed. If empty, your `PYTHONPATH`
+isn't including the `python-ios-lib_*.bundle` paths — re-check step 5's
+auto-discovery loop.
 
-### 7. (For PyTorch only) Decompress the bundled libtorch_python
-
-The PyTorch C extension (`libtorch_python.dylib`, 103 MB) ships
-LZMA-compressed because GitHub rejects raw blobs over 100 MB and Git
-LFS breaks SwiftPM's checkout. Decompress on first launch:
-
-```swift
-import PyTorch
-try PyTorchLib.bootstrap()    // ~0.5 s on A14, ~1.5 s on A12; idempotent
+```python
+import manim, numpy, scipy, sklearn, sympy, networkx, av, cairo
+print("all imports ok")
 ```
 
-After this, `import torch` works.
+If any line fails with `Trying to load an unsigned library` or
+`Library not loaded: /tmp/ffmpeg-ios/...`, the Run Script in step 4
+didn't run. Check Build Settings → `ENABLE_USER_SCRIPT_SANDBOXING = NO`
+and that the script is in the build phases list.
 
-### 8. (For Mac "Designed for iPad" only) Add the network entitlement
+---
 
-Designed-for-iPad runs your iOS app under the macOS sandbox, which
-blocks outbound network by default. If `pip install` or `requests.get`
-returns `PermissionError(1, 'Operation not permitted')`, create a
-`MyApp.entitlements` file with:
+## Bundle layout reference
 
-```xml
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
-    "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>com.apple.security.network.client</key>
-    <true/>
-</dict>
-</plist>
-```
-
-…and set Project → Build Settings → **Code Signing Entitlements** to
-this file. Real iOS devices and the iOS Simulator don't need this.
-
-### Bundle layout reference
-
-After build, the `.app` contains:
+After build, the .app contains:
 
 ```
-ManimStudio.app/
-├── ManimStudio                              ← executable
-├── Frameworks/Python.framework/Python       ← BeeWare CPython dylib
-├── python-stdlib/                           ← step 4 copies stdlib here
+YourApp.app/
+├── YourApp                                     ← executable
+├── Frameworks/
+│   ├── Python.framework/Python                 ← BeeWare CPython dylib
+│   ├── libfortran_io_stubs.dylib               ← from step 4.2
+│   ├── libsf_error_state.dylib                 ← from step 4.2
+│   └── libav*.dylib, libsw*.dylib              ← FFmpeg, install_name fixed
+├── python-stdlib/                              ← step 4.1 (BeeWare stdlib)
 │   ├── os.py, json/, encodings/, …
-│   └── lib-dynload/*.so
-├── python-ios-lib_NumPy.bundle/numpy/       ← SPM products
-├── python-ios-lib_Manim.bundle/{manim,manimpango,offlinai_latex,svgelements,pathops}
+│   ├── _sysconfigdata__ios_*.py
+│   └── lib-dynload/*.so                        ← signed
+├── python-ios-lib_NumPy.bundle/numpy/
+├── python-ios-lib_Manim.bundle/{manim, manimpango, offlinai_latex,
+│                                  svgelements, pathops, *-dist-info}
 ├── python-ios-lib_SciPy.bundle/scipy/
 ├── python-ios-lib_Sklearn.bundle/sklearn/
 ├── python-ios-lib_Matplotlib.bundle/matplotlib/
-├── python-ios-lib_FFmpegPyAV.bundle/{av,ffmpeg/*.dylib}
-├── python-ios-lib_CairoGraphics.bundle/{cairo,pango,harfbuzz}
-└── python-ios-lib_Pillow.bundle/PIL/
+├── python-ios-lib_FFmpegPyAV.bundle/{av, ffmpeg/*.dylib}
+├── python-ios-lib_CairoGraphics.bundle/{cairo, pango, harfbuzz}
+├── python-ios-lib_Pillow.bundle/PIL/
+└── python-ios-lib_*.bundle/                    ← 24+ more, one per ticked product
 ```
 
 `PYTHONPATH` should include `python-stdlib/`, `python-stdlib/lib-dynload/`,
 and every `python-ios-lib_*.bundle/` directory. Step 5's auto-discovery
 loop handles that automatically.
 
-### Alternative: `Package.swift` instead of Xcode UI
+---
 
-If you prefer the SwiftPM CLI:
+## Common gotchas
 
-```swift
-dependencies: [
-    .package(url: "https://github.com/yu314-coder/python-ios-lib", branch: "main"),
-],
-targets: [
-    .target(name: "MyApp", dependencies: [
-        .product(name: "Manim",   package: "python-ios-lib"),
-        .product(name: "Sklearn", package: "python-ios-lib"),
-        // … add as many products as you want
-    ]),
-],
-```
-
-You still need steps 1, 2, 4, 5 (BeeWare xcframework + stdlib copy +
-`Py_Initialize` wiring) — those don't get automated by SPM.
+| Symptom | Cause | Fix |
+|---|---|---|
+| `Trying to load an unsigned library` on first numpy/scipy import | SwiftPM strips signatures from `.so` resources | Run Script in step 4 must re-sign all `.so` |
+| `Library not loaded: /tmp/ffmpeg-ios/install/lib/libavcodec.62.dylib` | PyAV `.so` has hardcoded build-time install_names | `install_name_tool -change` step in step 4.4 |
+| `AttributeError: 'installed_base'` from inside `pydoc` | BeeWare per-arch `_sysconfigdata` not on `sys.path` | Step 4.1 copies it; step 5 sets `_PYTHON_SYSCONFIGDATA_NAME` |
+| `ModuleNotFoundError: No module named 'cloup'` (or click, tqdm, rich, …) | Transitive dep wasn't auto-linked from `Manim` | Verify with the bundle layout — every product in step 3 should have a corresponding `python-ios-lib_*.bundle` dir; if missing, tick it explicitly in Xcode |
+| `Error importing numpy: you should not try to import numpy from its source directory` | numpy's `_multiarray_umath.so` failed to load (usually unsigned) | Re-check the codesign loop output in build log |
+| Empty `importlib.metadata.distributions()` | Your earlier Package.swift didn't ship `*.dist-info` dirs as resources | Fixed in current Package.swift |
+| Render appears to hang | iOS jetsam killing for memory pressure | `PYTHONMALLOC=malloc` is set in step 5; lower preview quality, avoid long `MathTex` chains |
 
 ---
 
