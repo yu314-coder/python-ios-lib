@@ -248,119 +248,149 @@ loop handles that automatically.
 
 ## App Store distribution
 
-Apple's archive validator rejects every loose `.so` / `.dylib` inside
-the `.app`, even ones nested in SPM resource bundles:
+Submitting an app with this package to App Store Connect surfaces
+**~15 distinct categories** of `ITMS-9xxxx` validation errors,
+because Apple's bundle rules don't accept the typical Python-iOS
+layout that BeeWare's `install_python` produces.
 
-```
-Invalid bundle structure. The "ManimStudio.app/python-ios-lib_NumPy.bundle/
-numpy/_core/_multiarray_umath.cpython-314-iphoneos.so" binary file is
-not permitted. Your app cannot contain standalone executables or
-libraries, other than a valid CFBundleExecutable of supported bundles.
-```
+This section documents every category we hit and how they're fixed.
+**The new `scripts/appstore/wrap-loose-dylibs.sh`** (added 2026-04)
+is a single drop-in build phase that handles all of them
+automatically — it supersedes the older
+`wrap-binaries-as-frameworks.sh` (kept for reference but no longer
+recommended).
 
-Same error fires for ~250 other binaries (numpy, scipy, pillow,
-ffmpeg dylibs, BeeWare's stdlib, etc.). **TestFlight + dev builds
-work without this fix; only App Store submission requires it.**
+> TestFlight + dev (`Run`) builds work WITHOUT any of this. App Store
+> submission is the only path that triggers Apple's strict validator.
 
-The fix: at archive time, wrap every Mach-O as a real
-`.framework` under `<App>.app/Frameworks/`, rewrite cross-extension
-`@rpath` references, and route Python imports to the frameworks via
-a runtime hook. Two ready-made scripts ship in this package under
-[`scripts/appstore/`](scripts/appstore/) — they're opt-in (dev
-builds keep working unchanged).
+### Old vs new — what changed in the App Store path
 
-### Step A — add a Run Script that wraps binaries
+| Issue | Old script | New `wrap-loose-dylibs.sh` |
+|---|---|---|
+| Loose `.so` in `app_packages/` | wrapped via `Frameworks/<name>.framework/` + import hook | same wrapping; **also** rewrites BeeWare's `.fwork` files to `@executable_path/Frameworks/...` (absolute paths) so iOS hardened-mode dyld accepts them |
+| Loose `.dylib` in `Frameworks/` (FFmpeg, libtorch_python, libshm) | wrapped, refs rewritten | same |
+| Static `.a` archives in `Frameworks/` (PyTorch ExecuTorch) | not handled | hard-deleted; ExecuTorch's xcframeworks must be set to "Do Not Embed" in Xcode (linker pulls symbols at compile time, not runtime) |
+| `MinimumOSVersion` mismatch (BeeWare writes 13.0, binary is 17.0) | not handled | rewrites every wrapped framework's Info.plist `MinimumOSVersion` to match `IPHONEOS_DEPLOYMENT_TARGET` |
+| `armv7` slice in fat binaries (e.g. `ios_system`) | not handled | strips armv7 via `lipo -remove` |
+| `MH_BUNDLE` filetype on Cython `.so` | not handled | flips byte 12 of Mach-O header to `MH_DYLIB` (0x6); inserts `LC_ID_DYLIB` load command into padding |
+| Bitcode segments left in vendored xcframeworks | not handled | `xcrun bitcode_strip -r` on every binary |
+| `_CTFontCopyDefaultCascadeList` private API in `manimpango._register_font` | not handled | deletes the C extension; **fontTools-backed pure-Python `manimpango/__init__.py` shim** replaces all functionality (bundled in this package) |
+| `_IOPSCopyPowerSourcesInfo` private API in `psutil._psutil_osx` | not handled | deletes the macOS-only C extension |
+| `_xerbla_array__` flagged as private API in `scipy.linalg.cython_lapack` | not handled | renames symbol to `_xerbla_arr_io_` via Mach-O byte patching, adds an `LC_LOAD_DYLIB` to a runtime-built stub `.framework`, AND patches the bind opcodes + symbol-table `n_desc` to use flat-namespace lookup |
+| macOS-arm64 dylibs in `scipy/.dylibs/` (libgfortran, libgcc_s, libquadmath) | not handled | hard-deleted (scipy never actually loads them on iOS — verified via `nm -u` symbol audit; Apple Accelerate provides the real BLAS/LAPACK) |
+| `torch_shm_manager` standalone Mach-O executable | not handled | replaced with non-executable text placeholder (PyTorch's path-existence check passes; iOS forbids `fork()` so the real binary couldn't function anyway) |
+| `LC_ENCRYPTION_INFO` missing on macOS dylibs | not handled | resolved indirectly by deleting the macOS dylibs |
+| Native manimpango Cython `.so` files use Cairo's toy API which can't extract CJK glyph paths on iOS | not handled (CJK fell back to PIL rasterizer = opacity fade only, no stroke trace) | **fontTools shim reads OTF outlines directly** — produces real bezier `<path>` data per glyph; manim's `Write` traces strokes natively for CJK exactly like Latin |
+| `torch._C` not injected into `torch` module namespace at import time | not handled | one-line patch in `torch/__init__.py` (`import torch._C as _C`) makes `torch._C` a regular module attribute regardless of what PyInit__C did |
+| `manim.animation.animation.Animation.interpolate_mobject` ignored `lag_ratio` for ImageMobject children | not handled (CJK Text faded as a single block) | manim's iOS image-fallback patch now uses `get_sub_alpha(...)` per-child, producing proper typewriter-style staggered reveal |
 
-After the existing stdlib-copy + signing Run Script (step 4 of the
-Setup), add a NEW Run Script Phase. **Build Phases → + → New Run
-Script Phase**, shell `/bin/bash`:
+### Setup — drop-in build phase
+
+After the existing stdlib-copy Run Script (step 4 of the Setup), add
+a NEW Run Script Phase. **Build Phases → + → New Run Script Phase**,
+shell `/bin/bash`:
 
 ```sh
-# Pull the wrap script straight from the SwiftPM checkout. Path
-# may differ depending on Xcode's checkout location — adjust as
-# needed (replace ManimStudio with your project name):
-WRAP="${BUILD_ROOT}/../../SourcePackages/checkouts/python-ios-lib/scripts/appstore/wrap-binaries-as-frameworks.sh"
+WRAP="${BUILD_ROOT}/../../SourcePackages/checkouts/python-ios-lib/scripts/appstore/wrap-loose-dylibs.sh"
 [ -f "$WRAP" ] && bash "$WRAP"
 ```
 
-Place this phase AFTER "Copy Bundle Resources" + your existing
-stdlib-copy phase, BEFORE Xcode's final implicit code-sign step.
-This is what the script does:
+Place AFTER "Copy Bundle Resources" + the stdlib-copy phase, BEFORE
+Xcode's final implicit code-sign step.
 
-1. Walks `python-stdlib/lib-dynload/*.so` (BeeWare extensions) +
-   every `python-ios-lib_*.bundle/.../*.{so,dylib}` + loose dylibs
-   in `Frameworks/`
-2. For each Mach-O: creates `Frameworks/<sanitized>.framework/`
-   with the binary inside + a minimal Info.plist
-3. Rewrites `LC_LOAD_DYLIB` cross-references via
-   `install_name_tool -change` so `scipy.linalg._fblas` can still
-   find `scipy.linalg.cython_blas` after both got moved
-4. Lifts native xcframeworks (pdftex, kpathsea, ios_system) out of
-   `python-ios-lib_LaTeXEngine.bundle/latex/` and into
-   `Frameworks/`
-5. Leaves a 0-byte placeholder at every original `.so` path so
-   Python `__file__` introspection (matplotlib, scipy do this) keeps
-   working
-6. Signs every wrapped framework with the team identity
-7. Emits a manifest at `<App>.app/python-ios-lib_extension_manifest.txt`
-   mapping `numpy._core._multiarray_umath=numpy_core_multiarray_umath`
+The script also needs two helpers in the same dir, which the wrap
+script auto-locates via `${PROJECT_DIR}/scripts/`:
+- [`fix-macho-type.py`](scripts/appstore/fix-macho-type.py) — flips
+  MH_BUNDLE → MH_DYLIB and inserts LC_ID_DYLIB
+- [`patch-cython-lapack.py`](scripts/appstore/patch-cython-lapack.py)
+  — renames `_xerbla_array__` symbol + adds LC_LOAD_DYLIB + patches
+  bind opcodes for flat-namespace lookup
 
-### Step B — install the Python import hook
+For convenience, copy them next to the wrap script in your project's
+`scripts/` directory.
 
-The wrap script renames extension binaries so Python's normal import
-machinery can't find them. The hook does the routing.
+### Setup — required Xcode build settings
 
-In step 4 of the Setup, modify the Run Script's stdlib-copy section
-to ALSO copy the hook into `python-stdlib/`:
+| Setting | Value | Why |
+|---|---|---|
+| `ENABLE_USER_SCRIPT_SANDBOXING` | `NO` | wrap script needs to write outside its own Build dir |
+| `ENABLE_BITCODE` | `NO` (or unset; default in Xcode 14+) | bitcode is deprecated and our strip step assumes it's gone |
+| `IPHONEOS_DEPLOYMENT_TARGET` | `17.0` (or higher) | wrap script harmonizes framework `MinimumOSVersion` to this value |
+| ExecuTorch xcframeworks (`executorch`, `backend_xnnpack`, `backend_coreml`, `kernels_optimized`, `threadpool`) | **"Do Not Embed"** in Frameworks, Libraries, and Embedded Content | static `.a` archives — link at compile time, never embed |
+| `Info.plist` → `ITSAppUsesNonExemptEncryption` | `<false/>` | skips the encryption-questionnaire prompt every upload (only standard TLS via OpenSSL) |
+
+### What the wrap script outputs in the build log
+
+```
+=== wrap-loose-dylibs.sh starting ===
+  BUILT_PRODUCTS_DIR=...
+  CODESIGNING_FOLDER_PATH=...
+
+wrap-loose-dylibs: Step 0 — hard cleanup of App Store-rejected files
+  removed .../numpy/_core/lib/libnpymath.a
+  removed .../torch/bin/torch_shm_manager (then re-created as text placeholder below)
+  ... (10-15 files)
+
+wrap-loose-dylibs: Step 0b — harmonizing MinimumOSVersion to 17.0
+  fixed MinimumOSVersion in 262 framework Info.plists
+
+wrap-loose-dylibs: Step 0b2 — stripping armv7 from fat framework binaries
+  stripped armv7 from ios_system.framework
+  1 framework(s) thinned to arm64-only
+
+wrap-loose-dylibs: Step 0b3 — rewriting .fwork files to absolute paths
+  rewrote 264 .fwork files (skipped 0 already-absolute)
+
+wrap-loose-dylibs: Step 0c — patching scipy cython_lapack for App Store
+  built libscipy_lapack_stubs.dylib
+  renamed 2 occurrence(s) of _xerbla_array__ → _xerbla_arr_io_
+  added LC_LOAD_DYLIB → @rpath/libscipy_lapack_stubs.framework/...
+  rewrote 2 bind entry(s) to flat-namespace lookup
+
+wrap-loose-dylibs: 11 loose dylibs to wrap
+wrap-loose-dylibs: stripping bitcode from binaries
+  stripped bitcode from 275 binaries
+wrap-loose-dylibs: flipping MH_BUNDLE → MH_DYLIB
+  fix-macho-type summary:  140 already_dylib, 133 patched, 1 patched_fat
+  LC_ID_DYLIB: 133 added, 140 already present, 1 failed
+
+=== wrap-loose-dylibs: final App Store readiness check ===
+  ✓ static .a archives clean
+  ✓ loose .dylib in Frameworks/ clean
+  ✓ loose .dylib in app_packages/ clean
+  ✓ torch_shm_manager is text placeholder (App Store-safe)
+  ✓ manimpango native .so (CTFontCopyDefaultCascadeList) clean
+  ✓ psutil._psutil_osx (IOPSCopyPowerSources*) clean
+✓ App Store readiness OK
+```
+
+If any check fails, the script exits non-zero and Xcode flags the
+build phase as failed — preventing you from accidentally archiving
+a known-bad bundle.
+
+### Python-side patches that ship with this package
+
+The repo bundles **already-patched copies** of three site-packages
+files — these replace the upstream versions and ship inside the
+package's `app_packages/site-packages/` tree:
+
+| Patched file | What it fixes |
+|---|---|
+| [`manimpango/__init__.py`](app_packages/site-packages/manimpango/__init__.py) | Native `_register_font.so` and `cmanimpango.so` (deleted by wrap script for ITMS-90338) — replaced with **fontTools-based pure-Python text2svg** that reads OTF/TTF glyph outlines directly via `SVGPathPen`. CJK Text in manim now produces real `<path d="...">` per glyph (typewriter-style `Write` animation works). Bundled `fontTools/` (~5 MB pure Python) provides the implementation. |
+| [`manim/animation/animation.py`](app_packages/site-packages/manim/animation/animation.py) | The iOS image-fallback in `interpolate_mobject` now staggers `ImageMobject` opacity by `lag_ratio` (matching what `Write`'s smart `lag_ratio = min(4.0/N, 0.2)` expects) — produces proper typewriter reveal across per-character ImageMobject children. Was previously fading all chars at the same alpha. |
+| [`torch/__init__.py`](app_packages/site-packages/torch/__init__.py) | Two iOS-specific patches: (1) `import torch._C as _C` after `from torch._C import *` so `torch._C` is in module namespace even when PyInit__C's re-entrant `setattr` silently fails on iOS. (2) `manager_path()` returns the `torch_shm_manager` text-placeholder path instead of raising `RuntimeError("Unable to find...")` when the binary was replaced. Lets full PyTorch import succeed; only `torch.multiprocessing`'s fork-based APIs are unavailable (iOS platform limit). |
+
+The `fontTools/` directory is bundled at [`app_packages/site-packages/fontTools/`](app_packages/site-packages/fontTools/) — required by the patched manimpango shim. It's ~4.8 MB pure Python (no C extensions needed; the SVGPathPen + ttLib paths we use don't require the optional Cython accelerators).
+
+### Verify locally before archiving
 
 ```sh
-# Add this near the end of step 4's existing Run Script:
-HOOK="${BUILD_ROOT}/../../SourcePackages/checkouts/python-ios-lib/scripts/appstore/python_ios_lib_import_hook.py"
-[ -f "$HOOK" ] && cp -f "$HOOK" "$DST/python_ios_lib_import_hook.py"
+bash scripts/appstore/wrap-loose-dylibs.sh   # dry run requires Xcode env vars
+# Better: actually archive and inspect the build log for "✓ App Store readiness OK"
 ```
 
-Then in step 5's `Py_Initialize` wiring, install the hook RIGHT after
-`Py_Initialize()`:
-
-```swift
-Py_Initialize()
-PyRun_SimpleString("""
-    try:
-        import python_ios_lib_import_hook
-        python_ios_lib_import_hook.install()
-    except Exception as e:
-        import sys
-        sys.stderr.write(f"[python-ios-lib] hook install failed: {e}\\n")
-""")
-PyEval_SaveThread()
-```
-
-The hook is idempotent and silently skips when the manifest doesn't
-exist, so dev builds (where the wrap script didn't run) are
-unaffected.
-
-### Step C — verify locally before archiving
-
-Before uploading to App Store Connect, run the test harness:
-
-```sh
-cd path/to/SourcePackages/checkouts/python-ios-lib
-bash scripts/appstore/test-wrap-locally.sh
-```
-
-It builds a fake `.app` with representative `.so` files, runs the
-wrap script, and verifies:
-- No non-empty loose `.so` / `.dylib` left outside `.framework/`
-- Every wrapped binary is a valid Mach-O
-- Every framework has a well-formed `Info.plist`
-- The manifest is non-empty and every entry resolves
-- No dangling `LC_LOAD_DYLIB` references
-
-This catches MOST issues before you spend 10 minutes on an archive
-upload. **Expect 1–3 archive iterations** — the first submission
-often surfaces a scipy / PyAV cross-reference the script's
-heuristics missed; copy the failing path from App Store Connect's
-validation report and we add it to the script's known-paths list.
+The script's final assertion fails the build if any rejected file
+remains, so you can never accidentally upload a broken bundle.
 
 ---
 
