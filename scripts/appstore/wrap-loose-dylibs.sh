@@ -137,9 +137,15 @@ _HARD_CLEANUP_PATHS=(
     "$FW/site-packages.manimpango.cmanimpango.framework"
     "$FW/site-packages.manimpango.enums.framework"
     # psutil's macOS-specific binary uses IOPSCopyPowerSourcesInfo et al,
-    # which are macOS IOKit private APIs not available on iOS. psutil's
-    # iOS-supported subset (process info, memory) doesn't need this file.
+    # which are macOS IOKit private APIs not available on iOS. We ship
+    # a pure-Python shim (psutil/_psutil_osx.py) that re-implements the
+    # same surface via Mach + sysctl public APIs; the .so + framework +
+    # .fwork redirect must all be removed so Python's import system
+    # falls through to the .py file. WITHOUT removing the .fwork the
+    # iOS importer keeps trying to dlopen the deleted framework and
+    # `import psutil` fails with "no such file".
     "$APP/app_packages/site-packages/psutil/_psutil_osx.abi3.so"
+    "$APP/app_packages/site-packages/psutil/_psutil_osx.abi3.fwork"
     "$FW/site-packages.psutil._psutil_osx.framework"
     # NOTE: scipy.linalg.cython_blas is App Store-clean (no private-API
     # symbols) and stays in the bundle.

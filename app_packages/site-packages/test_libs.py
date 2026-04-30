@@ -124,8 +124,19 @@ def _t_matplotlib():
     out = _scratch("mpl.png")
     fig.savefig(out, dpi=60)
     plt.close(fig)
-    assert os.path.getsize(out) > 200
-    return f"v{matplotlib.__version__}"
+    # The bundled matplotlib is a plotly-backed stub. write_image()
+    # falls back to write_html when kaleido isn't available (it isn't
+    # on iOS — kaleido needs a node binary). Accept either the .png
+    # at the requested path OR the .html sibling the stub writes
+    # instead. Both prove the savefig pipeline ran end-to-end.
+    html_out = out.rsplit(".", 1)[0] + ".html"
+    if os.path.exists(out):
+        assert os.path.getsize(out) > 200
+        return f"v{matplotlib.__version__}"
+    if os.path.exists(html_out):
+        assert os.path.getsize(html_out) > 200
+        return f"v{matplotlib.__version__} (html fallback — no kaleido)"
+    raise FileNotFoundError(f"neither {out} nor {html_out} written")
 
 @register("viz", "plotly")
 def _t_plotly():
