@@ -464,6 +464,23 @@ First public iOS builds of each. Once added, `import torch`, `import transformer
 
 > **Git LFS required for PyTorch / Transformers** — see [step 1 of Quick Start](#1-install-git-lfs-only-once-per-machine). Other targets work without LFS.
 
+### GPU acceleration for PyTorch (Metal bridge)
+
+`app_packages/site-packages/_torch_metal_bridge.py` patches `torch.matmul`, `torch.mm`, `torch.bmm`, `torch.addmm`, `F.linear`, and `F.scaled_dot_product_attention` to route matmul-heavy ops onto the iPad GPU via `MPSMatrixMultiplication`. Auto-installed at Python startup by `sitecustomize.py` — no code changes required. Supports float32 and float16 natively; bfloat16 is cast to fp32 internally. Typical speedup at transformer training sizes: **2–10× on iPad** (CPU on iPad has no AMX, unlike Mac Apple Silicon). The Swift bridge (`CodeBench/MetalMatmulBridge.swift`) exposes one C entry point via `@_cdecl` and ctypes reaches it through `dlopen(NULL)` — `OTHER_LDFLAGS` exports the symbol explicitly so it survives TestFlight / App Store stripping.
+
+### NumPy / safetensors shims
+
+iOS PyTorch was compiled with `USE_NUMPY=0` to keep the binary self-contained, so `torch.from_numpy()` and `tensor.numpy()` raise. `sitecustomize.py` installs pure-Python replacements using `torch.frombuffer` — drop-in equivalents with correct dtype mapping for fp16/bf16/uint16-64. `safetensors` (normally Rust + PyO3, not cross-compiled for iOS) is also re-implemented in pure Python over `mmap` for read paths, which is what `transformers.from_pretrained` actually uses.
+
+### Training quality-of-life — `_cb_training.py`
+
+Four opt-in helpers (12 KB total, zero overhead when unused):
+
+- **`OOMGuard`** — auto-halves batch size and retries on out-of-memory. Tracks `oom_events` so you know if it fired.
+- **`MemoryProfiler`** — RSS snapshots between named checkpoints. Prints `Δ from prev / Δ from start` columns. Useful to find which layer blows up your iPad's RAM.
+- **`KVCache`** — per-layer key/value cache for autoregressive transformer inference, with optional sliding window via `max_seq`.
+- **`TrainingMonitor`** — terminal dashboard: loss (raw + EMA), it/s, elapsed, ETA, RSS, GPU dispatches incurred since the run started.
+
 ### After adding the package
 
 The Python files are bundled as resources. Copy them to your app's `site-packages/` at runtime:
