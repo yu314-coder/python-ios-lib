@@ -458,11 +458,9 @@ First public iOS builds of each. Once added, `import torch`, `import transformer
 
 | Package | What you get | Auto-includes | Doc |
 |---|---|---|---|
-| **PyTorch** | PyTorch 2.1.2 native iOS — tensors, autograd, nn, optim, JIT, FFT, LAPACK via Accelerate. **95/95 correctness asserts.** Ships `libtorch_python.dylib` (99 MB) via Git LFS. | regex shim | [doc](docs/torch.md) |
+| **PyTorch** | PyTorch 2.1.2 native iOS — tensors, autograd, nn, optim, JIT, FFT, LAPACK via Accelerate. **95/95 correctness asserts.** Ships `libtorch_python.dylib` as a ~14 MB LZMA blob (`Sources/PyTorch/torch_dylib/libtorch_python.dylib.applzma`); the `PyTorch` Swift package decompresses it to ~99 MB at first launch via `Compression.framework`. No Git LFS needed. | regex shim | [doc](docs/torch.md) |
 | **Tokenizers** | HuggingFace tokenizers 0.19.1 — real Rust BPE/WordPiece/Unigram trainers cross-compiled for iOS arm64 (PyO3). First public iOS build. | (none) | [doc](docs/tokenizers.md) |
 | **Transformers** | HuggingFace transformers 4.41.2 — BERT, GPT-2, T5, BART, Llama, Qwen. Construct + train + `.generate()` + save/load on-device. | + PyTorch, Tokenizers, `huggingface_hub`, `filelock`, `safetensors` | [doc](docs/transformers.md) |
-
-> **Git LFS required for PyTorch / Transformers** — see [step 1 of Quick Start](#1-install-git-lfs-only-once-per-machine). Other targets work without LFS.
 
 ### GPU acceleration for PyTorch (Metal bridge)
 
@@ -632,7 +630,7 @@ CInterpreter → (standalone)
 PythonRequests → (standalone)
 
 Transformers
-  ├── PyTorch (99 MB dylib via Git LFS)
+  ├── PyTorch (14 MB LZMA blob → 99 MB dylib at runtime)
   │     └── regex (shim)
   └── Tokenizers (5 MB Rust .so)
 Transformers also bundles huggingface_hub, filelock, safetensors
@@ -736,7 +734,7 @@ notes, limitations, troubleshooting, and build provenance.
 
 | Library | Doc |
 |---|---|
-| **PyTorch** (99 MB dylib via Git LFS) | [docs/torch.md](docs/torch.md) — also [docs/libs/pytorch.md](docs/libs/pytorch.md) |
+| **PyTorch** (14 MB LZMA blob → 99 MB dylib at runtime) | [docs/torch.md](docs/torch.md) — also [docs/libs/pytorch.md](docs/libs/pytorch.md) |
 | **transformers** | [docs/transformers.md](docs/transformers.md) — also [docs/libs/transformers.md](docs/libs/transformers.md) |
 | **tokenizers** (Rust via PyO3) | [docs/tokenizers.md](docs/tokenizers.md) — also [docs/libs/tokenizers.md](docs/libs/tokenizers.md) |
 | **safetensors** | [docs/safetensors.md](docs/safetensors.md) |
