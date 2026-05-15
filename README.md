@@ -472,12 +472,40 @@ iOS PyTorch was compiled with `USE_NUMPY=0` to keep the binary self-contained, s
 
 ### Training quality-of-life — `_cb_training.py`
 
-Four opt-in helpers (12 KB total, zero overhead when unused):
+Five opt-in helpers (~20 KB total, zero overhead when unused):
 
 - **`OOMGuard`** — auto-halves batch size and retries on out-of-memory. Tracks `oom_events` so you know if it fired.
 - **`MemoryProfiler`** — RSS snapshots between named checkpoints. Prints `Δ from prev / Δ from start` columns. Useful to find which layer blows up your iPad's RAM.
 - **`KVCache`** — per-layer key/value cache for autoregressive transformer inference, with optional sliding window via `max_seq`.
 - **`TrainingMonitor`** — terminal dashboard: loss (raw + EMA), it/s, elapsed, ETA, RSS, GPU dispatches incurred since the run started.
+- **`AutoCheckpointer`** — periodic save of model + optimizer state during training. Auto-resumes from the most recent checkpoint on next launch. Survives crashes, force-quits, and iOS suspension. Toggle via `enabled=` or env var `CODEBENCH_AUTO_CHECKPOINT=0`.
+
+### Background-time extension — `_cb_background.py`
+
+iOS suspends apps ~30 seconds after backgrounding. `_cb_background.enable()` asks `UIApplication.beginBackgroundTask` for an extension — usually grants several minutes. `time_remaining()` polls the budget so training loops can checkpoint and exit cleanly before iOS kills the process:
+
+```python
+import _cb_background as bg
+with bg.BackgroundSession():
+    for step in range(n_steps):
+        loss = train_step(batch)
+        ckpt.maybe_save(step)
+        if bg.time_remaining() < 10:
+            ckpt.save(step); break
+```
+
+Requires `BackgroundTimeManager.swift` in the host app (`@_cdecl` symbols `cb_bg_acquire / cb_bg_release / cb_bg_time_remaining` reachable via `dlopen(NULL)`). Falls back to no-op when not linked, so the same training script runs unchanged on macOS / Linux.
+
+### LoRA → GGUF export — `_cb_gguf_export.py`
+
+Closes the train→deploy loop. Train a LoRA via PyTorch (using the Metal bridge for speed), then convert the resulting `.pt` to a GGUF adapter that llama.cpp can load via `/lora` for fast Metal-accelerated inference of the merged model. Pure-Python writer — no external deps.
+
+```bash
+python -m _cb_gguf_export --pt qwen-lora.pt --gguf qwen-lora.gguf \
+                          --arch qwen2 --alpha 16
+```
+
+Supports Qwen / Llama / Mistral / Phi-family modules (`attn_q/k/v/output`, `ffn_gate/up/down`). For other architectures, extend `_MODULE_MAP`.
 
 ### After adding the package
 
