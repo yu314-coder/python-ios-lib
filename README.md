@@ -470,39 +470,53 @@ First public iOS builds of each. Once added, `import torch`, `import transformer
 
 iOS PyTorch was compiled with `USE_NUMPY=0` to keep the binary self-contained, so `torch.from_numpy()` and `tensor.numpy()` raise. `sitecustomize.py` installs pure-Python replacements using `torch.frombuffer` — drop-in equivalents with correct dtype mapping for fp16/bf16/uint16-64. `safetensors` (normally Rust + PyO3, not cross-compiled for iOS) is also re-implemented in pure Python over `mmap` for read paths, which is what `transformers.from_pretrained` actually uses.
 
-### Training quality-of-life — `_cb_training.py`
+### Standard HuggingFace scripts work unchanged on iPad
 
-Five opt-in helpers (~20 KB total, zero overhead when unused):
+The whole point of this stack is that a training script written for Mac/Windows runs on iPad without modification. Two automatic patches in [`sitecustomize.py`](app_packages/site-packages/sitecustomize.py) make this work:
 
-- **`OOMGuard`** — auto-halves batch size and retries on out-of-memory. Tracks `oom_events` so you know if it fired.
-- **`MemoryProfiler`** — RSS snapshots between named checkpoints. Prints `Δ from prev / Δ from start` columns. Useful to find which layer blows up your iPad's RAM.
-- **`KVCache`** — per-layer key/value cache for autoregressive transformer inference, with optional sliding window via `max_seq`.
-- **`TrainingMonitor`** — terminal dashboard: loss (raw + EMA), it/s, elapsed, ETA, RSS, GPU dispatches incurred since the run started.
-- **`AutoCheckpointer`** — periodic save of model + optimizer state during training. Auto-resumes from the most recent checkpoint on next launch. Survives crashes, force-quits, and iOS suspension. Toggle via `enabled=` or env var `CODEBENCH_AUTO_CHECKPOINT=0`.
+**1. iOS background-time extension** — applied at every Python startup. `UIApplication.beginBackgroundTask` is requested via the Swift `@_cdecl` bridge in [`CodeBench/BackgroundTimeManager.swift`](https://github.com/yu314-coder/CodeBench/blob/main/CodeBench/BackgroundTimeManager.swift), so when the user backgrounds the app mid-training, iOS grants extra time instead of suspending immediately. No-op on macOS/Linux (no UIKit), so the same Python script behaves correctly cross-platform. Disable with `CODEBENCH_AUTO_BACKGROUND=0`.
 
-### Background-time extension — `_cb_background.py`
+**2. `transformers.TrainingArguments` defaults** — patched via a `sys.meta_path` import hook (zero startup cost; only fires when the user imports `transformers`). Injects iPad-friendly defaults:
 
-iOS suspends apps ~30 seconds after backgrounding. `_cb_background.enable()` asks `UIApplication.beginBackgroundTask` for an extension — usually grants several minutes. `time_remaining()` polls the budget so training loops can checkpoint and exit cleanly before iOS kills the process:
+| Field | HF default | iPad default | Why |
+|---|---|---|---|
+| `save_steps` | 500 | **100** | Checkpoint more often so iOS suspension loses less progress |
+| `save_total_limit` | None (unlimited) | **3** | Cap disk use |
+| `Trainer.train(resume_from_checkpoint=)` | None | **auto-detect** | If `output_dir` has `checkpoint-*/` subdirs, resume from the latest one without requiring an explicit argument |
+
+User-specified values always win (setdefault semantics; explicit `resume_from_checkpoint=False` is also respected). Disable with `CODEBENCH_AUTO_CHECKPOINT=0`.
+
+The net effect: a vanilla HF training script —
 
 ```python
-import _cb_background as bg
-with bg.BackgroundSession():
-    for step in range(n_steps):
-        loss = train_step(batch)
-        ckpt.maybe_save(step)
-        if bg.time_remaining() < 10:
-            ckpt.save(step); break
+from transformers import TrainingArguments, Trainer
+args = TrainingArguments(output_dir="./run-1")
+trainer = Trainer(model=model, args=args, train_dataset=ds)
+trainer.train()           # on iPad: auto-checkpoint every 100 steps,
+                          # auto-resume on crash/relaunch
 ```
 
-Requires `BackgroundTimeManager.swift` in the host app (`@_cdecl` symbols `cb_bg_acquire / cb_bg_release / cb_bg_time_remaining` reachable via `dlopen(NULL)`). Falls back to no-op when not linked, so the same training script runs unchanged on macOS / Linux.
+— runs unchanged on Mac/Windows (with whatever HF defaults that platform implies) and on iPad (with the patched defaults plus auto-resume on relaunch).
 
-### LoRA → GGUF export — `_cb_gguf_export.py`
+### Manual-loop helpers — `_cb_training.py` (opt-in)
 
-Closes the train→deploy loop. Train a LoRA via PyTorch (using the Metal bridge for speed), then convert the resulting `.pt` to a GGUF adapter that llama.cpp can load via `/lora` for fast Metal-accelerated inference of the merged model. Pure-Python writer — no external deps.
+For training loops that don't use HF `Trainer`, five extra utilities are available via explicit import:
+
+- **`OOMGuard`** — auto-halves batch size and retries on out-of-memory.
+- **`MemoryProfiler`** — RSS snapshots between named checkpoints.
+- **`KVCache`** — per-layer key/value cache for autoregressive inference.
+- **`TrainingMonitor`** — terminal dashboard: loss/it-s/ETA/RAM/GPU dispatches.
+- **`AutoCheckpointer`** — periodic save + auto-resume for hand-rolled loops.
+
+These are NOT auto-installed — vanilla HF scripts don't need them. Import them only if you're writing a training loop without `Trainer`.
+
+### LoRA → GGUF export — standalone CLI
+
+Closes the train→deploy loop. After training a LoRA via PyTorch + HF Trainer (with the Metal bridge for speed), convert the resulting `.pt` to a GGUF adapter for fast Metal-accelerated inference in llama.cpp. Pure-Python writer, no external deps:
 
 ```bash
-python -m _cb_gguf_export --pt qwen-lora.pt --gguf qwen-lora.gguf \
-                          --arch qwen2 --alpha 16
+python -m _cb_gguf_export --pt ./run-1/checkpoint-500/adapter_model.pt \
+                          --gguf ./qwen-lora.gguf --arch qwen2 --alpha 16
 ```
 
 Supports Qwen / Llama / Mistral / Phi-family modules (`attn_q/k/v/output`, `ffn_gate/up/down`). For other architectures, extend `_MODULE_MAP`.
