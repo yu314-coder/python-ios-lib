@@ -460,7 +460,13 @@ First public iOS builds of each. Once added, `import torch`, `import transformer
 |---|---|---|---|
 | **PyTorch** | PyTorch 2.1.2 native iOS — tensors, autograd, nn, optim, JIT, FFT, LAPACK via Accelerate. **95/95 correctness asserts.** Ships `libtorch_python.dylib` as a ~14 MB LZMA blob (`Sources/PyTorch/torch_dylib/libtorch_python.dylib.applzma`); the `PyTorch` Swift package decompresses it to ~99 MB at first launch via `Compression.framework`. No Git LFS needed. | regex shim | [doc](docs/torch.md) |
 | **Tokenizers** | HuggingFace tokenizers 0.19.1 — real Rust BPE/WordPiece/Unigram trainers cross-compiled for iOS arm64 (PyO3). First public iOS build. | (none) | [doc](docs/tokenizers.md) |
-| **Transformers** | HuggingFace transformers 4.41.2 — BERT, GPT-2, T5, BART, Llama, Qwen. Construct + train + `.generate()` + save/load on-device. | + PyTorch, Tokenizers, `huggingface_hub`, `filelock`, `safetensors` | [doc](docs/transformers.md) |
+| **Transformers** | HuggingFace transformers 4.41.2 — BERT, GPT-2, T5, BART, Llama, Qwen. Construct + train + `.generate()` + save/load on-device. | + PyTorch, Tokenizers, `huggingface_hub`, `filelock`, `safetensors`, `accelerate`, `peft` | [doc](docs/transformers.md) |
+| **Accelerate** | HuggingFace Accelerate 0.30.1 — `Trainer` hard-imports it for device placement, gradient accumulation, mixed precision. Pure Python. | (none extra) | upstream [docs](https://huggingface.co/docs/accelerate) |
+| **PEFT** | HuggingFace PEFT 0.12.0 — `LoraConfig` + `get_peft_model` for LoRA / IA3 / prefix tuning. Pure Python. | + Transformers | upstream [docs](https://huggingface.co/docs/peft) |
+
+The `safetensors` shim is bidirectional: both `load_file` and `save_file` work, so `model.save_pretrained()` and `peft.save_pretrained()` write valid `.safetensors` files that load back bit-identical (verified via roundtrip test with fp16/bf16/fp32/int64/bool tensors).
+
+**Not yet bundled** (require C extensions we haven't cross-compiled): `datasets` (needs `pyarrow` + `pandas`), `sentencepiece` (needed only for Llama/T5/BART tokenizers — Qwen/GPT-2/most modern HF models work without it), `protobuf`, `evaluate`. Workaround for `datasets`: write a tiny `torch.utils.data.Dataset` subclass yourself.
 
 ### GPU acceleration for PyTorch (Metal bridge)
 
