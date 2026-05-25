@@ -1,109 +1,61 @@
-# pydub
+# pydub — audio manipulation
 
-> **Version:** 0.25.1 | **Type:** Stock (pure Python) | **Status:** Partial
+**Version:** 0.25.1  
+**Type:** Pure Python  
+**SPM target:** `Pydub`  
+**Total Python modules:** 11
 
-Audio manipulation library for creating, editing, and converting audio.
+High-level audio editing — load WAV/MP3, slice, concatenate, mix, fade, normalize, filter, export. All operations go through `AudioSegment`. Internally pydub shells out to `ffmpeg` for non-WAV formats; on iOS we don't have a `ffmpeg` subprocess, so WAV is the only first-class format. Use `pyav` directly for MP3/AAC/OGG.
 
----
+## Modules
 
-## Quick Start
+| Module | What it does |
+|---|---|
+| `pydub.__init__` | Re-exports `AudioSegment` (the only name 95% of users need) |
+| `pydub.audio_segment` | `AudioSegment` — the core immutable audio buffer. Construction (`from_file`, `from_wav`, `from_mp3`, `from_raw`, `silent`, `empty`), arithmetic (`+`/`*`/`-`), slicing (`seg[ms:ms]`), property accessors (`duration_seconds`, `frame_rate`, `channels`, `sample_width`, `rms`, `dBFS`, `max`, `max_dBFS`, `raw_data`), conversion (`set_frame_rate`, `set_channels`, `set_sample_width`), export, overlay, append, crossfade |
+| `pydub.generators` | Synthesizers: `Sine`, `Square`, `Sawtooth`, `Triangle`, `Pulse`, `WhiteNoise`. All inherit from `SignalGenerator` and have `.to_audio_segment(duration_ms, volume=0)` |
+| `pydub.effects` | Free-function effects: `normalize`, `speedup` (preserves pitch by chunking), `strip_silence`, `compress_dynamic_range`, `invert_phase`, `low_pass_filter`, `high_pass_filter`, `pan`, `apply_gain_stereo`, `apply_mono_filter_to_each_channel`. Also bound on `AudioSegment` as methods via `register_pydub_effect` |
+| `pydub.scipy_effects` | Higher-quality `band_pass_filter`, `low_pass_filter`, `high_pass_filter`, `eq` using `scipy.signal` IIR — auto-registered onto `AudioSegment` if scipy is importable |
+| `pydub.silence` | Silence detection + splitting: `detect_silence`, `detect_nonsilent`, `split_on_silence`, `detect_leading_silence` |
+| `pydub.playback` | `play(segment)` — tries simpleaudio → pyaudio → `ffplay`. **All three are unavailable on iOS** — see notes |
+| `pydub.utils` | `db_to_float`, `ratio_to_db`, `make_chunks`, `which` (PATH lookup), `mediainfo` / `mediainfo_json` (ffprobe wrappers), encoder/decoder discovery, codec caching, `register_pydub_effect` decorator |
+| `pydub.exceptions` | `PydubException`, `TooManyMissingFrames`, `InvalidDuration`, `InvalidID3TagVersion`, `InvalidTag`, `CouldntDecodeError`, `CouldntEncodeError`, `MissingAudioParameter` |
+| `pydub.pyaudioop` | Pure-Python reimplementation of stdlib `audioop` — used as a fallback when the C ext isn't available (Python 3.13+). On iOS this is the active backend |
+| `pydub.logging_utils` | `log_conversion`, `log_subprocess_output` — wire pydub's subprocess calls into `logging` |
+
+## iOS notes
+
+- **No `ffmpeg` subprocess.** `AudioSegment.from_mp3(...)`, `.from_ogg(...)`, `.export(format="mp3")`, etc. all shell out to `ffmpeg`/`ffprobe` — both unavailable. WAV-only is the reality.
+  - For non-WAV decode: use `av` (PyAV / FFmpeg-as-library) directly to read frames into a numpy array, then `AudioSegment(data=arr.tobytes(), sample_width=2, frame_rate=44100, channels=2)`.
+  - For non-WAV encode: same — write WAV via pydub, transcode with `av`.
+- **No playback.** `pydub.playback.play(seg)` will fail — simpleaudio/pyaudio aren't built, and `ffplay` isn't on PATH. Export to a temp WAV and play with `AVAudioPlayer` from Swift, or use the host app's audio infrastructure.
+- **`audioop` shim is active.** Python 3.13 removed the stdlib `audioop` C module. pydub auto-detects this and uses `pydub.pyaudioop` (pure Python) — slower for very long files but correct.
+- **scipy effects work** if scipy is imported first — they're registered as methods on `AudioSegment` at import time.
+
+## Example
 
 ```python
 from pydub import AudioSegment
 from pydub.generators import Sine, WhiteNoise
+from pydub.silence import split_on_silence
 
-tone = Sine(440).to_audio_segment(duration=1000)  # 440Hz for 1 second
-tone.export("/tmp/tone.wav", format="wav")
+# 1. Synth a chord
+a4   = Sine(440).to_audio_segment(duration=1000, volume=-6)
+cs5  = Sine(554.37).to_audio_segment(duration=1000, volume=-6)
+e5   = Sine(659.25).to_audio_segment(duration=1000, volume=-6)
+chord = a4.overlay(cs5).overlay(e5)
+chord.export("/tmp/A-major.wav", format="wav")
+
+# 2. Load + edit a recording (must be WAV on iOS)
+voice = AudioSegment.from_wav("/tmp/recording.wav")
+voice = voice.normalize()                       # peak to -0.1 dBFS
+voice = voice.fade_in(200).fade_out(500)
+voice = voice.low_pass_filter(8000)             # remove hiss
+voice = voice + 3                               # +3 dB
+voice[5000:10000].export("/tmp/clip.wav", format="wav")  # 5-10 s
+
+# 3. Split by silence
+chunks = split_on_silence(voice, min_silence_len=500, silence_thresh=voice.dBFS - 16)
+for i, ch in enumerate(chunks):
+    ch.export(f"/tmp/segment_{i}.wav", format="wav")
 ```
-
----
-
-## `AudioSegment` -- Core Class
-
-### Creation
-
-| Method | Description |
-|--------|-------------|
-| `AudioSegment.from_file(path, format)` | Load audio file |
-| `AudioSegment.from_wav(path)` | Load WAV file |
-| `AudioSegment.from_mp3(path)` | Load MP3 (needs ffmpeg) |
-| `AudioSegment.from_raw(data, sample_width, frame_rate, channels)` | From raw PCM data |
-| `AudioSegment.silent(duration, frame_rate)` | Generate silence (ms) |
-| `AudioSegment.empty()` | Empty segment |
-
-### Operations
-
-| Operation | Description |
-|-----------|-------------|
-| `seg1 + seg2` | Concatenate audio |
-| `seg * 3` | Repeat 3 times |
-| `seg + 6` | Increase volume by 6 dB |
-| `seg - 6` | Decrease volume by 6 dB |
-| `seg.overlay(other, position, gain_during_overlay)` | Mix/overlay audio |
-| `seg.append(other, crossfade)` | Append with optional crossfade |
-
-### Effects
-
-| Method | Description |
-|--------|-------------|
-| `seg.fade_in(duration_ms)` | Fade in |
-| `seg.fade_out(duration_ms)` | Fade out |
-| `seg.fade(from_gain, to_gain, start, end)` | Custom fade |
-| `seg.reverse()` | Reverse audio |
-| `seg.apply_gain(gain_dB)` | Apply gain |
-| `seg.normalize(headroom)` | Normalize to max volume |
-| `seg.compress_dynamic_range(threshold, ratio, attack, release)` | Dynamic range compression |
-| `seg.low_pass_filter(cutoff)` | Low-pass filter |
-| `seg.high_pass_filter(cutoff)` | High-pass filter |
-| `seg.pan(pan_amount)` | Pan left (-1) to right (+1) |
-| `seg.invert_phase()` | Invert phase |
-| `seg.speedup(playback_speed)` | Speed up (changes pitch) |
-
-### Slicing & Properties
-
-| Method / Property | Description |
-|-------------------|-------------|
-| `seg[start_ms:end_ms]` | Slice by time in milliseconds |
-| `seg.duration_seconds` | Duration in seconds |
-| `len(seg)` | Duration in milliseconds |
-| `seg.frame_rate` | Sample rate (Hz) |
-| `seg.channels` | Number of channels |
-| `seg.sample_width` | Bytes per sample |
-| `seg.frame_count()` | Total number of frames |
-| `seg.max` | Maximum amplitude |
-| `seg.max_dBFS` | Max amplitude in dBFS |
-| `seg.dBFS` | Average loudness in dBFS |
-| `seg.rms` | RMS amplitude |
-| `seg.raw_data` | Raw PCM bytes |
-
-### Export
-
-| Method | Description |
-|--------|-------------|
-| `seg.export(path, format, bitrate, parameters)` | Save audio file |
-| `seg.set_frame_rate(rate)` | Change sample rate |
-| `seg.set_channels(n)` | Convert mono/stereo |
-| `seg.set_sample_width(width)` | Change bit depth |
-
----
-
-## `pydub.generators` -- Audio Generators
-
-| Class | Description |
-|-------|-------------|
-| `Sine(freq)` | Sine wave generator |
-| `Square(freq)` | Square wave |
-| `Sawtooth(freq)` | Sawtooth wave |
-| `Triangle(freq)` | Triangle wave |
-| `WhiteNoise()` | White noise |
-| `Pulse(freq, duty_cycle)` | Pulse wave |
-
-All generators support `.to_audio_segment(duration, volume)`.
-
----
-
-## Limitations
-
-- No ffmpeg subprocess on iOS (limited format support)
-- WAV format works best; MP3/OGG encoding may not work
-- No real-time playback API

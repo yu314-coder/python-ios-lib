@@ -1,31 +1,43 @@
-# decorator (CodeBench shim)
+# decorator — minimal shim of Michele Simionato's package
 
-> **Version:** 5.1.1-offlinai-shim  | **Type:** Single-file pure-Python shim (~80 lines)  | **Status:** Fully working — covers manim's needs
+**Version:** 5.1.1-offlinai-shim (single-file)  
+**Type:** Pure Python (~80 lines)  
+**SPM target:** N/A — single `decorator.py` file lives at the site-packages root  
+**Auto-included by:** manim (`manim.utils.deprecation`)  
+**Total Python modules:** 1
 
-Tiny shim of [Michele Simionato's `decorator` package](https://pypi.org/project/decorator/).
-We don't ship the upstream wheel because:
+Manim's `manim/utils/deprecation.py` does `from decorator import decorate, decorator` and uses nothing else. The full upstream package pulls in `inspect.Signature`-based source rewriting we don't need on iOS, so we ship a 80-line shim that provides exactly those two names. Anything else (`FunctionMaker`, `contextmanager`, `dispatch_on`, `append`) raises `AttributeError` — the gap is intentionally loud so silent breakage is impossible.
 
-1. It pulls in `inspect.Signature`-based source rewriting we don't need
-   on iOS.
-2. It was the lone unmet dep blocking `from manim import *` in the
-   in-app shell — `manim/utils/deprecation.py:14` does `from decorator
-   import decorate, decorator` and that's the only API surface manim uses.
+## Modules
 
-So the shim provides exactly two functions, `decorate(func, caller)`
-and `decorator(caller)`, built on `functools.wraps` + `inspect.signature`.
-Anything else from upstream (`FunctionMaker`, `contextmanager`,
-`dispatch_on`, …) is intentionally absent — importing those names raises
-`AttributeError` so the gap is loud rather than silent.
+| Module | What it does |
+|---|---|
+| `decorator` (single file) | `decorate(func, caller)` — wrap `func` with a `caller(func, *a, **kw)` shim; `decorator(caller)` — turn a caller into a decorator factory. Both preserve name, qualname, docstring, annotations, signature via `functools.wraps` + explicit `__signature__` assignment |
 
----
+## What's NOT supported
 
-## Quick start
+| Upstream API | Drop-in replacement |
+|---|---|
+| `decorator.FunctionMaker` | None — full source-rewriting class manim doesn't need |
+| `decorator.contextmanager` | `contextlib.contextmanager` (stdlib) |
+| `decorator.dispatch_on` | `functools.singledispatch` (stdlib) |
+| `decorator.append` | None — niche, unused |
+
+Importing any of these raises `AttributeError: module 'decorator' has no attribute '<name>'`.
+
+## iOS notes
+
+- No deps beyond `functools` + `inspect` (both stdlib).
+- The dist-info ships a version string of `5.1.1` so `pip install`'s resolver thinks the upstream is already satisfied — `pip install --upgrade decorator` won't replace us unless you `--force-reinstall`.
+- If you actually need the full upstream API, `pip install --force-reinstall decorator` lands the real wheel in `~/Documents/site-packages/decorator/` which shadows this shim.
+
+## Example
 
 ```python
 from decorator import decorate, decorator
-import functools
+import inspect
 
-# 1. decorate(func, caller) — wrap `func` with a `caller(func, *a, **kw)` shim
+# 1. decorate(func, caller) — wrap func with a caller shim
 def trace(func, *args, **kwargs):
     print(f"calling {func.__name__}({args}, {kwargs})")
     return func(*args, **kwargs)
@@ -37,13 +49,12 @@ print(traced_add(2, 3))
 # → calling add((2, 3), {})
 # → 5
 
-# Signature is preserved (functools.wraps + __signature__ = inspect.signature(func))
+# Signature preserved
 print(traced_add.__name__)             # 'add'
-import inspect
 print(inspect.signature(traced_add))   # (x, y)
 
 
-# 2. decorator(caller) — turn a caller into a decorator factory
+# 2. decorator(caller) — caller → decorator factory
 @decorator
 def doubler(func, *args, **kwargs):
     return func(*args, **kwargs) * 2
@@ -54,8 +65,7 @@ def triple(x): return x * 3
 print(triple(4))   # → 24  (3 * 4 doubled)
 ```
 
-This is exactly the API manim's `deprecation.py` consumes — for
-example:
+This is exactly the API manim's `deprecation.py` consumes:
 
 ```python
 @deprecated(since="0.18", until="0.20")
@@ -63,31 +73,8 @@ def old_function():
     ...
 ```
 
-…calls `decorate(old_function, deprecate_caller)` under the hood,
-producing a wrapped `old_function` that emits a deprecation warning
-on every call while preserving its signature in the docs.
-
----
-
-## What's NOT supported
-
-Importing any of the following raises `AttributeError`:
-
-| Upstream API | Why it's missing |
-|---|---|
-| `decorator.FunctionMaker` | Source-rewriting class, hefty implementation manim doesn't need |
-| `decorator.contextmanager` | Use `contextlib.contextmanager` from the stdlib |
-| `decorator.dispatch_on` | Single-dispatch generic; use `functools.singledispatch` |
-| `decorator.append` / `decorator.contextmanager` | Niche, unused |
-
-If you actually need the full upstream package, `pip install decorator`
-will fall through to fetching it from PyPI (the dist-info we ship just
-labels the shim as v5.1.1; pip's resolver only verifies the version
-string matches).
-
----
+…calls `decorate(old_function, deprecate_caller)` under the hood, producing a wrapped `old_function` that emits a deprecation warning on every call while preserving its signature for Sphinx / IDE tooltips.
 
 ## Build provenance
 
-Single file at `app_packages/site-packages/decorator.py`, ~80 lines.
-No deps beyond stdlib (`functools`, `inspect`). Runs on any Python 3.8+.
+Single file at `app_packages/site-packages/decorator.py`, ~80 lines, Python 3.8+ compatible. The `decorator-5.1.1.dist-info/` directory next to it ships only `METADATA`, `RECORD`, and `WHEEL` (no upstream source).
