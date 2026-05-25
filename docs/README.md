@@ -66,6 +66,20 @@ All four share the same Monaco-based code editor (WKWebView) with IntelliSense (
 | **jsonschema** | 4.26.0 | Pure Python | JSON Schema validation (Draft 7) |
 | **PyYAML** | 6.0.3 | Native | YAML parsing and serialization |
 
+### Web frameworks (run dashboards on-device)
+
+All five are bundled with iOS-specific patches so Ctrl+C / Stop works,
+debug mode doesn't crash on missing `_multiprocessing`, and the
+preview panel auto-loads the running server URL. See [web-stack.md](web-stack.md) for details and feature tests.
+
+| Library | Version | Type | Description |
+|---------|---------|------|-------------|
+| **Werkzeug** | 3.1.x | Pure Python | WSGI utilities + dev server. Patched: `multiprocessing.Value` fallback, reloader auto-disable, preview hook, clean shutdown |
+| **Flask** | 3.x | Pure Python | Web framework on Werkzeug — routes, sessions, templates, blueprints |
+| **Dash** | 3.x | Pure Python | Plotly-based dashboards — reactive callbacks, dcc/html/dash_table |
+| **Streamlit** | 1.50.x | Pure Python | Script-style dashboards — declarative widgets, `@st.cache_data` |
+| **Tornado** | 6.5.x | Pure Python | Async HTTP/WebSocket framework — Streamlit's transport, usable standalone |
+
 ### Utilities
 
 | Library | Description |

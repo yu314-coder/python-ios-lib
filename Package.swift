@@ -48,6 +48,29 @@ let package = Package(
         .library(name: "Decorator", targets: ["Decorator"]),
         .library(name: "PyWebView", targets: ["PyWebView"]),
 
+        // ── Web frameworks + scientific extras (2026-05) ──
+        // Tropycal is standalone. Flask brings its full pure-Python
+        // stack so it actually runs (Werkzeug + Jinja2 + Markupsafe +
+        // Click). Dash bundles Flask + Plotly because that's the
+        // minimum that lets dash.Dash().run() serve a usable page.
+        // Streamlit lists PyArrow as a dep so SPM expresses the build
+        // graph correctly — but PyArrow is a placeholder target (no
+        // bundled binaries), so Streamlit's dataframe features error
+        // at runtime until someone cross-compiles Arrow C++ for iOS.
+        // See Sources/PyArrow/BUILD_INSTRUCTIONS.md.
+        .library(name: "Tropycal", targets: ["Tropycal"]),
+        .library(name: "Werkzeug", targets: ["Werkzeug"]),
+        .library(name: "Flask",    targets: ["Flask", "Werkzeug", "Jinja2",
+                                              "Markupsafe", "Click"]),
+        .library(name: "Dash",     targets: ["Dash", "Flask", "Werkzeug",
+                                              "Jinja2", "Markupsafe", "Click",
+                                              "Plotly"]),
+        .library(name: "PyArrow",  targets: ["PyArrow"]),
+        .library(name: "Streamlit", targets: ["Streamlit", "Click", "Watchdog",
+                                               "Typing_extensions", "PyArrow",
+                                               "Tornado"]),
+        .library(name: "Tornado",  targets: ["Tornado"]),
+
         // ── Multi-target umbrella products ──
         // Each tick in Xcode's product picker adds EVERY listed target's
         // framework + resource bundle to the consumer's project.pbxproj.
@@ -469,5 +492,85 @@ let package = Package(
             .copy("transformers-4.41.2.dist-info"),
             ]
         ),
+
+        // ─── New 2026-05 additions: web/data-app stacks ───────────────
+
+        // tropycal 1.4 — tropical cyclone analysis (HURDAT2, IBTrACS,
+        // climo statistics, storm-track utilities). Pure Python; the
+        // map-plotting features need cartopy which isn't bundled, but
+        // every data-analysis API works without it.
+        .target(name: "Tropycal", path: "Sources/Tropycal",
+                resources: [.copy("tropycal"),
+                            .copy("tropycal-1.4.dist-info")]),
+
+        // werkzeug 3.1 — WSGI utility layer; Flask's HTTP plumbing.
+        // Pure Python.
+        .target(name: "Werkzeug", path: "Sources/Werkzeug",
+                resources: [.copy("werkzeug"),
+                            .copy("werkzeug-3.1.8.dist-info")]),
+
+        // flask 3.1 — web microframework. Pure Python. Listed deps
+        // (Werkzeug / Jinja2 / Markupsafe / Click) are SPM dependencies
+        // so they end up linked into anything that depends on Flask.
+        .target(name: "Flask",
+                dependencies: ["Werkzeug", "Jinja2", "Markupsafe", "Click"],
+                path: "Sources/Flask",
+                resources: [.copy("flask"),
+                            .copy("flask-3.1.3.dist-info")]),
+
+        // dash 4.1 — Plotly's reactive web framework. Pure Python.
+        // The ~28 MB this adds is the prebuilt JS for dash-html-
+        // components and dash-core-components that ships inside the
+        // wheel; we can't strip it because Dash serves these as
+        // static assets at runtime.
+        .target(name: "Dash",
+                dependencies: ["Flask", "Plotly"],
+                path: "Sources/Dash",
+                resources: [.copy("dash"),
+                            .copy("dash-4.1.0.dist-info")]),
+
+        // pyarrow 15.0.2 — cross-compiled for iOS arm64. The actual
+        // tree is deployed via app_packages/site-packages/pyarrow/
+        // rather than through the SPM resource bundle. Reason: when
+        // SPM copies pyarrow's .so files into a Bundle.module, Xcode
+        // promotes each one into a `*.framework/` wrapper directory,
+        // which BREAKS `@rpath/libarrow_python.dylib` resolution —
+        // dyld looks for the dylib inside the wrapper instead of
+        // next to the .so where it actually sits.
+        //
+        // Living in app_packages/site-packages/ keeps the original
+        // `.so + .dylib` colocated, so `@loader_path` resolves cleanly.
+        // The SPM target is kept (as a Swift-only stub) so consumers
+        // can still depend on it for the version stamp / namespace.
+        //
+        // To rebuild or extend (parquet, dataset, etc.) see
+        // Sources/PyArrow/BUILD_INSTRUCTIONS.md.
+        .target(name: "PyArrow", path: "Sources/PyArrow"),
+
+        // streamlit 1.50 — data-app framework. Universal wheel; the
+        // 23 MB of static/ is the prebuilt React frontend it serves.
+        // Listed deps cover the pure-Python ones we already ship; the
+        // heavy hitters (numpy/pandas/pillow/rich/requests) the user
+        // ticks separately in Xcode since they're shared widely.
+        // PyArrow dep is intentional: streamlit's import will error
+        // clearly on iOS until the user supplies a real Arrow build.
+        .target(name: "Streamlit",
+                dependencies: ["Click", "Watchdog", "Typing_extensions",
+                               "PyArrow", "Tornado"],
+                path: "Sources/Streamlit",
+                resources: [.copy("streamlit"),
+                            .copy("streamlit-1.50.0.dist-info")]),
+
+        // tornado 6.5 — async HTTP / websocket framework, required by
+        // streamlit. The shipped wheel includes one optional C
+        // extension (tornado.speedups) for websocket-mask SIMD; we
+        // strip the .so on deploy because (a) it's a macOS Mach-O and
+        // would fail to load on iOS, and (b) tornado has a pure-Python
+        // fallback wrapped in try/except ImportError. Perf hit is
+        // negligible for the dashboard-render workloads.
+        .target(name: "Tornado",
+                path: "Sources/Tornado",
+                resources: [.copy("tornado"),
+                            .copy("tornado-6.5.5.dist-info")]),
     ]
 )

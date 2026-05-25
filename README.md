@@ -442,6 +442,8 @@ Pick whichever combination you need. Dependencies auto-resolve.
 | **FFmpegPyAV** | FFmpeg (7 dylibs) + PyAV video encoding (native iOS) | [doc](docs/ffmpeg-pyav.md) |
 | **Decorator** | Single-file shim of Michele Simionato's `decorator` package — covers manim's needs | [doc](docs/decorator.md) |
 | **PyWebView** | pywebview shim — embed HTML/CSS/JS UI in your iOS app from Python via the host's preview pane (full cookie API + file IPC) | [doc](docs/pywebview.md) |
+| **Werkzeug** | WSGI utilities + dev server (3.1.x). iOS-patched: `multiprocessing.Value` fallback, reloader auto-disable, preview-signal hook, clean-shutdown hook | [doc](docs/web-stack.md) |
+| **Tornado** | Async HTTP/WebSocket framework (6.5.x). Pure-Python; macOS `speedups.abi3.so` stripped, transparent Python fallback. Streamlit's transport, usable standalone | [doc](docs/web-stack.md) |
 
 ### Packages with dependencies (auto-included when you select)
 
@@ -452,6 +454,9 @@ Pick whichever combination you need. Dependencies auto-resolve.
 | **Matplotlib** | matplotlib (64 modules, Plotly backend) | + Plotly | [doc](docs/matplotlib.md) |
 | **Manim** | manim (145+ mobjects, 73 animations) | + NumPy, Matplotlib, FFmpegPyAV, CairoGraphics | [doc](docs/manim.md) |
 | **LaTeXEngine** | pdftex.xcframework + 33 MB bundled texmf tree (Latin Modern, amsmath, hyperref, expl3, …). `\documentclass{article}` end-to-end. | + CairoGraphics | [doc](docs/latex-engine.md) |
+| **Flask** | Web framework (3.x) on Werkzeug — routes, sessions, templates, blueprints | + Werkzeug, Jinja2, Markupsafe, Click | [doc](docs/web-stack.md) |
+| **Dash** | Plotly-based reactive dashboards (3.x) — callbacks, charts, tables, dcc + html components | + Flask, Werkzeug, Jinja2, Markupsafe, Click, Plotly | [doc](docs/web-stack.md) |
+| **Streamlit** | Script-style dashboards (1.50.x) — declarative widgets, `@st.cache_data`. iOS-patched: signal-handler skip, preview hook, clean shutdown | + Tornado, Click, Watchdog, Typing_extensions, PyArrow | [doc](docs/web-stack.md) |
 
 ### Machine Learning stack (PyTorch + HuggingFace)
 

@@ -96,3 +96,9 @@ psutil_ios/psutil-*.tar.gz
 # incompatible with SwiftPM checkout — users must download separately)
 app_packages/site-packages/torch/lib/libtorch_python.dylib
 Sources/PyTorch/torch/lib/libtorch_python.dylib
+
+# Local lib-build scratch trees (rebuild via per-lib scripts)
+cartopy_ios/
+pyarrow_ios/
+pyproj_ios/
+shapely_ios/
