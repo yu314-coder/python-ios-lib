@@ -830,6 +830,22 @@ The `app_packages/site-packages/` bundle ships **~115 Python packages** — ever
 | **jwt** (PyJWT) | JSON Web Tokens |
 | **webview** (PyWebView shim) | Embed HTML in host preview pane |
 
+### Web frameworks — host real dashboards on-device
+
+All five are iOS-patched (`multiprocessing.Value` fallback, signal-handler
+skip on worker thread, preview-panel auto-load, clean Ctrl+C shutdown).
+Tick any of these in Xcode → SPM pulls every transitive dependency.
+
+| Library | Version | Use case |
+|---|---|---|
+| **Werkzeug** | 3.1.x | WSGI utilities + dev server. Standalone, or the foundation Flask is built on |
+| **Flask** | 3.x | Classic web framework — routes, sessions, templates, blueprints |
+| **Dash** | 3.x | Plotly-based reactive dashboards — `dcc`, `html`, `dash_table`, pattern-matching callbacks |
+| **Streamlit** | 1.50.x | Script-style dashboards — declarative widgets, `@st.cache_data`, fragments |
+| **Tornado** | 6.5.x | Async HTTP/WebSocket framework. Streamlit's transport, usable standalone |
+
+Per-lib docs: [werkzeug.md](docs/werkzeug.md) · [flask.md](docs/flask.md) · [dash.md](docs/dash.md) · [streamlit.md](docs/streamlit.md) · [tornado.md](docs/tornado.md). Cross-stack iOS-patch story: [web-stack.md](docs/web-stack.md).
+
 ### Data Formats
 
 | Library | Notes |
@@ -1000,8 +1016,20 @@ notes, limitations, troubleshooting, and build provenance.
 | **urllib3** | [docs/urllib3.md](docs/urllib3.md) |
 | **BeautifulSoup4** | [docs/beautifulsoup.md](docs/beautifulsoup.md) |
 | **certifi** (CA bundle for HTTPS) | [docs/certifi.md](docs/certifi.md) |
-| **charset_normalizer + idna** | [docs/encoding.md](docs/encoding.md) |
+| **charset_normalizer** | [docs/charset-normalizer.md](docs/charset-normalizer.md) |
+| **idna** | [docs/idna.md](docs/idna.md) |
 | **PyWebView (CodeBench shim)** — full cookie API + verbose logging | [docs/pywebview.md](docs/pywebview.md) |
+
+### Web frameworks (run dashboards on-device)
+
+| Library | Doc |
+|---|---|
+| **Werkzeug** (WSGI utilities + dev server) | [docs/werkzeug.md](docs/werkzeug.md) |
+| **Flask** (web framework on Werkzeug) | [docs/flask.md](docs/flask.md) |
+| **Dash** (Plotly-based reactive dashboards) | [docs/dash.md](docs/dash.md) |
+| **Streamlit** (script-style dashboards) | [docs/streamlit.md](docs/streamlit.md) |
+| **Tornado** (async HTTP/WebSocket — Streamlit's transport) | [docs/tornado.md](docs/tornado.md) |
+| **Cross-stack iOS patches + Ctrl+C behavior** | [docs/web-stack.md](docs/web-stack.md) |
 
 ### Data / config
 
@@ -1045,14 +1073,36 @@ notes, limitations, troubleshooting, and build provenance.
 
 | Lib | Doc |
 |---|---|
-| **attrs / packaging / narwhals / referencing** | [docs/minor-libs.md](docs/minor-libs.md) |
-| **cloup / soupsieve / rpds / srt / pylab / torchgen / setuptools / wheel / pkg_resources / _distutils_hack** | [docs/small-utils.md](docs/small-utils.md) |
+| **attrs** | [docs/attrs.md](docs/attrs.md) |
+| **packaging** | [docs/packaging.md](docs/packaging.md) |
+| **narwhals** | [docs/narwhals.md](docs/narwhals.md) |
+| **referencing** | [docs/referencing.md](docs/referencing.md) |
+| **cloup** | [docs/cloup.md](docs/cloup.md) |
+| **srt** | [docs/srt.md](docs/srt.md) |
+| **mdurl** | [docs/mdurl.md](docs/mdurl.md) |
+| **typing_extensions** | [docs/typing-extensions.md](docs/typing-extensions.md) |
+| **isosurfaces** | [docs/isosurfaces.md](docs/isosurfaces.md) |
+| **mapbox_earcut** | [docs/mapbox-earcut.md](docs/mapbox-earcut.md) |
+| **pathops** (skia-pathops) | [docs/pathops.md](docs/pathops.md) |
+| **pycairo** | [docs/pycairo.md](docs/pycairo.md) |
+| **rpds** (iOS stub) | [docs/rpds.md](docs/rpds.md) |
+| **pylab** | [docs/pylab.md](docs/pylab.md) |
+| **torchgen** | [docs/torchgen.md](docs/torchgen.md) |
+| **setuptools** | [docs/setuptools.md](docs/setuptools.md) |
+| **wheel** | [docs/wheel.md](docs/wheel.md) |
+| **pkg_resources** | [docs/pkg-resources.md](docs/pkg-resources.md) |
+| **_distutils_hack** | [docs/distutils-hack.md](docs/distutils-hack.md) |
+| **psutil** | [docs/psutil.md](docs/psutil.md) |
+| **filelock** | [docs/filelock.md](docs/filelock.md) |
+| **watchdog** | [docs/watchdog.md](docs/watchdog.md) |
 
 ### CodeBench glue layer (host-app integration)
 
 | Module | Doc |
 |---|---|
-| **offlinai_shell** (108 builtins) + **offlinai_ai** (chat REPL) + **offlinai_latex** (math/doc bridge) | [docs/codebench-extras.md](docs/codebench-extras.md) |
+| **offlinai_shell** (108 builtins, Ctrl+C watchdog, convenience-imports, HF git clone, AI mode) | [docs/offlinai-shell.md](docs/offlinai-shell.md) |
+| **offlinai_ai** (chat REPL backed by bundled llama.cpp) | [docs/offlinai-ai.md](docs/offlinai-ai.md) |
+| **offlinai_latex** (math/doc bridge to SwiftMath + busytex) | [docs/offlinai-latex.md](docs/offlinai-latex.md) |
 
 ---
 
@@ -1062,51 +1112,75 @@ If you're looking for a specific package and forgot which doc it's in:
 
 | `import X` | Doc |
 |---|---|
-| `attr` / `attrs` | [minor-libs.md](docs/minor-libs.md) |
+| `attrs` | [attrs.md](docs/attrs.md) |
 | `audioop` | [audioop.md](docs/audioop.md) |
-| `av` | [av-pyav.md](docs/av-pyav.md) / [ffmpeg-pyav.md](docs/ffmpeg-pyav.md) |
+| `av` | [av-pyav.md](docs/av-pyav.md) · [ffmpeg-pyav.md](docs/ffmpeg-pyav.md) |
 | `bs4` | [beautifulsoup.md](docs/beautifulsoup.md) |
-| `cairo` | [cairographics.md](docs/cairographics.md) |
+| `cairo` (pycairo) | [pycairo.md](docs/pycairo.md) · [cairographics.md](docs/cairographics.md) |
 | `certifi` | [certifi.md](docs/certifi.md) |
 | `cffi` / `pycparser` | [cffi.md](docs/cffi.md) |
-| `charset_normalizer` / `idna` | [encoding.md](docs/encoding.md) |
-| `click` / `cloup` | [click.md](docs/click.md) / [small-utils.md](docs/small-utils.md) |
+| `charset_normalizer` | [charset-normalizer.md](docs/charset-normalizer.md) |
+| `click` | [click.md](docs/click.md) |
+| `cloup` | [cloup.md](docs/cloup.md) |
+| `dash` | [dash.md](docs/dash.md) · [web-stack.md](docs/web-stack.md) |
 | `decorator` | [decorator.md](docs/decorator.md) |
-| `filelock` / `psutil` / `watchdog` | [process-and-io.md](docs/process-and-io.md) |
+| `_distutils_hack` | [distutils-hack.md](docs/distutils-hack.md) |
+| `filelock` | [filelock.md](docs/filelock.md) |
+| `flask` | [flask.md](docs/flask.md) · [web-stack.md](docs/web-stack.md) |
 | `huggingface_hub` | [huggingface-hub.md](docs/huggingface-hub.md) |
-| `isosurfaces` / `mapbox_earcut` / `pathops` | [manim-deps.md](docs/manim-deps.md) |
-| `jsonschema` / `jsonschema_specifications` / `referencing` / `rpds` | [jsonschema.md](docs/jsonschema.md) / [small-utils.md](docs/small-utils.md) |
+| `idna` | [idna.md](docs/idna.md) |
+| `isosurfaces` | [isosurfaces.md](docs/isosurfaces.md) |
+| `jsonschema` / `jsonschema_specifications` | [jsonschema.md](docs/jsonschema.md) |
 | `manim` | [manim.md](docs/manim.md) |
 | `manimpango` | [manimpango.md](docs/manimpango.md) |
-| `markdown_it` / `mdurl` | [markdown-it.md](docs/markdown-it.md) |
-| `matplotlib` / `mpl_toolkits` / `pylab` | [matplotlib.md](docs/matplotlib.md) / [small-utils.md](docs/small-utils.md) |
+| `mapbox_earcut` | [mapbox-earcut.md](docs/mapbox-earcut.md) |
+| `markdown_it` | [markdown-it.md](docs/markdown-it.md) |
+| `matplotlib` / `mpl_toolkits` | [matplotlib.md](docs/matplotlib.md) |
+| `mdurl` | [mdurl.md](docs/mdurl.md) |
 | `moderngl` / `moderngl_window` / `screeninfo` | [moderngl.md](docs/moderngl.md) |
 | `mpmath` | [mpmath.md](docs/mpmath.md) |
-| `narwhals` / `packaging` | [minor-libs.md](docs/minor-libs.md) |
+| `narwhals` | [narwhals.md](docs/narwhals.md) |
 | `networkx` | [networkx.md](docs/networkx.md) |
 | `numpy` | [numpy.md](docs/numpy.md) |
-| `offlinai_ai` / `offlinai_latex` / `offlinai_shell` | [codebench-extras.md](docs/codebench-extras.md) |
+| `offlinai_ai` | [offlinai-ai.md](docs/offlinai-ai.md) |
+| `offlinai_latex` | [offlinai-latex.md](docs/offlinai-latex.md) |
+| `offlinai_shell` | [offlinai-shell.md](docs/offlinai-shell.md) |
+| `packaging` | [packaging.md](docs/packaging.md) |
+| `pathops` (skia-pathops) | [pathops.md](docs/pathops.md) |
 | `PIL` (Pillow) | [pillow.md](docs/pillow.md) |
 | `pip` (and the shell wrapper) | [pip.md](docs/pip.md) |
+| `pkg_resources` | [pkg-resources.md](docs/pkg-resources.md) |
 | `plotly` / `_plotly_utils` | [plotly.md](docs/plotly.md) |
+| `psutil` | [psutil.md](docs/psutil.md) |
 | `pydub` | [pydub.md](docs/pydub.md) |
 | `pygments` | [pygments.md](docs/pygments.md) |
-| `regex` / `typing_extensions` | [regex-and-typing.md](docs/regex-and-typing.md) |
-| `requests` / `urllib3` | [requests.md](docs/requests.md) / [urllib3.md](docs/urllib3.md) |
+| `pylab` | [pylab.md](docs/pylab.md) |
+| `referencing` | [referencing.md](docs/referencing.md) |
+| `regex` | [regex.md](docs/regex.md) |
+| `requests` | [requests.md](docs/requests.md) |
 | `rich` | [rich.md](docs/rich.md) |
+| `rpds` | [rpds.md](docs/rpds.md) |
 | `safetensors` | [safetensors.md](docs/safetensors.md) |
 | `scipy` | [scipy-ios.md](docs/scipy-ios.md) |
-| `setuptools` / `wheel` / `pkg_resources` / `_distutils_hack` | [small-utils.md](docs/small-utils.md) |
+| `setuptools` | [setuptools.md](docs/setuptools.md) |
 | `sklearn` | [sklearn.md](docs/sklearn.md) |
-| `soupsieve` | [small-utils.md](docs/small-utils.md) |
-| `srt` | [small-utils.md](docs/small-utils.md) |
+| `soupsieve` | (ships with bs4 — see [beautifulsoup.md](docs/beautifulsoup.md)) |
+| `srt` | [srt.md](docs/srt.md) |
+| `streamlit` | [streamlit.md](docs/streamlit.md) · [web-stack.md](docs/web-stack.md) |
 | `svgelements` | [svgelements.md](docs/svgelements.md) |
 | `sympy` | [sympy.md](docs/sympy.md) |
 | `tokenizers` | [tokenizers.md](docs/tokenizers.md) |
-| `torch` / `torchgen` | [torch.md](docs/torch.md) / [small-utils.md](docs/small-utils.md) |
+| `torch` | [torch.md](docs/torch.md) |
+| `torchgen` | [torchgen.md](docs/torchgen.md) |
+| `tornado` | [tornado.md](docs/tornado.md) · [web-stack.md](docs/web-stack.md) |
 | `tqdm` | [tqdm.md](docs/tqdm.md) |
 | `transformers` | [transformers.md](docs/transformers.md) |
+| `typing_extensions` | [typing-extensions.md](docs/typing-extensions.md) |
+| `urllib3` | [urllib3.md](docs/urllib3.md) |
+| `watchdog` | [watchdog.md](docs/watchdog.md) |
 | `webview` (PyWebView shim) | [pywebview.md](docs/pywebview.md) |
+| `werkzeug` | [werkzeug.md](docs/werkzeug.md) · [web-stack.md](docs/web-stack.md) |
+| `wheel` | [wheel.md](docs/wheel.md) |
 | `yaml` (PyYAML) | [pyyaml.md](docs/pyyaml.md) |
 
 ## Requirements
