@@ -70,15 +70,17 @@ All four share the same Monaco-based code editor (WKWebView) with IntelliSense (
 
 All five are bundled with iOS-specific patches so Ctrl+C / Stop works,
 debug mode doesn't crash on missing `_multiprocessing`, and the
-preview panel auto-loads the running server URL. See [web-stack.md](web-stack.md) for details and feature tests.
+preview panel auto-loads the running server URL. Click any library
+name for its detailed module list. See [web-stack.md](web-stack.md)
+for the cross-library iOS patches and feature tests.
 
-| Library | Version | Type | Description |
-|---------|---------|------|-------------|
-| **Werkzeug** | 3.1.x | Pure Python | WSGI utilities + dev server. Patched: `multiprocessing.Value` fallback, reloader auto-disable, preview hook, clean shutdown |
-| **Flask** | 3.x | Pure Python | Web framework on Werkzeug — routes, sessions, templates, blueprints |
-| **Dash** | 3.x | Pure Python | Plotly-based dashboards — reactive callbacks, dcc/html/dash_table |
-| **Streamlit** | 1.50.x | Pure Python | Script-style dashboards — declarative widgets, `@st.cache_data` |
-| **Tornado** | 6.5.x | Pure Python | Async HTTP/WebSocket framework — Streamlit's transport, usable standalone |
+| Library | Version | Modules | Description |
+|---------|---------|---------|-------------|
+| [**Werkzeug**](werkzeug.md) | 3.1.x | 52 | WSGI utilities + dev server. Patched: `multiprocessing.Value` fallback, reloader auto-disable, preview hook, clean shutdown |
+| [**Flask**](flask.md) | 3.x | 24 | Web framework on Werkzeug — routes, sessions, templates, blueprints, signals, CLI |
+| [**Dash**](dash.md) | 3.x | 211 | Plotly-based dashboards — reactive callbacks, `dcc`/`html`/`dash_table`, pattern-matching callbacks |
+| [**Streamlit**](streamlit.md) | 1.50.x | 213 | Script-style dashboards — declarative widgets, `@st.cache_data`, sessions, fragments |
+| [**Tornado**](tornado.md) | 6.5.x | 73 | Async HTTP/WebSocket framework — Streamlit's transport, usable standalone |
 
 ### Utilities
 
