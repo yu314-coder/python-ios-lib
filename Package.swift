@@ -73,6 +73,12 @@ let package = Package(
         .library(name: "Xxhash",   targets: ["Xxhash"]),
         .library(name: "Rapidfuzz",   targets: ["Rapidfuzz"]),
         .library(name: "Levenshtein", targets: ["Levenshtein", "Rapidfuzz"]),
+        // Performance-accelerator block (added 2026-05-26):
+        .library(name: "Orjson",     targets: ["Orjson"]),     // fast JSON
+        .library(name: "Uvloop",     targets: ["Uvloop"]),     // fast asyncio
+        .library(name: "Ciso8601",   targets: ["Ciso8601"]),   // fast ISO date parse
+        .library(name: "Numexpr",    targets: ["Numexpr"]),    // fast NumPy expressions
+        .library(name: "Bottleneck", targets: ["Bottleneck"]), // fast NaN/rolling stats
 
         // ── Multi-target umbrella products ──
         // Each tick in Xcode's product picker adds EVERY listed target's
@@ -612,5 +618,60 @@ let package = Package(
                 path: "Sources/Levenshtein",
                 resources: [.copy("Levenshtein"),
                             .copy("Levenshtein-0.27.3.dist-info")]),
+
+        // ── Performance accelerators (added 2026-05-26) ──
+        // Five drop-in or near-drop-in replacements that speed up common
+        // operations across the entire Python stack. Total ~3.2 MB native.
+
+        // orjson 3.11.9 — Rust-backed JSON encode/decode. 5-10× faster
+        // than stdlib json. Used by FastAPI internals (when present) and
+        // by anything that hits json.dumps in a hot path. Single 757 KB
+        // .so. Compiled via cargo + pyo3 (config file overrides cross
+        // compile target — no Python interpreter probe needed).
+        .target(name: "Orjson",
+                path: "Sources/Orjson",
+                resources: [.copy("orjson.cpython-314-iphoneos.so"),
+                            .copy("orjson-3.11.9.dist-info")]),
+
+        // uvloop 0.22.1 — libuv-backed asyncio event loop. 2-4× faster
+        // than the stdlib selectors_events policy. Drop-in:
+        //   import uvloop; uvloop.install()
+        // 1.8 MB total: vendored libuv built as a static archive
+        // (autotools cross-compile via ./configure --host=aarch64-apple-
+        // darwin), then uvloop/loop.c (Cython output) linked against it.
+        .target(name: "Uvloop",
+                path: "Sources/Uvloop",
+                resources: [.copy("uvloop"),
+                            .copy("uvloop-0.22.1.dist-info")]),
+
+        // ciso8601 2.3.3 — fast ISO 8601 datetime parser. 20-50× faster
+        // than datetime.fromisoformat for CSV / Parquet / JSON timestamp
+        // ingestion. 67 KB single .so. Three C files compiled in one
+        // clang call.
+        .target(name: "Ciso8601",
+                path: "Sources/Ciso8601",
+                resources: [.copy("ciso8601"),
+                            .copy("ciso8601.cpython-314-iphoneos.so"),
+                            .copy("ciso8601-2.3.3.dist-info")]),
+
+        // numexpr 2.14.1 — fast NumPy array-expression evaluator. 2-5×
+        // faster pandas.eval / pandas.query and large element-wise
+        // arithmetic. 175 KB native (C++17 interpreter linking numpy
+        // C API).
+        .target(name: "Numexpr",
+                path: "Sources/Numexpr",
+                resources: [.copy("numexpr"),
+                            .copy("numexpr-2.14.1.dist-info")]),
+
+        // Bottleneck 1.6.0 — fast NaN-aware numpy ops + rolling stats.
+        // pandas uses it under the hood for nanmean / nanstd /
+        // .rolling().mean() etc. 5-25× speedup for those paths.
+        // 4 native modules (reduce, move, nonreduce, nonreduce_axis)
+        // totaling ~390 KB. Templates expanded by bn_template.py before
+        // the clang cross-compile pass.
+        .target(name: "Bottleneck",
+                path: "Sources/Bottleneck",
+                resources: [.copy("bottleneck"),
+                            .copy("bottleneck-1.6.0.dist-info")]),
     ]
 )

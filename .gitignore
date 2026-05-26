@@ -107,3 +107,10 @@ shapely_ios/
 xxhash_ios/
 rapidfuzz_ios/
 levenshtein_ios/
+
+# Perf-accel build scratch trees (added 2026-05-26)
+ciso8601_ios/
+numexpr_ios/
+bottleneck_ios/
+uvloop_ios/
+orjson_ios/
