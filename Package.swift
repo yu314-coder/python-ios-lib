@@ -70,6 +70,9 @@ let package = Package(
                                                "Typing_extensions", "PyArrow",
                                                "Tornado"]),
         .library(name: "Tornado",  targets: ["Tornado"]),
+        .library(name: "Xxhash",   targets: ["Xxhash"]),
+        .library(name: "Rapidfuzz",   targets: ["Rapidfuzz"]),
+        .library(name: "Levenshtein", targets: ["Levenshtein", "Rapidfuzz"]),
 
         // ── Multi-target umbrella products ──
         // Each tick in Xcode's product picker adds EVERY listed target's
@@ -572,5 +575,42 @@ let package = Package(
                 path: "Sources/Tornado",
                 resources: [.copy("tornado"),
                             .copy("tornado-6.5.5.dist-info")]),
+
+        // xxhash 3.7.0 — fast non-cryptographic hash (xxh32/64/3/128).
+        // Single C extension (105 KB iOS arm64 .so) wrapping the bundled
+        // xxhash C library. Common transitive dep of HuggingFace datasets,
+        // polars, and many ML/data libs.
+        .target(name: "Xxhash",
+                path: "Sources/Xxhash",
+                resources: [.copy("xxhash"),
+                            .copy("xxhash-3.7.0.dist-info")]),
+
+        // rapidfuzz 3.14.5 — fast string distance / fuzzy matching engine.
+        // 6 native modules cross-compiled from Cython output (.cxx):
+        //   _feature_detector_cpp (98 KB) — CPU SIMD detection (no-op on
+        //     arm64 — patched CpuInfo.cpp to skip x86 cpuid intrinsics)
+        //   fuzz_cpp (2.1 MB) — fuzz ratio, partial ratio, token sort
+        //   utils_cpp (249 KB) — string normalization helpers
+        //   process_cpp_impl (907 KB) — extract / extractOne over corpora
+        //   distance/_initialize_cpp (361 KB) — distance scorer init
+        //   distance/metrics_cpp (2.7 MB) — Levenshtein/Hamming/Jaro/etc.
+        // Total native: ~6.4 MB. Header-only rapidfuzz-cpp + taskflow C++
+        // libraries vendored at build time. Used directly OR as the engine
+        // under Levenshtein (which is just a thin wrapper).
+        .target(name: "Rapidfuzz",
+                path: "Sources/Rapidfuzz",
+                resources: [.copy("rapidfuzz"),
+                            .copy("rapidfuzz-3.14.5.dist-info")]),
+
+        // Levenshtein 0.27.3 — Cython wrapper over rapidfuzz exposing the
+        // classic python-Levenshtein API (distance, ratio, editops,
+        // matching_blocks, StringMatcher). 1 native module (579 KB iOS
+        // arm64 .so). Requires rapidfuzz at runtime — SPM dep above ties
+        // them together so users only have to tick Levenshtein in Xcode.
+        .target(name: "Levenshtein",
+                dependencies: ["Rapidfuzz"],
+                path: "Sources/Levenshtein",
+                resources: [.copy("Levenshtein"),
+                            .copy("Levenshtein-0.27.3.dist-info")]),
     ]
 )

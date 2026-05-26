@@ -102,3 +102,8 @@ cartopy_ios/
 pyarrow_ios/
 pyproj_ios/
 shapely_ios/
+
+# Lib-build scratch trees added 2026-05-26
+xxhash_ios/
+rapidfuzz_ios/
+levenshtein_ios/
