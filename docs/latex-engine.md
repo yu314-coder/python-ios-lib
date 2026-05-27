@@ -163,40 +163,55 @@ for the fontconfig setup.
 
 ## What's INCLUDED in texmf
 
-This is enough to compile most standard documents:
+365 `.sty` / `.cls` files across 17 document classes — enough to compile
+the vast majority of real-world documents. Full list in the
+**[Bundled package inventory](#bundled-package-inventory)** appendix below.
 
-- **`article` / `report` / `book` / `letter`** classes
-- **`amsmath`** — display math, alignments, matrices, theorems
-- **`amssymb`** — extended math symbols (`\mathbb`, `\mathfrak`, …)
-- **`amsthm`** — theorem environments
-- **`mathtools`** — extends amsmath with `\coloneqq`, `\DeclarePairedDelimiter`, etc.
-- **`hyperref`** — clickable links, bookmarks, PDF metadata
-- **`graphicx`** — include external images (PDF / PNG)
-- **`xcolor`** — full named-color palette
-- **`tikz`** — partial — base + arrows + decorations + positioning libraries
-- **`expl3` / `l3kernel`** — needed by modern packages
-- **`firstaid`** — compatibility shims for older code
-- **Latin Modern** font family — `lmroman10-regular`, `lmsans10-regular`,
-  `lmmono10-regular`, italic / bold / bolditalic / smallcaps variants
-- **English hyphenation** + many other languages
+Highlights by category:
+
+- **Classes**: `article`, `report`, `book`, `letter`, `beamer`, `amsart`,
+  `amsbook`, `amsproc`, `proc`, `slides`, `minimal`
+- **Math**: `amsmath`, `amssymb`, `amsthm`, `amsbsy`, `amscd`, `amsfonts`,
+  `amsopn`, `amstext`, `mathtools`, `bbm`, `amstex`
+- **Drawing**: `pgf` + full `tikz` library set (arrows, decorations,
+  patterns, plots, shapes, snakes, automata, calendar, …)
+- **Slides**: `beamer` + all `beamerbase*` modules + beamer themes
+- **Hyperlinks**: `hyperref` + dependencies (`pdfescape`, `kvsetkeys`,
+  `hypcap`, `backref`, `refcount`, `letltxmacro`, `atveryend`,
+  `atbegshi`, `auxhook`)
+- **Layout**: `geometry`, `fancyhdr`, `setspace`, `microtype`,
+  `booktabs`, `float`, `listings`, `enumitem`, `caption` / `subcaption`
+  / `bicaption` / `ltcaption`, `titlesec`-friendly stack
+- **Cross-refs**: `cleveref`, `refcount`, `etoolbox`
+- **Graphics**: `graphicx`, `color`, `graphpap`
+- **CJK**: `CJK`, `CJKutf8`, `CJKnumb`, `CJKfntef`, `CJKulem`,
+  `CJKspace`, `CJKvert`
+- **Fonts**: full Latin Modern Type 1 (92 `.pfb` files, 596 `.tfm`
+  metrics, italic / bold / bolditalic / smallcaps), `fontenc`,
+  `inputenc`, `t1enc`
+- **Engine plumbing**: `expl3`, `l3kernel`, `firstaid`,
+  `graphics-def`, `pdftexcmds`, `pdfescape`, `etoolbox`, `fp`
+- **Hyphenation**: English + many other languages
 
 ## What's NOT included
 
-- **xelatex / lualatex** — only pdftex. Documents using
-  `\usepackage{fontspec}` won't compile (no Unicode font loading).
-  For CJK / arbitrary Unicode, use the Pango fallback path through
-  `offlinai_latex.tex_to_image()` instead.
-- **Beamer** — too large to ship; if you need slides, use
-  `\documentclass{article}` + `\usepackage{geometry}` + custom layout.
-- **Heavy font families** — Computer Modern Type1 (`cm-super`),
-  Source Sans, EB Garamond, etc. The lmodern declarations are
-  auto-injected so docs don't need cm-super.
-- **biber / bibtex8** — only the legacy `bibtex` (8-bit) is
-  reachable, and only via the in-process pdftex driver. For modern
-  bibliography, pre-compile the `.bbl` outside the app and ship it
-  alongside the source.
-- **External system tools** — `dvips`, `dvipdfmx`, `epstopdf` are
-  not bundled. Stick to PDF output and PDF-native graphics.
+- **xelatex / lualatex** — only pdftex is wired up in this SPM target.
+  Documents using `\usepackage{fontspec}` won't compile through
+  `LaTeXEngine` (no Unicode font loading). For arbitrary Unicode,
+  CodeBench's busytex-WASM path supports xelatex — see
+  [docs/offlinai-latex.md](offlinai-latex.md).
+- **Computer Modern bitmap fonts** — `cm-super` not shipped; Latin
+  Modern (`lmodern`) is auto-substituted via the engine's
+  preamble-injection hook so docs requesting cm fonts still compile.
+- **biber** — only legacy `bibtex` (8-bit) reachable in-process.
+  For modern bibliography, pre-compile the `.bbl` outside the app
+  and ship it alongside the source. `backref` is bundled so back-
+  references in PDFs still work.
+- **`pythontex` / `minted`** — both rely on `\write18` (shell
+  escape), which iOS forbids. Use `listings` instead for code
+  blocks; it's bundled and produces good syntax-coloured output.
+- **External tools** — `dvips`, `dvipdfmx`, `epstopdf`, `latexmk`
+  are not bundled. Stick to PDF output and PDF-native graphics.
 
 ---
 
@@ -269,3 +284,182 @@ TeX source, or pass `-interaction=nonstopmode` as a CLI arg.
 - texmf curated by hand from a `texlive-full` install, removing
   unused languages (kept ~50 MB → ~33 MB after pruning)
 - All three xcframeworks built with Xcode 16, targeting iOS 17+
+
+---
+
+## Bundled package inventory
+
+Generated via `find Sources/LaTeXEngine/latex/texmf -name '*.sty' -o -name '*.cls'`.
+Total: **365 packages, 17 document classes**.
+
+For each: just `\documentclass{...}` or `\usepackage{...}` and it works
+— no `! LaTeX Error: File ... not found`.
+
+### Document classes (17)
+
+| Class | Purpose |
+|---|---|
+| `article` | Standard short documents (most common) |
+| `report` | Multi-chapter reports |
+| `book` | Books with parts / chapters / front-matter |
+| `letter` | Business letters with `\opening` / `\closing` |
+| `beamer` | **Full beamer** for slide decks |
+| `proc` | Proceedings articles |
+| `slides` | Plain LaTeX slides (legacy) |
+| `minimal` | Empty class for testing |
+| `amsart`, `amsbook`, `amsproc` | AMS journal/book/proceedings |
+| `amsdtx`, `amsldoc` | AMS documentation classes |
+| `l3doc`, `ltxguide`, `ltxnews`, `ltxdoc` | LaTeX kernel documentation classes |
+
+### Math + AMS
+
+| Package | What it gives you |
+|---|---|
+| `amsmath` | `align`, `gather`, `matrix`, `cases`, `\dfrac`, `\substack`, … |
+| `amssymb` | `\mathbb{R}`, `\mathfrak`, `\mathcal`, `\hbar`, `\square`, … |
+| `amsthm` | `\newtheorem`, `proof` environment, `\qedhere` |
+| `amsbsy` | Bold math (`\boldsymbol`, `\pmb`) |
+| `amscd` | Commutative diagrams (`CD` environment) |
+| `amsfonts` | `\mathbb`, `\mathfrak` base fonts |
+| `amsgen`, `amsopn`, `amstext`, `amstex`, `amsbooka`, `amsmidx`, `amsxtra` | AMS support packages |
+| `mathtools` | Extends `amsmath` — `\coloneqq`, `\DeclarePairedDelimiter`, mat\* envs |
+| `bbm` (+ `bbm-macros`) | `\mathbbm{1}` blackboard-bold double-struck |
+
+### Graphics, color, drawing
+
+| Package | What it gives you |
+|---|---|
+| `graphics`, `graphicx` | `\includegraphics{file.pdf}` |
+| `graphics-def` | Engine-specific driver definitions |
+| `color`, `xcolor` (via `graphics-def`) | Named colors, color models |
+| `graphpap` | Graph paper backgrounds |
+| `pgf` | **Full PGF** — basic drawing primitives |
+| `tikz` | **Full TikZ** — high-level drawing language |
+| `pgfarrows`, `pgfautomata`, `pgfcalendar` | TikZ libraries (arrow tips, automata, calendar) |
+| `pgfbase{image,layers,matrix,patterns,plot,shapes,snakes}` | TikZ base modules |
+| `pgfcomp-version-{0-65,1-18}` | PGF version-compatibility shims |
+| `pdfescape`, `pdftexcmds` | pdftex string-escape helpers (hyperref dep) |
+
+### Layout, sectioning, page geometry
+
+| Package | What it gives you |
+|---|---|
+| `geometry` | `\geometry{a4paper, margin=2cm}` |
+| `setspace` | `\onehalfspacing`, `\doublespacing` |
+| `fancyhdr` | Custom headers/footers (`\fancyhead`, `\fancyfoot`) |
+| `fancyheadings` | Legacy precursor (kept for old docs) |
+| `microtype` | Character protrusion + font expansion → tighter, better-looking paragraphs |
+| `booktabs` | Pro-quality tables: `\toprule`, `\midrule`, `\bottomrule` |
+| `float` | Custom float types via `\newfloat`, `[H]` placement |
+| `listings` | Source-code listings with language syntax highlighting |
+| `enumitem` | Customizable `enumerate` / `itemize` / `description` |
+| `caption`, `caption2`, `caption3`, `subcaption`, `bicaption`, `ltcaption` | Float caption customization |
+| `nohyperref` | Disable hyperref for one section |
+
+### Hyperlinks, cross-references, bookmarks
+
+| Package | What it gives you |
+|---|---|
+| `hyperref` | `\href`, `\url`, clickable refs/cites, PDF bookmarks/metadata |
+| `cleveref` | `\cref{eq:foo}` → "equation (3)" (auto-types references) |
+| `refcount`, `etoolbox`, `letltxmacro` | hyperref deps + general macro plumbing |
+| `hypcap` | Anchors at the top of floats, not the caption |
+| `backref` | Back-references from bibliography to citing pages |
+| `atbegshi`, `atveryend`, `auxhook` | Engine event hooks used by hyperref |
+
+### Bibliography (limited)
+
+Only `bibtex` (8-bit legacy) reachable in-process. Pre-compile `.bbl` for
+modern bibliography:
+- `backref` for back-refs in PDFs (clickable from bib entry to citing page)
+- Native `\bibliography{file}` works if a pre-built `.bbl` is present
+
+### CJK + Unicode
+
+| Package | What it gives you |
+|---|---|
+| `CJK`, `CJKutf8` | Chinese/Japanese/Korean (Type1 fonts, UTF-8 encoding) |
+| `CJKnumb` | CJK numeral conversion |
+| `CJKfntef`, `CJKulem` | CJK accent/underline support |
+| `CJKspace`, `CJKvert` | CJK line-spacing, vertical writing |
+| `MULEenc` | Multi-language encoding |
+
+(For full Unicode beyond CJK Type1, use CodeBench's busytex+xelatex path.)
+
+### Fonts
+
+| What | Detail |
+|---|---|
+| **Latin Modern Type 1** | 92 `.pfb` font files, 596 `.tfm` metrics |
+| Roman | `lmroman10-{regular,italic,bold,bolditalic,slanted,smallcaps,demi}` + 5/6/7/8/9/12/17pt design sizes |
+| Sans | `lmsans10-{regular,italic,bold,boldoblique,demicondensed}` + design sizes |
+| Mono | `lmmono10-{regular,italic,bold,boldoblique,slanted}` + `lmmonoltcond` |
+| Caps | `lmromancaps10`, `lmromandunh10` (demi unslanted) |
+| `lmodern.sty` | Selects Latin Modern as the default family |
+| `fontenc` (T1) | 8-bit T1 encoding |
+| `inputenc` | Reads UTF-8 source |
+| `t1enc` | Legacy T1 encoding shim |
+
+### Slides (full beamer)
+
+| Module | What it does |
+|---|---|
+| `beamer.cls` | The main beamer class |
+| `beamerarticle` | Render beamer source as article output |
+| `beamerbase{article,auxtemplates,boxes,color,compatibility,decode,font,frame}` | beamer's internal modules — needed for any non-trivial use |
+| Beamer themes (Default, Boadilla, AnnArbor, Berkeley, etc.) | Pre-set color + layout themes for slides |
+
+`\documentclass{beamer}` with frames, transitions, overlays, themes — all
+working in-process, no internet, no missing-package errors.
+
+### Engine plumbing (not user-facing, but needed)
+
+| Package | Purpose |
+|---|---|
+| `expl3` / `l3kernel` | Modern LaTeX3 programming layer (~1.3 MB) |
+| `firstaid` | Compatibility patches for older / conflicting packages |
+| `etoolbox` | General-purpose macro plumbing (used everywhere) |
+| `fp` | Fixed-point arithmetic |
+| `tools` package set | `multicol`, `xspace`, `array`, `dcolumn`, `tabularx`, `varioref` |
+| `array`, `array-2016-10-06` | Extended column types for tables |
+| `afterpage` | Defer commands to after current page break |
+| `alltt` | Verbatim-like block with active commands |
+
+### Hyphenation
+
+English + many other languages in `tex/plain/hyphenation/`.
+
+### Format compatibility shims
+
+Several packages have date-suffixed copies so older documents that
+reference a specific version still work:
+- `amsmath-2018-12-01.sty`
+- `array-2016-10-06.sty`
+- `graphics-2017-06-25.sty`
+
+### Looking up whether a specific package is bundled
+
+From the in-app Python shell:
+
+```python
+import os, glob
+texmf = "/path/to/texmf"   # see LaTeXEngine.shared.texmfPath
+hits = glob.glob(f"{texmf}/**/PACKAGENAME.sty", recursive=True)
+print(hits or "not bundled")
+```
+
+Or from the CodeBench terminal:
+
+```bash
+find /path/to/texmf -name "PACKAGENAME.sty"
+```
+
+If the search returns nothing AND you can't easily rewrite the document
+to avoid it, two options:
+1. **Drop the missing `.sty` into your document's directory** —
+   kpathsea searches the source directory first.
+2. **For CodeBench specifically**, the busytex-WASM path has a much
+   larger TeX Live overlay (`offlinai-texmf` adds ~23 MB on top of
+   ubuntu-texlive-{latex-base,latex-recommended,fonts-recommended,
+   latex-extra,science}). Switch via the
+   `OFFLINAI_LATEX_ENGINE=busytex` env var.
