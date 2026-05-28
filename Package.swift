@@ -97,7 +97,13 @@ let package = Package(
         .library(name: "SciPy",   targets: ["SciPy",   "NumPy"]),
 
         // ── Requires Plotly ──
-        .library(name: "Matplotlib", targets: ["Matplotlib", "Plotly"]),
+        // Matplotlib now also pulls Dateutil (matplotlib/dates.py hard
+        // dep) so date-axis plots work for SwiftPM consumers.
+        .library(name: "Matplotlib", targets: ["Matplotlib", "Plotly", "Dateutil"]),
+
+        // python-dateutil — standalone product for consumers that want
+        // just the date utilities without the whole matplotlib stack.
+        .library(name: "Dateutil", targets: ["Dateutil"]),
 
         // ── Requires multiple deps ──
         // Manim covers the entire animation stack. Hard-imports at
@@ -127,7 +133,7 @@ let package = Package(
                            "Pillow", "Tqdm", "Rich", "Click", "Cloup",
                            "NetworkX", "Pygments", "SymPy", "Sklearn",
                            "Decorator", "Mapbox_earcut", "Isosurfaces",
-                           "Jinja2", "Markupsafe", "FontTools",
+                           "Jinja2", "Markupsafe", "FontTools", "Dateutil",
                            "Screeninfo", "Watchdog",
                            "Typing_extensions", "Psutil",
                            "Moderngl", "Moderngl_window",
@@ -406,13 +412,32 @@ let package = Package(
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
         // matplotlib — Plotly backend (64 modules). Needs: Plotly
-        .target(name: "Matplotlib", dependencies: ["Plotly"], path: "Sources/Matplotlib", resources: [.copy("matplotlib"),
+        .target(name: "Matplotlib", dependencies: ["Plotly", "Dateutil"], path: "Sources/Matplotlib", resources: [.copy("matplotlib"),
             .copy("matplotlib-3.9.0.dist-info"),
             .copy("narwhals-1.16.0.dist-info"),
             .copy("packaging-26.0.dist-info"),
             .copy("narwhals"),
             .copy("packaging"),
+            // cycler is a hard matplotlib import (matplotlib/rcsetup.py →
+            // `from cycler import Cycler, cycler`). It was bundled in
+            // app_packages but never copied into this target, so SVM
+            // consumers ImportError'd at `import matplotlib`. dateutil
+            // (the other missing hard dep, used by matplotlib/dates.py)
+            // comes in via the Dateutil target dependency above.
+            .copy("cycler"),
             .copy("mpl_toolkits")]),
+
+        // python-dateutil 2.x — date parsing / recurrence rules. A hard
+        // import of matplotlib (matplotlib/dates.py → `from dateutil.rrule
+        // import rrule`) AND pandas (pandas/_libs/tslibs needs it) AND a
+        // long tail of other libraries. Ships partly as sourceless .pyc;
+        // its `six` shim lives as a top-level six.pyc, bundled here too
+        // (dateutil/rrule.py → `from six import advance_iterator`).
+        // Shared target so matplotlib + pandas don't each duplicate it.
+        // The package dirs are symlinks into app_packages (same pattern
+        // as Sources/Matplotlib/matplotlib) → ~0 added repo bytes.
+        .target(name: "Dateutil", path: "Sources/Dateutil",
+                resources: [.copy("dateutil"), .copy("six.pyc")]),
 
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
         //  REQUIRES MULTIPLE DEPS — all auto-included
@@ -434,7 +459,7 @@ let package = Package(
                                "Pillow", "Tqdm", "Rich", "Click", "Cloup",
                                "NetworkX", "Pygments", "SymPy", "Sklearn",
                                "Decorator", "Mapbox_earcut", "Isosurfaces",
-                               "Jinja2", "FontTools",
+                               "Jinja2", "FontTools", "Dateutil",
                                "Screeninfo", "Watchdog",
                                "Typing_extensions", "Psutil",
                                "Moderngl", "Moderngl_window",

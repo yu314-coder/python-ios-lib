@@ -34,6 +34,16 @@ __pycache__/
 dist/
 *.whl
 
+# Exceptions: a few bundled deps ship as sourceless bytecode (no .py),
+# so the blanket `*.pyc` above would drop them from the repo entirely —
+# breaking fresh clones / SwiftPM consumers (matplotlib & pandas hard-
+# import these). Keep their top-level .pyc tracked (NOT __pycache__,
+# which is regenerated at runtime). See Sources/Dateutil in Package.swift.
+!app_packages/site-packages/six.pyc
+!app_packages/site-packages/dateutil/*.pyc
+!app_packages/site-packages/dateutil/parser/*.pyc
+!app_packages/site-packages/dateutil/tz/*.pyc
+
 # Compiled objects
 *.o
 *.a
