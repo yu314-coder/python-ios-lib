@@ -127,7 +127,7 @@ let package = Package(
                            "Pillow", "Tqdm", "Rich", "Click", "Cloup",
                            "NetworkX", "Pygments", "SymPy", "Sklearn",
                            "Decorator", "Mapbox_earcut", "Isosurfaces",
-                           "Jinja2", "Markupsafe",
+                           "Jinja2", "Markupsafe", "FontTools",
                            "Screeninfo", "Watchdog",
                            "Typing_extensions", "Psutil",
                            "Moderngl", "Moderngl_window",
@@ -272,6 +272,20 @@ let package = Package(
                 resources: [.copy("jinja2"),
             .copy("jinja2-3.1.6.dist-info")]),
 
+        // fontTools 4.60.2 — TTF/OTF parser + SVG path emitter. manimpango
+        // hard-imports `fontTools.ttLib.TTFont` and
+        // `fontTools.pens.svgPathPen.SVGPathPen` at module load to read
+        // installed fonts and rasterise per-codepoint vector paths for
+        // `Text` mobjects. Without this target SwiftPM consumers of the
+        // Manim product fall through to manimpango's "fontTools not
+        // available — minimal SVG fallback" branch (search
+        // `Sources/Manim/manimpango/__init__.py` for that string), which
+        // emits an empty SVG box where the text glyphs should be.
+        // No dist-info wheel — fontTools was source-installed, so we
+        // ship the package directory only.
+        .target(name: "FontTools", path: "Sources/FontTools",
+                resources: [.copy("fontTools")]),
+
         // screeninfo — multi-monitor query. manim's camera reads this
         // to decide default frame size if not configured.
         .target(name: "Screeninfo", path: "Sources/Screeninfo",
@@ -403,7 +417,8 @@ let package = Package(
                                "Pillow", "Tqdm", "Rich", "Click", "Cloup",
                                "NetworkX", "Pygments", "SymPy", "Sklearn",
                                "Decorator", "Mapbox_earcut", "Isosurfaces",
-                               "Jinja2", "Screeninfo", "Watchdog",
+                               "Jinja2", "FontTools",
+                               "Screeninfo", "Watchdog",
                                "Typing_extensions", "Psutil",
                                "Moderngl", "Moderngl_window",
                                "Pydub", "BeautifulSoup"],
