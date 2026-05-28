@@ -105,6 +105,29 @@ let package = Package(
         // just the date utilities without the whole matplotlib stack.
         .library(name: "Dateutil", targets: ["Dateutil"]),
 
+        // ── Data / IO / web stack (standalone products) ──
+        // Each lists every resource-bearing target it needs explicitly,
+        // because a consumer's .app only bundles the resource bundles of
+        // targets named in the product (matching how Manim lists NumPy,
+        // SciPy, … even though the Manim target also depends on them).
+        .library(name: "Pandas",
+                 targets: ["Pandas", "NumPy", "Dateutil"]),
+        .library(name: "Openpyxl", targets: ["Openpyxl"]),
+        .library(name: "Httpx",
+                 targets: ["Httpx", "Requests", "Typing_extensions"]),
+        .library(name: "Seaborn",
+                 targets: ["Seaborn", "Matplotlib", "Plotly", "Pandas",
+                           "NumPy", "SciPy", "Dateutil"]),
+        .library(name: "Statsmodels",
+                 targets: ["Statsmodels", "Pandas", "NumPy", "SciPy",
+                           "Dateutil"]),
+        .library(name: "Reportlab", targets: ["Reportlab", "Pillow"]),
+        .library(name: "Pypdf", targets: ["Pypdf"]),
+        .library(name: "Fpdf", targets: ["Fpdf", "Pillow"]),
+        .library(name: "Altair",
+                 targets: ["Altair", "JsonSchema", "Jinja2", "Markupsafe",
+                           "Typing_extensions"]),
+
         // ── Requires multiple deps ──
         // Manim covers the entire animation stack. Hard-imports at
         // module load (every entry below crashes `import manim` if
@@ -308,6 +331,84 @@ let package = Package(
         // ship the package directory only.
         .target(name: "FontTools", path: "Sources/FontTools",
                 resources: [.copy("fontTools")]),
+
+        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        //  DATA / IO / WEB — pure-Python (+ self-contained Cython .so)
+        //  stack. All package dirs are symlinks into app_packages
+        //  (same pattern as Sources/Matplotlib/matplotlib) → ~0 added
+        //  repo bytes. Each has a standalone library product below.
+        //  None are forced into the Manim umbrella — manim doesn't
+        //  import them; consumers tick the specific product they want.
+        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+        // pandas 2.2.3 — DataFrame / Series. 44 self-contained Cython
+        // .so (no external dylib deps, verified via otool). Needs numpy,
+        // python-dateutil, and a tz database — pytz is bundled here
+        // (pandas falls back to pytz when tzdata/zoneinfo is absent).
+        .target(name: "Pandas",
+                dependencies: ["NumPy", "Dateutil"],
+                path: "Sources/Pandas",
+                resources: [.copy("pandas"), .copy("pytz"),
+            .copy("pandas-2.2.3.dist-info")]),
+
+        // openpyxl — Excel .xlsx read/write (pandas' .read_excel /
+        // .to_excel backend). Needs et_xmlfile (bundled here). Ships as
+        // sourceless .pyc.
+        .target(name: "Openpyxl", path: "Sources/Openpyxl",
+                resources: [.copy("openpyxl"), .copy("et_xmlfile")]),
+
+        // httpx — modern sync/async HTTP client. Bundles its httpcore /
+        // h11 / anyio / sniffio stack. certifi + idna come from the
+        // Requests target dependency; anyio needs typing_extensions.
+        .target(name: "Httpx",
+                dependencies: ["Requests", "Typing_extensions"],
+                path: "Sources/Httpx",
+                resources: [.copy("httpx"), .copy("httpcore"), .copy("h11"),
+            .copy("anyio"), .copy("sniffio"),
+            .copy("httpcore-1.0.9.dist-info"), .copy("h11-0.16.0.dist-info")]),
+
+        // seaborn — statistical plotting on matplotlib. Pulls the whole
+        // matplotlib + pandas + scipy stack.
+        .target(name: "Seaborn",
+                dependencies: ["Matplotlib", "Pandas", "NumPy", "SciPy"],
+                path: "Sources/Seaborn",
+                resources: [.copy("seaborn")]),
+
+        // statsmodels 0.14.4 — regression / time-series / stats models.
+        // 26 self-contained Cython .so. Needs numpy + scipy + pandas +
+        // patsy (formula parser, bundled here).
+        .target(name: "Statsmodels",
+                dependencies: ["NumPy", "SciPy", "Pandas"],
+                path: "Sources/Statsmodels",
+                resources: [.copy("statsmodels"), .copy("patsy"),
+            .copy("statsmodels-0.14.4.dist-info"),
+            .copy("patsy-1.0.2.dist-info")]),
+
+        // reportlab — PDF generation. Uses Pillow for raster images.
+        .target(name: "Reportlab",
+                dependencies: ["Pillow"],
+                path: "Sources/Reportlab",
+                resources: [.copy("reportlab")]),
+
+        // pypdf — pure-Python PDF read / merge / split / encrypt.
+        .target(name: "Pypdf", path: "Sources/Pypdf",
+                resources: [.copy("pypdf")]),
+
+        // fpdf2 — simple PDF document generation. Uses Pillow for images.
+        .target(name: "Fpdf",
+                dependencies: ["Pillow"],
+                path: "Sources/Fpdf",
+                resources: [.copy("fpdf")]),
+
+        // altair — declarative (Vega-Lite) charting. Needs jsonschema
+        // (figure validation), jinja2 (HTML export), narwhals (dataframe
+        // compat, bundled here), typing_extensions.
+        .target(name: "Altair",
+                dependencies: ["JsonSchema", "Jinja2", "Typing_extensions"],
+                path: "Sources/Altair",
+                resources: [.copy("altair"), .copy("narwhals"),
+            .copy("altair-6.0.0.dist-info"),
+            .copy("narwhals-1.16.0.dist-info")]),
 
         // screeninfo — multi-monitor query. manim's camera reads this
         // to decide default frame size if not configured.

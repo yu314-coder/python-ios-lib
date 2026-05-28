@@ -43,6 +43,20 @@ dist/
 !app_packages/site-packages/dateutil/*.pyc
 !app_packages/site-packages/dateutil/parser/*.pyc
 !app_packages/site-packages/dateutil/tz/*.pyc
+# Same deal for the Tier-1/2 pure-Python deps that happen to ship as
+# sourceless bytecode. `**/*.pyc` can't re-include __pycache__/ (its
+# parent dir stays excluded by the __pycache__/ rule above), so this
+# only tracks the real sourceless modules. New SPM targets reference
+# these (see Pandas/Openpyxl/Httpx/Pypdf/Fpdf in Package.swift).
+!app_packages/site-packages/pytz/**/*.pyc
+!app_packages/site-packages/et_xmlfile/**/*.pyc
+!app_packages/site-packages/openpyxl/**/*.pyc
+!app_packages/site-packages/httpx/**/*.pyc
+!app_packages/site-packages/httpcore/**/*.pyc
+!app_packages/site-packages/sniffio/**/*.pyc
+!app_packages/site-packages/anyio/**/*.pyc
+!app_packages/site-packages/pypdf/**/*.pyc
+!app_packages/site-packages/fpdf/**/*.pyc
 
 # Compiled objects
 *.o
