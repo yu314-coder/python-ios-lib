@@ -131,7 +131,24 @@ let package = Package(
                            "Screeninfo", "Watchdog",
                            "Typing_extensions", "Psutil",
                            "Moderngl", "Moderngl_window",
-                           "Pydub", "BeautifulSoup"]),
+                           "Pydub", "BeautifulSoup",
+                           // ── Transitive runtime imports that were
+                           //    silently missing on SwiftPM consumers.
+                           // Requests bundles urllib3/certifi/idna/
+                           // charset_normalizer; without it any user code
+                           // doing requests.get(...) ImportErrors at
+                           // module load on the iOS target even though
+                           // CodeBench shipped them in the bundled
+                           // app_packages. Mpmath is a hard SymPy dep
+                           // (arbitrary-precision math). PyYAML is read
+                           // by manim's config loader. JsonSchema is
+                           // required by Plotly + Jupyter for figure
+                           // validation. Fsspec / Tornado are optional
+                           // but pulled in by huggingface_hub and
+                           // web-stack libs that manim users commonly
+                           // combine with their scenes.
+                           "Requests", "Mpmath", "PyYAML", "JsonSchema",
+                           "Fsspec", "Tornado"]),
         // LaTeXEngine renders SVG via cairo — bundle it together.
         .library(name: "LaTeXEngine",
                  targets: ["LaTeXEngine", "CairoGraphics"]),
