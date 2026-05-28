@@ -276,6 +276,28 @@ killed by jetsam on long scenes.
   on each VMobject — keeps the point count ~40% lower for math glyphs.
 - `use_svg_cache=False` default on `SVGMobject`.
 
+### Write / Create on busytex MathTex (column reveal)
+
+`MathTex` / `Tex` route through `offlinai_latex`, which produces a
+PNG-in-`<image>` SVG when busytex (real xelatex) handles the expression.
+manim turns that into an `ImageMobject` — which has no strokes for
+`Write` to animate. Without intervention `Write(MathTex(...))` collapses
+to a flat opacity ramp and the formula just appears.
+
+iOS patch: `DrawBorderThenFill` (parent of `Write`/`Unwrite`) and
+`ShowPartial` (parent of `Create`/`Uncreate`) carry the class attribute
+`_offlinai_reveal_image_children = True`. The image-fallback post-loop
+in `Animation.interpolate_mobject` reads this marker and, when set,
+does a left-to-right column reveal of the `pixel_array` —
+`pa[:, :int(width * alpha), 3] = orig_alpha` and
+`pa[:, int(width * alpha):, 3] = 0`. The visual effect closely matches
+the stroke-by-stroke `Write` you get on a VMobject without needing to
+vectorise the raster output.
+
+Other introducer/remover animations (`FadeIn`, `FadeOut`, `AddCovering`,
+…) lack the marker and keep the flat fade — so non-Write semantics
+are preserved.
+
 ### Dependencies (all bundled)
 
 | Package | Status |
