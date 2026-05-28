@@ -57,6 +57,19 @@ dist/
 !app_packages/site-packages/anyio/**/*.pyc
 !app_packages/site-packages/pypdf/**/*.pyc
 !app_packages/site-packages/fpdf/**/*.pyc
+# Utility + geospatial tier deps that ship as sourceless bytecode.
+!app_packages/site-packages/tabulate/**/*.pyc
+!app_packages/site-packages/jwt/**/*.pyc
+!app_packages/site-packages/pendulum/**/*.pyc
+!app_packages/site-packages/more_itertools/**/*.pyc
+!app_packages/site-packages/sortedcontainers/**/*.pyc
+!app_packages/site-packages/humanize/**/*.pyc
+!app_packages/site-packages/typer/**/*.pyc
+!app_packages/site-packages/lark/**/*.pyc
+!app_packages/site-packages/textual/**/*.pyc
+!app_packages/site-packages/xlsxwriter/**/*.pyc
+!app_packages/site-packages/shellingham/**/*.pyc
+!app_packages/site-packages/platformdirs/**/*.pyc
 
 # Compiled objects
 *.o

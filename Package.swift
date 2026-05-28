@@ -128,6 +128,30 @@ let package = Package(
                  targets: ["Altair", "JsonSchema", "Jinja2", "Markupsafe",
                            "Typing_extensions"]),
 
+        // ── Utility + geospatial (standalone products) ──
+        .library(name: "Tabulate", targets: ["Tabulate"]),
+        .library(name: "PyJWT", targets: ["PyJWT"]),
+        .library(name: "Tenacity", targets: ["Tenacity"]),
+        .library(name: "Pendulum", targets: ["Pendulum"]),
+        .library(name: "MoreItertools", targets: ["MoreItertools"]),
+        .library(name: "SortedContainers", targets: ["SortedContainers"]),
+        .library(name: "Cachetools", targets: ["Cachetools"]),
+        .library(name: "Humanize", targets: ["Humanize"]),
+        .library(name: "Schedule", targets: ["Schedule"]),
+        .library(name: "Typer",
+                 targets: ["Typer", "Click", "Rich", "Typing_extensions"]),
+        .library(name: "Lark", targets: ["Lark"]),
+        .library(name: "Textual",
+                 targets: ["Textual", "Rich", "Typing_extensions"]),
+        .library(name: "XlsxWriter", targets: ["XlsxWriter"]),
+        .library(name: "Xarray",
+                 targets: ["Xarray", "NumPy", "Pandas", "Dateutil"]),
+        .library(name: "Shapely", targets: ["Shapely", "NumPy"]),
+        .library(name: "Pyproj", targets: ["Pyproj"]),
+        .library(name: "Cartopy",
+                 targets: ["Cartopy", "Shapely", "Pyproj", "Matplotlib",
+                           "Plotly", "NumPy", "Dateutil"]),
+
         // ── Requires multiple deps ──
         // Manim covers the entire animation stack. Hard-imports at
         // module load (every entry below crashes `import manim` if
@@ -410,6 +434,89 @@ let package = Package(
             .copy("altair-6.0.0.dist-info"),
             .copy("narwhals-1.16.0.dist-info")]),
 
+        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        //  UTILITY + GEOSPATIAL tier — all symlinks into app_packages
+        //  (~0 added repo bytes). Standalone products below; none in the
+        //  Manim umbrella. Sub-deps (shellingham/platformdirs/shapefile)
+        //  are bundled inline into the target that needs them.
+        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+        .target(name: "Tabulate", path: "Sources/Tabulate",
+                resources: [.copy("tabulate")]),
+
+        // PyJWT — JSON Web Token encode/decode (module name `jwt`).
+        .target(name: "PyJWT", path: "Sources/PyJWT",
+                resources: [.copy("jwt")]),
+
+        .target(name: "Tenacity", path: "Sources/Tenacity",
+                resources: [.copy("tenacity"), .copy("tenacity-9.1.2.dist-info")]),
+
+        .target(name: "Pendulum", path: "Sources/Pendulum",
+                resources: [.copy("pendulum")]),
+
+        .target(name: "MoreItertools", path: "Sources/MoreItertools",
+                resources: [.copy("more_itertools")]),
+
+        .target(name: "SortedContainers", path: "Sources/SortedContainers",
+                resources: [.copy("sortedcontainers")]),
+
+        .target(name: "Cachetools", path: "Sources/Cachetools",
+                resources: [.copy("cachetools"), .copy("cachetools-6.2.6.dist-info")]),
+
+        .target(name: "Humanize", path: "Sources/Humanize",
+                resources: [.copy("humanize")]),
+
+        .target(name: "Schedule", path: "Sources/Schedule",
+                resources: [.copy("schedule"), .copy("schedule-1.2.2.dist-info")]),
+
+        // typer — CLI framework. Bundles shellingham (shell detection);
+        // depends on Click + Rich + Typing_extensions.
+        .target(name: "Typer",
+                dependencies: ["Click", "Rich", "Typing_extensions"],
+                path: "Sources/Typer",
+                resources: [.copy("typer"), .copy("shellingham")]),
+
+        .target(name: "Lark", path: "Sources/Lark",
+                resources: [.copy("lark")]),
+
+        // textual — TUI framework. Bundles platformdirs; depends on Rich
+        // (+ markdown_it, which Rich already ships) + Typing_extensions.
+        .target(name: "Textual",
+                dependencies: ["Rich", "Typing_extensions"],
+                path: "Sources/Textual",
+                resources: [.copy("textual"), .copy("platformdirs"),
+            .copy("textual-0.89.1.dist-info")]),
+
+        .target(name: "XlsxWriter", path: "Sources/XlsxWriter",
+                resources: [.copy("xlsxwriter")]),
+
+        // xarray — N-D labeled arrays. Needs numpy + pandas.
+        .target(name: "Xarray",
+                dependencies: ["NumPy", "Pandas"],
+                path: "Sources/Xarray",
+                resources: [.copy("xarray"), .copy("xarray-2024.7.0.dist-info")]),
+
+        // shapely 2.0.6 — geometry. 3 Cython .so with GEOS statically
+        // linked (verified self-contained via otool). Needs numpy.
+        .target(name: "Shapely",
+                dependencies: ["NumPy"],
+                path: "Sources/Shapely",
+                resources: [.copy("shapely"), .copy("shapely-2.0.6.dist-info")]),
+
+        // pyproj 3.6.1 — cartographic projections. PROJ statically
+        // linked into the .so; carries its own ~9 MB PROJ data dir
+        // (proj_dir/share/proj/proj.db) which it reads at runtime.
+        .target(name: "Pyproj", path: "Sources/Pyproj",
+                resources: [.copy("pyproj"), .copy("pyproj-3.6.1.dist-info")]),
+
+        // cartopy — geospatial mapping on matplotlib. Bundles pyshp
+        // (shapefile.py); depends on Shapely + Pyproj + Matplotlib + NumPy.
+        .target(name: "Cartopy",
+                dependencies: ["Shapely", "Pyproj", "Matplotlib", "NumPy"],
+                path: "Sources/Cartopy",
+                resources: [.copy("cartopy"), .copy("shapefile.py"),
+            .copy("pyshp-3.0.8.dist-info")]),
+
         // screeninfo — multi-monitor query. manim's camera reads this
         // to decide default frame size if not configured.
         .target(name: "Screeninfo", path: "Sources/Screeninfo",
@@ -683,6 +790,16 @@ let package = Package(
                 dependencies: ["Werkzeug", "Jinja2", "Markupsafe", "Click"],
                 path: "Sources/Flask",
                 resources: [.copy("flask"),
+                            // Flask 3.x hard-imports both at module load
+                            // (blinker → flask.signals, itsdangerous →
+                            // session cookie signing). They were bundled
+                            // in app_packages but never copied here, so
+                            // `import flask` ImportError'd for SwiftPM
+                            // consumers. Same gap as matplotlib/dateutil.
+                            .copy("blinker"),
+                            .copy("itsdangerous"),
+                            .copy("blinker-1.9.0.dist-info"),
+                            .copy("itsdangerous-2.2.0.dist-info"),
                             .copy("flask-3.1.3.dist-info")]),
 
         // dash 4.1 — Plotly's reactive web framework. Pure Python.
