@@ -70,6 +70,10 @@ dist/
 !app_packages/site-packages/xlsxwriter/**/*.pyc
 !app_packages/site-packages/shellingham/**/*.pyc
 !app_packages/site-packages/platformdirs/**/*.pyc
+# Runtime libs (ML / git / utils) that ship as sourceless bytecode.
+!app_packages/site-packages/defusedxml/**/*.pyc
+!app_packages/site-packages/colorama/**/*.pyc
+!app_packages/site-packages/cattrs/**/*.pyc
 
 # Compiled objects
 *.o

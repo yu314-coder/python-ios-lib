@@ -152,6 +152,22 @@ let package = Package(
                  targets: ["Cartopy", "Shapely", "Pyproj", "Matplotlib",
                            "Plotly", "NumPy", "Dateutil"]),
 
+        // ── ML helpers / git / protocol / misc (standalone products) ──
+        .library(name: "Accelerate",
+                 targets: ["Accelerate", "PyTorch", "Transformers",
+                           "Tokenizers", "NumPy", "Psutil", "PyYAML"]),
+        .library(name: "Peft",
+                 targets: ["Peft", "Accelerate", "PyTorch", "Transformers",
+                           "Tokenizers", "NumPy", "Psutil", "PyYAML", "Tqdm"]),
+        .library(name: "GitPython", targets: ["GitPython"]),
+        .library(name: "Defusedxml", targets: ["Defusedxml"]),
+        .library(name: "Colorama", targets: ["Colorama"]),
+        .library(name: "Cattrs", targets: ["Cattrs"]),
+        .library(name: "Protobuf", targets: ["Protobuf"]),
+        .library(name: "Cffi", targets: ["Cffi"]),
+        .library(name: "Tinycss2", targets: ["Tinycss2"]),
+        .library(name: "Cssselect2", targets: ["Cssselect2", "Tinycss2"]),
+
         // ── Requires multiple deps ──
         // Manim covers the entire animation stack. Hard-imports at
         // module load (every entry below crashes `import manim` if
@@ -516,6 +532,74 @@ let package = Package(
                 path: "Sources/Cartopy",
                 resources: [.copy("cartopy"), .copy("shapefile.py"),
             .copy("pyshp-3.0.8.dist-info")]),
+
+        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        //  ML helpers / git / protocol / misc — all symlinks into
+        //  app_packages (~0 added repo bytes). Standalone products below.
+        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+        // accelerate — HF device placement / mixed precision / launch.
+        // Pulls the torch + transformers stack; bundles `packaging`
+        // inline (no standalone Packaging target). huggingface_hub /
+        // safetensors / filelock come from the Transformers dependency.
+        .target(name: "Accelerate",
+                dependencies: ["PyTorch", "Transformers", "NumPy",
+                               "Psutil", "PyYAML"],
+                path: "Sources/Accelerate",
+                resources: [.copy("accelerate"), .copy("packaging"),
+            .copy("accelerate-0.30.1.dist-info")]),
+
+        // peft — parameter-efficient fine-tuning (LoRA etc.).
+        .target(name: "Peft",
+                dependencies: ["Accelerate", "Transformers", "PyTorch",
+                               "NumPy", "Tqdm"],
+                path: "Sources/Peft",
+                resources: [.copy("peft"), .copy("peft-0.12.0.dist-info")]),
+
+        // GitPython — git repo interaction. Bundles gitdb + smmap.
+        .target(name: "GitPython", path: "Sources/GitPython",
+                resources: [.copy("git"), .copy("gitdb"), .copy("smmap")]),
+
+        // defusedxml — XML bomb / entity-expansion hardening.
+        .target(name: "Defusedxml", path: "Sources/Defusedxml",
+                resources: [.copy("defusedxml")]),
+
+        // colorama — cross-platform terminal color codes.
+        .target(name: "Colorama", path: "Sources/Colorama",
+                resources: [.copy("colorama")]),
+
+        // cattrs — structured (de)serialization on top of attrs. Bundles
+        // attr + attrs (their runtime).
+        .target(name: "Cattrs", path: "Sources/Cattrs",
+                resources: [.copy("cattrs"), .copy("attr"), .copy("attrs"),
+            .copy("attrs-24.2.0.dist-info")]),
+
+        // protobuf — Google Protocol Buffers (module `google.protobuf`,
+        // pure-Python implementation).
+        .target(name: "Protobuf", path: "Sources/Protobuf",
+                resources: [.copy("google"),
+            .copy("protobuf-5.29.6.dist-info")]),
+
+        // cffi — C FFI for Python. Bundles its _cffi_backend extension
+        // (self-contained; the /tmp install-name is cosmetic for a
+        // dlopen'd module).
+        .target(name: "Cffi", path: "Sources/Cffi",
+                resources: [.copy("cffi"),
+            .copy("_cffi_backend.cpython-314-iphoneos.so"),
+            .copy("cffi-1.17.1.dist-info")]),
+
+        // tinycss2 — low-level CSS parser. Bundles webencodings (its dep).
+        .target(name: "Tinycss2", path: "Sources/Tinycss2",
+                resources: [.copy("tinycss2"), .copy("webencodings"),
+            .copy("tinycss2-1.4.0.dist-info"),
+            .copy("webencodings-0.5.1.dist-info")]),
+
+        // cssselect2 — CSS selector matching for ElementTree. Needs tinycss2.
+        .target(name: "Cssselect2",
+                dependencies: ["Tinycss2"],
+                path: "Sources/Cssselect2",
+                resources: [.copy("cssselect2"),
+            .copy("cssselect2-0.8.0.dist-info")]),
 
         // screeninfo — multi-monitor query. manim's camera reads this
         // to decide default frame size if not configured.
