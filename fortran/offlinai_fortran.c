@@ -3191,7 +3191,20 @@ static void exec_node(OfortInterpreter *I, OfortNode *n) {
             /* Simple variable assignment */
             OfortVar *v = find_var(I, lhs->name);
             if (v && v->is_parameter) ofort_error(I, "Cannot assign to PARAMETER '%s'", lhs->name);
-            set_var(I, lhs->name, rhs);
+            if (v && v->val.type == FVAL_ARRAY && rhs.type != FVAL_ARRAY) {
+                /* Whole-array = scalar → BROADCAST to every element
+                 * (Fortran array assignment, e.g. the idiomatic
+                 * `arr = 0`). The old code replaced the array variable
+                 * with the scalar, so any later arr(i) access then
+                 * errored "'arr' is not an array". */
+                for (int k = 0; k < v->val.v.arr.len; k++) {
+                    free_value(&v->val.v.arr.data[k]);
+                    v->val.v.arr.data[k] = copy_value(rhs);
+                }
+                free_value(&rhs);
+            } else {
+                set_var(I, lhs->name, rhs);
+            }
         } else if (lhs->type == FND_FUNC_CALL) {
             /* Array element assignment: arr(i) = val */
             OfortVar *var = find_var(I, lhs->name);
@@ -3443,24 +3456,52 @@ static void exec_node(OfortInterpreter *I, OfortNode *n) {
         exec_node(I, fn->children[0]);
         I->returning = 0;
 
-        /* Handle INTENT(OUT/INOUT) — copy back */
+        /* Handle pass-by-reference write-back (INTENT OUT/INOUT, or the
+         * Fortran default). Capture each param's final value BEFORE
+         * popping the callee scope, then write back into the caller's
+         * lvalue AFTER popping — so the target resolves in the caller
+         * scope. Handles whole-variable args (arr / x) AND array-element
+         * args like `call sub(arr(i))`, which previously evaluated fine
+         * but never wrote back (only FND_IDENT did). */
+        OfortValue back[OFORT_MAX_PARAMS];
+        int do_back[OFORT_MAX_PARAMS];
+        for (int i = 0; i < OFORT_MAX_PARAMS; i++) do_back[i] = 0;
         for (int i = 0; i < fn->n_params && i < nargs; i++) {
-            if (fn->param_intents[i] == 2 || fn->param_intents[i] == 3) {
+            int intent = fn->param_intents[i];
+            if (intent == 2 || intent == 3 || intent == 0) { /* OUT/INOUT/default */
                 OfortVar *pv = find_var(I, fn->param_names[i]);
-                if (pv && n->stmts[i]->type == FND_IDENT) {
-                    set_var(I, n->stmts[i]->name, copy_value(pv->val));
-                }
-            }
-            /* Default: assume all args can be modified (Fortran default) */
-            else if (fn->param_intents[i] == 0 && n->stmts[i]->type == FND_IDENT) {
-                OfortVar *pv = find_var(I, fn->param_names[i]);
-                if (pv) {
-                    set_var(I, n->stmts[i]->name, copy_value(pv->val));
-                }
+                if (pv) { back[i] = copy_value(pv->val); do_back[i] = 1; }
             }
         }
 
         pop_scope(I);
+
+        for (int i = 0; i < fn->n_params && i < nargs; i++) {
+            if (!do_back[i]) continue;
+            OfortNode *arg = n->stmts[i];
+            if (arg->type == FND_IDENT) {
+                set_var(I, arg->name, back[i]);  /* takes ownership */
+            } else if (arg->type == FND_FUNC_CALL && arg->n_stmts >= 1) {
+                /* array element arr(idx) = back[i] (1-D) */
+                OfortVar *av = find_var(I, arg->name);
+                if (av && av->val.type == FVAL_ARRAY) {
+                    OfortValue iv = eval_node(I, arg->stmts[0]);
+                    int idx = (int)val_to_int(iv) - 1; /* 1-based → 0-based */
+                    free_value(&iv);
+                    if (idx >= 0 && idx < av->val.v.arr.len) {
+                        free_value(&av->val.v.arr.data[idx]);
+                        av->val.v.arr.data[idx] = back[i]; /* takes ownership */
+                    } else {
+                        free_value(&back[i]);
+                    }
+                } else {
+                    free_value(&back[i]);
+                }
+            } else {
+                free_value(&back[i]); /* literal/expression arg — nothing to update */
+            }
+        }
+
         for (int i = 0; i < nargs; i++) free_value(&args[i]);
         break;
     }

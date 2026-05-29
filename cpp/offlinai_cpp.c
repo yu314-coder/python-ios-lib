@@ -940,6 +940,7 @@ static OcppValType token_to_valtype(OcppInterpreter *I, OcppTokenType t) {
 
 static OcppNode *parse_expr(OcppInterpreter *I);
 static OcppNode *parse_assign_expr(OcppInterpreter *I);
+static OcppNode *parse_postfix(OcppInterpreter *I);
 static OcppNode *parse_add(OcppInterpreter *I);
 static OcppNode *parse_stmt(OcppInterpreter *I);
 static OcppNode *parse_block(OcppInterpreter *I);
@@ -1253,7 +1254,7 @@ static OcppNode *parse_primary(OcppInterpreter *I) {
                 OcppNode *n = alloc_node(I, NP_CAST);
                 n->val_type = cast_type;
                 n->line = t->line;
-                n->children[0] = parse_primary(I);
+                n->children[0] = parse_postfix(I);  /* postfix binds tighter than unary */
                 n->n_children = 1;
                 return n;
             }
@@ -1272,7 +1273,7 @@ static OcppNode *parse_primary(OcppInterpreter *I) {
         advance(I);
         OcppNode *n = alloc_node(I, NP_NEG);
         n->line = t->line;
-        n->children[0] = parse_primary(I);
+        n->children[0] = parse_postfix(I);  /* postfix binds tighter than unary */
         n->n_children = 1;
         return n;
     }
@@ -1280,7 +1281,7 @@ static OcppNode *parse_primary(OcppInterpreter *I) {
         advance(I);
         OcppNode *n = alloc_node(I, NP_NOT);
         n->line = t->line;
-        n->children[0] = parse_primary(I);
+        n->children[0] = parse_postfix(I);  /* postfix binds tighter than unary */
         n->n_children = 1;
         return n;
     }
@@ -1288,7 +1289,7 @@ static OcppNode *parse_primary(OcppInterpreter *I) {
         advance(I);
         OcppNode *n = alloc_node(I, NP_BIT_NOT);
         n->line = t->line;
-        n->children[0] = parse_primary(I);
+        n->children[0] = parse_postfix(I);  /* postfix binds tighter than unary */
         n->n_children = 1;
         return n;
     }
@@ -1296,7 +1297,7 @@ static OcppNode *parse_primary(OcppInterpreter *I) {
         advance(I);
         OcppNode *n = alloc_node(I, NP_PRE_INC);
         n->line = t->line;
-        n->children[0] = parse_primary(I);
+        n->children[0] = parse_postfix(I);  /* postfix binds tighter than unary */
         n->n_children = 1;
         return n;
     }
@@ -1304,7 +1305,7 @@ static OcppNode *parse_primary(OcppInterpreter *I) {
         advance(I);
         OcppNode *n = alloc_node(I, NP_PRE_DEC);
         n->line = t->line;
-        n->children[0] = parse_primary(I);
+        n->children[0] = parse_postfix(I);  /* postfix binds tighter than unary */
         n->n_children = 1;
         return n;
     }
@@ -1312,7 +1313,7 @@ static OcppNode *parse_primary(OcppInterpreter *I) {
         advance(I);
         OcppNode *n = alloc_node(I, NP_DEREF);
         n->line = t->line;
-        n->children[0] = parse_primary(I);
+        n->children[0] = parse_postfix(I);  /* postfix binds tighter than unary */
         n->n_children = 1;
         return n;
     }
@@ -1320,7 +1321,7 @@ static OcppNode *parse_primary(OcppInterpreter *I) {
         advance(I);
         OcppNode *n = alloc_node(I, NP_ADDR);
         n->line = t->line;
-        n->children[0] = parse_primary(I);
+        n->children[0] = parse_postfix(I);  /* postfix binds tighter than unary */
         n->n_children = 1;
         return n;
     }
@@ -4067,14 +4068,23 @@ static OcppValue eval_node(OcppInterpreter *I, OcppNode *n) {
         int nargs = n->n_stmts;
         if (nargs > 16) nargs = 16;
         for (int i = 0; i < nargs; i++) {
-            args[i] = eval_node(I, n->stmts[i]);
-            /* Best-effort lvalue capture — only succeeds for things
-             * that have storage (identifiers, member access, array
-             * index). For literals / temporaries this stays NULL. */
-            if (n->stmts[i]->type == NP_IDENT ||
-                n->stmts[i]->type == NP_MEMBER ||
-                n->stmts[i]->type == NP_INDEX) {
+            if (n->stmts[i]->type == NP_INDEX) {
+                /* Resolve the subscript lvalue ONCE and read the value
+                 * from it. Evaluating both eval_node and eval_lvalue (as
+                 * the else branch does) would run a side-effecting index
+                 * like v[j++] twice. */
                 arg_lvalues[i] = eval_lvalue(I, n->stmts[i]);
+                args[i] = arg_lvalues[i] ? *arg_lvalues[i]
+                                         : eval_node(I, n->stmts[i]);
+            } else {
+                args[i] = eval_node(I, n->stmts[i]);
+                /* Best-effort lvalue capture for by-reference params —
+                 * identifier / member access are side-effect-free to
+                 * resolve, so a second pass here is harmless. */
+                if (n->stmts[i]->type == NP_IDENT ||
+                    n->stmts[i]->type == NP_MEMBER) {
+                    arg_lvalues[i] = eval_lvalue(I, n->stmts[i]);
+                }
             }
         }
 
@@ -4182,6 +4192,42 @@ static OcppValue eval_node(OcppInterpreter *I, OcppNode *n) {
             I->current_scope = prev;
             scope_destroy(lscope);
             return result;
+        }
+
+        /* Iterator-based algorithms: sort/reverse(v.begin(), v.end()).
+         * Our begin()/end() return plain indices, so the value-based
+         * builtin can't reach the container. Resolve it from the
+         * `.begin()` arg AST and operate in place. */
+        if ((strcmp(n->name, "sort") == 0 || strcmp(n->name, "reverse") == 0) &&
+            n->op == 0 && nargs >= 1 &&
+            n->stmts[0]->type == NP_CALL &&
+            (n->stmts[0]->op == 1 || n->stmts[0]->op == 2) &&
+            strcmp(n->stmts[0]->name, "begin") == 0 &&
+            n->stmts[0]->n_children > 0) {
+            OcppValue *cont = eval_lvalue(I, n->stmts[0]->children[0]);
+            if (cont && cont->type == CVAL_VECTOR) {
+                int len = cont->v.vec.len;
+                if (strcmp(n->name, "sort") == 0) {
+                    qsort(cont->v.vec.data, len, sizeof(OcppValue), value_compare);
+                } else {
+                    for (int k = 0; k < len / 2; k++) {
+                        OcppValue tmp = cont->v.vec.data[k];
+                        cont->v.vec.data[k] = cont->v.vec.data[len - 1 - k];
+                        cont->v.vec.data[len - 1 - k] = tmp;
+                    }
+                }
+                return make_void();
+            }
+        }
+        /* std::swap(a, b) — swap through the captured lvalues so the
+         * caller's variables actually change (the value-based builtin
+         * only swapped local copies). */
+        if (strcmp(n->name, "swap") == 0 && n->op == 0 && nargs >= 2 &&
+            arg_lvalues[0] && arg_lvalues[1]) {
+            OcppValue tmp = *arg_lvalues[0];
+            *arg_lvalues[0] = *arg_lvalues[1];
+            *arg_lvalues[1] = tmp;
+            return make_void();
         }
 
         /* STL / built-in functions */
