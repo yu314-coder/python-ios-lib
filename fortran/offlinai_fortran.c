@@ -3615,14 +3615,19 @@ static void exec_node(OfortInterpreter *I, OfortNode *n) {
 static const char *intrinsic_names[] = {
     /* Math */
     "ABS", "SQRT", "SIN", "COS", "TAN", "ASIN", "ACOS", "ATAN", "ATAN2",
-    "EXP", "LOG", "LOG10", "MOD", "MAX", "MIN", "FLOOR", "CEILING", "NINT",
-    "REAL", "INT", "DBLE", "CMPLX", "AIMAG", "CONJG", "SIGN",
+    "EXP", "LOG", "LOG10", "MOD", "MODULO", "MAX", "MIN", "FLOOR", "CEILING", "NINT",
+    "REAL", "INT", "DBLE", "CMPLX", "AIMAG", "CONJG", "SIGN", "DIM",
+    "SINH", "COSH", "TANH", "ASINH", "ACOSH", "ATANH",
+    "GAMMA", "LOG_GAMMA", "ERF", "ERFC", "HYPOT",
+    "HUGE", "TINY", "EPSILON",
+    /* Bit manipulation */
+    "IAND", "IOR", "IEOR", "NOT", "ISHFT", "IBSET", "IBCLR", "BTEST", "IBITS",
     /* String */
     "LEN", "LEN_TRIM", "TRIM", "ADJUSTL", "ADJUSTR", "INDEX",
     "CHAR", "ICHAR", "ACHAR", "IACHAR", "REPEAT",
     /* Array */
-    "SIZE", "SHAPE", "SUM", "PRODUCT", "MAXVAL", "MINVAL",
-    "DOT_PRODUCT", "MATMUL", "TRANSPOSE", "RESHAPE",
+    "SIZE", "SHAPE", "SUM", "PRODUCT", "MAXVAL", "MINVAL", "MAXLOC", "MINLOC",
+    "DOT_PRODUCT", "MATMUL", "TRANSPOSE", "RESHAPE", "MERGE",
     "COUNT", "ANY", "ALL", "ALLOCATED", "LBOUND", "UBOUND",
     /* Type conversion */
     "FLOAT", "DFLOAT", "SNGL", "LOGICAL",
@@ -3731,6 +3736,84 @@ static OfortValue call_intrinsic(OfortInterpreter *I, const char *name, OfortVal
         double result = b >= 0 ? a : -a;
         if (args[0].type == FVAL_INTEGER) return make_integer((long long)result);
         return make_real(result);
+    }
+    if (strcmp(upper, "MODULO") == 0) {
+        /* floored modulo — result takes the sign of the divisor
+         * (differs from MOD, which takes the sign of the dividend) */
+        if (nargs < 2) ofort_error(I, "MODULO requires 2 arguments");
+        if (args[0].type == FVAL_INTEGER && args[1].type == FVAL_INTEGER) {
+            long long a = val_to_int(args[0]), b = val_to_int(args[1]);
+            if (b == 0) ofort_error(I, "MODULO: division by zero");
+            long long m = a % b;
+            if (m != 0 && ((m < 0) != (b < 0))) m += b;
+            return make_integer(m);
+        }
+        double a = val_to_real(args[0]), b = val_to_real(args[1]);
+        double m = fmod(a, b);
+        if (m != 0.0 && ((m < 0) != (b < 0))) m += b;
+        return make_real(m);
+    }
+    if (strcmp(upper, "DIM") == 0) {
+        /* positive difference: MAX(a - b, 0) */
+        double d = val_to_real(args[0]) - val_to_real(args[1]);
+        if (d < 0) d = 0;
+        if (args[0].type == FVAL_INTEGER && args[1].type == FVAL_INTEGER)
+            return make_integer((long long)d);
+        return make_real(d);
+    }
+    if (strcmp(upper, "SINH") == 0)  return make_real(sinh(val_to_real(args[0])));
+    if (strcmp(upper, "COSH") == 0)  return make_real(cosh(val_to_real(args[0])));
+    if (strcmp(upper, "TANH") == 0)  return make_real(tanh(val_to_real(args[0])));
+    if (strcmp(upper, "ASINH") == 0) return make_real(asinh(val_to_real(args[0])));
+    if (strcmp(upper, "ACOSH") == 0) return make_real(acosh(val_to_real(args[0])));
+    if (strcmp(upper, "ATANH") == 0) return make_real(atanh(val_to_real(args[0])));
+    if (strcmp(upper, "GAMMA") == 0)     return make_real(tgamma(val_to_real(args[0])));
+    if (strcmp(upper, "LOG_GAMMA") == 0) return make_real(lgamma(val_to_real(args[0])));
+    if (strcmp(upper, "ERF") == 0)   return make_real(erf(val_to_real(args[0])));
+    if (strcmp(upper, "ERFC") == 0)  return make_real(erfc(val_to_real(args[0])));
+    if (strcmp(upper, "HYPOT") == 0) return make_real(hypot(val_to_real(args[0]), val_to_real(args[1])));
+    if (strcmp(upper, "HUGE") == 0) {
+        if (nargs > 0 && args[0].type == FVAL_INTEGER) return make_integer(9223372036854775807LL);
+        return make_real(1.7976931348623157e308);
+    }
+    if (strcmp(upper, "TINY") == 0)    return make_real(2.2250738585072014e-308);
+    if (strcmp(upper, "EPSILON") == 0) return make_real(2.220446049250313e-16);
+
+    /* === Bit manipulation (integer args) === */
+    if (strcmp(upper, "IAND") == 0) return make_integer(val_to_int(args[0]) & val_to_int(args[1]));
+    if (strcmp(upper, "IOR")  == 0) return make_integer(val_to_int(args[0]) | val_to_int(args[1]));
+    if (strcmp(upper, "IEOR") == 0) return make_integer(val_to_int(args[0]) ^ val_to_int(args[1]));
+    if (strcmp(upper, "NOT")  == 0 && nargs == 1 && args[0].type == FVAL_INTEGER)
+        return make_integer(~val_to_int(args[0]));
+    if (strcmp(upper, "ISHFT") == 0) {
+        long long v = val_to_int(args[0]), s = val_to_int(args[1]);
+        return make_integer(s >= 0 ? (v << s) : (long long)((unsigned long long)v >> (-s)));
+    }
+    if (strcmp(upper, "IBSET") == 0) return make_integer(val_to_int(args[0]) | (1LL << val_to_int(args[1])));
+    if (strcmp(upper, "IBCLR") == 0) return make_integer(val_to_int(args[0]) & ~(1LL << val_to_int(args[1])));
+    if (strcmp(upper, "BTEST") == 0) return make_logical((int)((val_to_int(args[0]) >> val_to_int(args[1])) & 1));
+    if (strcmp(upper, "IBITS") == 0) {
+        long long v = val_to_int(args[0]);
+        int pos = (int)val_to_int(args[1]), len = (int)val_to_int(args[2]);
+        long long mask = (len >= 64) ? ~0LL : ((1LL << len) - 1);
+        return make_integer((v >> pos) & mask);
+    }
+    if (strcmp(upper, "MERGE") == 0) {
+        /* MERGE(tsource, fsource, mask) — pick by the logical mask */
+        if (nargs < 3) ofort_error(I, "MERGE requires 3 arguments");
+        return val_to_int(args[2]) ? copy_value(args[0]) : copy_value(args[1]);
+    }
+    if (strcmp(upper, "MAXLOC") == 0 || strcmp(upper, "MINLOC") == 0) {
+        if (args[0].type != FVAL_ARRAY || args[0].v.arr.len == 0)
+            ofort_error(I, "%s requires a non-empty array", upper);
+        int want_max = (upper[1] == 'A'); /* mAxloc vs mInloc */
+        int best = 0;
+        for (int i = 1; i < args[0].v.arr.len; i++) {
+            double v = val_to_real(args[0].v.arr.data[i]);
+            double b = val_to_real(args[0].v.arr.data[best]);
+            if ((want_max && v > b) || (!want_max && v < b)) best = i;
+        }
+        return make_integer((long long)(best + 1)); /* Fortran 1-based index */
     }
 
     /* === Type conversion === */

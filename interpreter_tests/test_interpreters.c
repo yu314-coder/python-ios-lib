@@ -116,6 +116,14 @@ static void test_c(void) {
         "int main(){int x=5;int*p=&x;*p=11;printf(\"%d\",x);return 0;}", "11");
     c_case("while loop",
         "int main(){int i=0,s=0;while(i<5){s+=i;i++;}printf(\"%d\",s);return 0;}", "10");
+
+    /* [feat] newly added math builtins */
+    c_case("math hypot/trunc [feat]",
+        "int main(){printf(\"%d %d\",(int)hypot(3.0,4.0),(int)trunc(3.9));return 0;}", "5 3");
+    c_case("math isnan/isinf [feat]",
+        "int main(){printf(\"%d%d\",isnan(0.0),isinf(0.0));return 0;}", "00");
+    c_case("math lround/copysign [feat]",
+        "int main(){printf(\"%d %d\",(int)lround(2.6),(int)copysign(3.0,-1.0));return 0;}", "3 -3");
 }
 
 static void test_cpp(void) {
@@ -175,6 +183,25 @@ static void test_cpp(void) {
     cpp_case("simple class",
         "#include <iostream>\nclass P{public:int x;int get(){return x;}};"
         "int main(){P p;p.x=7;std::cout<<p.get();return 0;}", "7");
+
+    /* [feat] newly added <numeric>/<algorithm> reductions */
+    cpp_case("accumulate [feat]",
+        "#include <iostream>\n#include <vector>\n#include <numeric>\nint main(){"
+        "std::vector<int> v;v.push_back(3);v.push_back(1);v.push_back(4);"
+        "std::cout<<accumulate(v.begin(),v.end(),0);return 0;}", "8");
+    cpp_case("count [feat]",
+        "#include <iostream>\n#include <vector>\n#include <algorithm>\nint main(){"
+        "std::vector<int> v;v.push_back(1);v.push_back(2);v.push_back(1);"
+        "std::cout<<count(v.begin(),v.end(),1);return 0;}", "2");
+    cpp_case("max_element/min_element [feat]",
+        "#include <iostream>\n#include <vector>\n#include <algorithm>\nint main(){"
+        "std::vector<int> v;v.push_back(3);v.push_back(9);v.push_back(2);"
+        "std::cout<<max_element(v.begin(),v.end())<<\" \"<<min_element(v.begin(),v.end());return 0;}",
+        "9 2");
+    cpp_case("fill [feat]",
+        "#include <iostream>\n#include <vector>\n#include <algorithm>\nint main(){"
+        "std::vector<int> v;v.push_back(0);v.push_back(0);fill(v.begin(),v.end(),7);"
+        "std::cout<<v[0]<<v[1];return 0;}", "77");
 }
 
 static void test_fortran(void) {
@@ -228,6 +255,21 @@ static void test_fortran(void) {
     f_case("if-then-else",
         "program p\n integer::x=5\n if (x>3) then\n  print *,'big'\n else\n  print *,'small'\n"
         " end if\nend program p\n", "big");
+
+    /* [feat] newly added intrinsics */
+    f_case("modulo [feat]",
+        "program p\n print *, modulo(-3,5)\nend program p\n", "2");
+    f_case("bit ops iand/ior/ieor [feat]",
+        "program p\n print *, iand(12,10), ior(12,10), ieor(12,10)\nend program p\n", "8");
+    f_case("ishft [feat]",
+        "program p\n print *, ishft(1,4)\nend program p\n", "16");
+    f_case("maxloc/minloc [feat]",
+        "program p\n integer::a(4)\n a(1)=3;a(2)=9;a(3)=1;a(4)=5\n print *, maxloc(a), minloc(a)\n"
+        "end program p\n", "2");
+    f_case("merge [feat]",
+        "program p\n print *, merge(100,200,1>0)\nend program p\n", "100");
+    f_case("sinh/cosh [feat]",
+        "program p\n print *, nint(cosh(0.0))\nend program p\n", "1");
 }
 
 int main(void) {

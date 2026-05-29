@@ -4230,6 +4230,59 @@ static OcppValue eval_node(OcppInterpreter *I, OcppNode *n) {
             return make_void();
         }
 
+        /* <numeric>/<algorithm> reductions over v.begin()/v.end():
+         * accumulate / count / fill / max_element / min_element. Resolve
+         * the container from the .begin() arg AST (same as sort above). */
+        if ((strcmp(n->name, "accumulate") == 0 || strcmp(n->name, "count") == 0 ||
+             strcmp(n->name, "fill") == 0 || strcmp(n->name, "max_element") == 0 ||
+             strcmp(n->name, "min_element") == 0) &&
+            n->op == 0 && nargs >= 1 &&
+            n->stmts[0]->type == NP_CALL &&
+            (n->stmts[0]->op == 1 || n->stmts[0]->op == 2) &&
+            strcmp(n->stmts[0]->name, "begin") == 0 &&
+            n->stmts[0]->n_children > 0) {
+            OcppValue *cont = eval_lvalue(I, n->stmts[0]->children[0]);
+            if (cont && cont->type == CVAL_VECTOR) {
+                int len = cont->v.vec.len;
+                OcppValue *data = cont->v.vec.data;
+                if (strcmp(n->name, "accumulate") == 0) {
+                    /* accumulate(begin, end, init) → init + sum of elements */
+                    double acc = (nargs >= 3) ? val_to_double(args[2]) : 0.0;
+                    int allint = (nargs < 3 || args[2].type == CVAL_INT);
+                    for (int k = 0; k < len; k++) {
+                        acc += val_to_double(data[k]);
+                        if (data[k].type != CVAL_INT) allint = 0;
+                    }
+                    return allint ? make_int((long long)acc) : make_float(acc);
+                } else if (strcmp(n->name, "count") == 0) {
+                    /* count(begin, end, value) → number of equal elements */
+                    long long c = 0;
+                    double target = (nargs >= 3) ? val_to_double(args[2]) : 0.0;
+                    for (int k = 0; k < len; k++)
+                        if (val_to_double(data[k]) == target) c++;
+                    return make_int(c);
+                } else if (strcmp(n->name, "fill") == 0) {
+                    /* fill(begin, end, value) → set every element */
+                    for (int k = 0; k < len; k++)
+                        data[k] = (nargs >= 3) ? value_deep_copy(args[2]) : make_int(0);
+                    return make_void();
+                } else {
+                    /* max_element/min_element — standard returns an iterator;
+                     * we return the extreme VALUE directly (our iterators are
+                     * plain indices, so `int m = max_element(v.begin(),v.end())`
+                     * is the practical form here). */
+                    if (len == 0) return make_int(0);
+                    int best = 0;
+                    int want_max = (strcmp(n->name, "max_element") == 0);
+                    for (int k = 1; k < len; k++) {
+                        double a = val_to_double(data[k]), b = val_to_double(data[best]);
+                        if ((want_max && a > b) || (!want_max && a < b)) best = k;
+                    }
+                    return data[best];
+                }
+            }
+        }
+
         /* STL / built-in functions */
         return call_stl_func(I, n->name, args, nargs);
     }

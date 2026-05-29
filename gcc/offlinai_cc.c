@@ -2228,16 +2228,28 @@ static OccValue call_builtin(OccInterpreter *I, const char *name, OccValue *args
     #define MATH1(fn) if(strcmp(name,#fn)==0){return make_float(fn(val_to_double(args[0])));}
     #define MATH2(fn) if(strcmp(name,#fn)==0){return make_float(fn(val_to_double(args[0]),val_to_double(args[1])));}
 
+    /* MATHI: 1-arg math that returns an int classifier (isnan etc.) */
+    #define MATHI(fn) if(strcmp(name,#fn)==0){return make_int((long long)(fn(val_to_double(args[0]))));}
+
     MATH1(sin) MATH1(cos) MATH1(tan) MATH1(asin) MATH1(acos) MATH1(atan)
     MATH1(sinh) MATH1(cosh) MATH1(tanh)
-    MATH1(exp) MATH1(log) MATH1(log2) MATH1(log10)
-    MATH1(sqrt) MATH1(cbrt) MATH1(fabs) MATH1(ceil) MATH1(floor) MATH1(round)
+    MATH1(asinh) MATH1(acosh) MATH1(atanh)
+    MATH1(exp) MATH1(exp2) MATH1(expm1) MATH1(log) MATH1(log2) MATH1(log10) MATH1(log1p)
+    MATH1(sqrt) MATH1(cbrt) MATH1(fabs) MATH1(ceil) MATH1(floor) MATH1(round) MATH1(trunc)
+    MATH1(rint) MATH1(nearbyint) MATH1(tgamma) MATH1(lgamma) MATH1(erf) MATH1(erfc)
     MATH2(pow) MATH2(fmod) MATH2(atan2) MATH2(fmax) MATH2(fmin)
+    MATH2(hypot) MATH2(copysign) MATH2(fdim) MATH2(remainder) MATH2(nextafter)
+    MATHI(isnan) MATHI(isinf) MATHI(isfinite) MATHI(signbit)
     #undef MATH1
     #undef MATH2
+    #undef MATHI
 
     if (strcmp(name, "abs") == 0) return make_int(llabs(val_to_int(args[0])));
     if (strcmp(name, "labs") == 0) return make_int(llabs(val_to_int(args[0])));
+    if (strcmp(name, "lround") == 0 || strcmp(name, "llround") == 0)
+        return make_int((long long)llround(val_to_double(args[0])));
+    if (strcmp(name, "ldexp") == 0)
+        return make_float(ldexp(val_to_double(args[0]), (int)val_to_int(args[1])));
 
     /* string functions */
     if (strcmp(name, "strlen") == 0) {
