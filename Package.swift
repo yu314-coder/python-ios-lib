@@ -159,7 +159,12 @@ let package = Package(
         .library(name: "Peft",
                  targets: ["Peft", "Accelerate", "PyTorch", "Transformers",
                            "Tokenizers", "NumPy", "Psutil", "PyYAML", "Tqdm"]),
-        .library(name: "GitPython", targets: ["GitPython"]),
+        /* GitPython removed: it shells out to the `git` binary via
+         * subprocess, which iOS does not support (no fork/exec, no git
+         * CLI) — `import git` fails with "[Errno 45] ios does not
+         * support processes". The gitdb/smmap object-store readers are
+         * pure-Python but only useful via GitPython, so the whole
+         * product is dropped rather than advertised as broken. */
         .library(name: "Defusedxml", targets: ["Defusedxml"]),
         .library(name: "Colorama", targets: ["Colorama"]),
         .library(name: "Cattrs", targets: ["Cattrs"]),
@@ -558,9 +563,8 @@ let package = Package(
                 path: "Sources/Peft",
                 resources: [.copy("peft"), .copy("peft-0.12.0.dist-info")]),
 
-        // GitPython — git repo interaction. Bundles gitdb + smmap.
-        .target(name: "GitPython", path: "Sources/GitPython",
-                resources: [.copy("git"), .copy("gitdb"), .copy("smmap")]),
+        /* (GitPython target removed — subprocess-based, non-functional on
+         *  iOS. See the commented-out library product above.) */
 
         // defusedxml — XML bomb / entity-expansion hardening.
         .target(name: "Defusedxml", path: "Sources/Defusedxml",
