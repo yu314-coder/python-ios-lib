@@ -94,6 +94,12 @@ struct OccInterpreter {
     OccValue *vmem;
     int vmem_size;
     int vmem_used;
+    /* Heap block registry — lets free() reclaim blocks so a malloc/free
+     * loop no longer exhausts the bump arena. Each malloc/calloc/realloc
+     * records {addr,size,in_use}; vmem_alloc reuses a freed block of
+     * sufficient size before bumping. */
+    struct { int addr; int size; int in_use; } vmem_blocks[8192];
+    int vmem_nblocks;
     /* ── New: static variables ── */
     struct { char func[128]; char var[128]; OccValue val; int init; } statics[256];
     int n_statics;
@@ -227,14 +233,46 @@ static void vmem_init(OccInterpreter *I) {
     I->vmem = (OccValue *)calloc(OCC_VMEM_SIZE, sizeof(OccValue));
     I->vmem_size = OCC_VMEM_SIZE;
     I->vmem_used = 1; /* 0 = NULL */
+    I->vmem_nblocks = 0;
 }
 
 static int vmem_alloc(OccInterpreter *I, int n) {
     if (n <= 0) n = 1;
+    /* First-fit reuse of a previously freed block (so malloc/free loops
+     * don't exhaust the arena). */
+    for (int i = 0; i < I->vmem_nblocks; i++) {
+        if (!I->vmem_blocks[i].in_use && I->vmem_blocks[i].size >= n) {
+            I->vmem_blocks[i].in_use = 1;
+            /* zero the reused span so it behaves like fresh memory */
+            for (int j = 0; j < n; j++) {
+                OccValue *slot = &I->vmem[I->vmem_blocks[i].addr + j];
+                slot->type = VAL_INT; slot->v.i = 0;
+            }
+            return I->vmem_blocks[i].addr;
+        }
+    }
     if (I->vmem_used + n > I->vmem_size) return 0;
     int addr = I->vmem_used;
     I->vmem_used += n;
+    /* record the block so free() can reclaim it later */
+    if (I->vmem_nblocks < (int)(sizeof(I->vmem_blocks) / sizeof(I->vmem_blocks[0]))) {
+        int b = I->vmem_nblocks++;
+        I->vmem_blocks[b].addr = addr;
+        I->vmem_blocks[b].size = n;
+        I->vmem_blocks[b].in_use = 1;
+    }
     return addr;
+}
+
+/* Mark the block starting at addr as free so vmem_alloc can reuse it. */
+static void vmem_free(OccInterpreter *I, int addr) {
+    if (addr <= 0) return;
+    for (int i = 0; i < I->vmem_nblocks; i++) {
+        if (I->vmem_blocks[i].addr == addr && I->vmem_blocks[i].in_use) {
+            I->vmem_blocks[i].in_use = 0;
+            return;
+        }
+    }
 }
 
 static OccValue *vmem_get(OccInterpreter *I, int addr) {
@@ -2338,7 +2376,9 @@ static OccValue call_builtin(OccInterpreter *I, const char *name, OccValue *args
         return make_ptr(new_addr, VAL_CHAR, 1);
     }
     if (strcmp(name, "free") == 0) {
-        /* no-op — vmem is arena-based */
+        /* Reclaim the block so the bump arena can reuse it. */
+        if (nargs > 0 && args[0].type == VAL_PTR)
+            vmem_free(I, args[0].v.ptr.addr);
         return make_void();
     }
 
@@ -2697,6 +2737,13 @@ static OccValue eval_node(OccInterpreter *I, OccNode *n) {
 
     case ND_CAST: {
         OccValue v = eval_node(I, n->children[0]);
+        /* Casting a pointer (e.g. (int*)malloc(...), (char*)buf) is a
+         * no-op in this interpreter's memory model — keep it a pointer
+         * so indexing, deref, and free() keep working. The parser drops
+         * the `*` and records only the base type, so without this guard
+         * `(int*)malloc(8)` was converted to a plain int, breaking
+         * p[i] and free(p). */
+        if (v.type == VAL_PTR) return v;
         switch (n->val_type) {
             case VAL_INT: return make_int(val_to_int(v));
             case VAL_FLOAT: case VAL_DOUBLE: return make_float(val_to_double(v));
@@ -3755,6 +3802,7 @@ void occ_reset(OccInterpreter *I) {
     if (I->vmem) {
         memset(I->vmem, 0, I->vmem_size * sizeof(OccValue));
         I->vmem_used = 1; /* 0 = NULL */
+        I->vmem_nblocks = 0; /* drop the heap-block registry too */
     }
     /* Clear statics */
     I->n_statics = 0;

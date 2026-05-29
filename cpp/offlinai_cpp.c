@@ -241,8 +241,25 @@ static OcppValue make_vector(OcppValType elem_type) {
     r.v.vec.elem_type = elem_type;
     r.v.vec.cap = 8;
     r.v.vec.len = 0;
+    r.v.vec.kind = 0;
     r.v.vec.data = (OcppValue *)calloc(8, sizeof(OcppValue));
     return r;
+}
+
+/* STL container type-name → backing value type, or -1 if not a known
+ * container. vector/list/deque/stack/queue share the vector storage;
+ * map/unordered_map/multimap + set/unordered_set/multiset share the map
+ * storage (the set family stores each element as a key). */
+static int cpp_stl_valtype(const char *name) {
+    if (strcmp(name, "vector") == 0 || strcmp(name, "list") == 0 ||
+        strcmp(name, "deque") == 0  || strcmp(name, "stack") == 0 ||
+        strcmp(name, "queue") == 0) return CVAL_VECTOR;
+    if (strcmp(name, "map") == 0 || strcmp(name, "unordered_map") == 0 ||
+        strcmp(name, "multimap") == 0 || strcmp(name, "set") == 0 ||
+        strcmp(name, "unordered_set") == 0 || strcmp(name, "multiset") == 0)
+        return CVAL_MAP;
+    if (strcmp(name, "pair") == 0) return CVAL_PAIR;
+    return -1;
 }
 
 static OcppValue make_map(OcppValType kt, OcppValType vt) {
@@ -1681,9 +1698,8 @@ static int is_declaration(OcppInterpreter *I) {
             char name[256];
             tok_str(peek(I), name, sizeof(name));
             if (find_class(I, name)) return 1;
-            /* Check if it's vector, map, pair */
-            if (strcmp(name, "vector") == 0 || strcmp(name, "map") == 0 ||
-                strcmp(name, "pair") == 0) return 1;
+            /* Check if it's a known STL container type */
+            if (cpp_stl_valtype(name) >= 0) return 1;
         }
     }
     if (t == CTOK_TEMPLATE || t == CTOK_VIRTUAL) return 1;
@@ -1785,8 +1801,7 @@ static OcppNode *parse_declaration(OcppInterpreter *I) {
     if (tt == CTOK_IDENT) {
         char tname[256];
         tok_str(peek(I), tname, sizeof(tname));
-        if (strcmp(tname, "vector") == 0 || strcmp(tname, "map") == 0 ||
-            strcmp(tname, "pair") == 0) {
+        if (cpp_stl_valtype(tname) >= 0) {
             advance(I);
             /* skip <...> template args */
             if (check(I, CTOK_LT)) {
@@ -1810,9 +1825,7 @@ static OcppNode *parse_declaration(OcppInterpreter *I) {
             strcpy(n->class_name, tname);
             n->is_reference = is_ref;
 
-            if (strcmp(tname, "vector") == 0) n->val_type = CVAL_VECTOR;
-            else if (strcmp(tname, "map") == 0) n->val_type = CVAL_MAP;
-            else n->val_type = CVAL_PAIR;
+            n->val_type = cpp_stl_valtype(tname);
 
             if (match(I, CTOK_ASSIGN)) {
                 /* ``= {1,2,3}`` brace-initializer for STL containers
@@ -1964,8 +1977,7 @@ static OcppNode *parse_declaration(OcppInterpreter *I) {
                 OcppToken *it = peek_at(I, 1);
                 int ilen = it->length < 63 ? it->length : 63;
                 memcpy(inner, it->start, ilen);
-                if (find_class(I, inner) || strcmp(inner, "vector") == 0 ||
-                    strcmp(inner, "map") == 0 || strcmp(inner, "pair") == 0)
+                if (find_class(I, inner) || cpp_stl_valtype(inner) >= 0)
                     looks_like_function_params = 1;
             }
         }
@@ -2079,8 +2091,8 @@ static OcppNode *parse_declaration(OcppInterpreter *I) {
                 /* Could be a class type parameter */
                 char pclass[256];
                 tok_str(peek(I), pclass, sizeof(pclass));
-                if (find_class(I, pclass) || strcmp(pclass, "vector") == 0 ||
-                    strcmp(pclass, "map") == 0 || strcmp(pclass, "string") == 0) {
+                if (find_class(I, pclass) || cpp_stl_valtype(pclass) >= 0 ||
+                    strcmp(pclass, "string") == 0) {
                     ptype = CVAL_OBJECT;
                     advance(I);
                     if (check(I, CTOK_LT)) {
@@ -3350,6 +3362,43 @@ static OcppValue vector_method(OcppInterpreter *I, OcppValue *vec, const char *m
         vec->v.vec.len = new_size;
         return make_void();
     }
+    /* ── stack / queue / deque adapter methods (kind: 1=stack, 2=queue) ── */
+    if (strcmp(method, "push") == 0) {
+        /* stack/queue push → append */
+        if (nargs < 1) ocpp_error(I, "push requires argument");
+        vec_ensure_cap(vec, vec->v.vec.len + 1);
+        vec->v.vec.data[vec->v.vec.len++] = value_deep_copy(args[0]);
+        return make_void();
+    }
+    if (strcmp(method, "push_front") == 0) {
+        if (nargs < 1) ocpp_error(I, "push_front requires argument");
+        vec_ensure_cap(vec, vec->v.vec.len + 1);
+        for (int i = vec->v.vec.len; i > 0; i--) vec->v.vec.data[i] = vec->v.vec.data[i - 1];
+        vec->v.vec.data[0] = value_deep_copy(args[0]);
+        vec->v.vec.len++;
+        return make_void();
+    }
+    if (strcmp(method, "pop_front") == 0) {
+        if (vec->v.vec.len > 0) {
+            for (int i = 0; i < vec->v.vec.len - 1; i++) vec->v.vec.data[i] = vec->v.vec.data[i + 1];
+            vec->v.vec.len--;
+        }
+        return make_void();
+    }
+    if (strcmp(method, "pop") == 0) {
+        /* queue.pop() removes the FRONT; stack.pop() removes the BACK */
+        if (vec->v.vec.len == 0) return make_void();
+        if (vec->v.vec.kind == 2) { /* queue */
+            for (int i = 0; i < vec->v.vec.len - 1; i++) vec->v.vec.data[i] = vec->v.vec.data[i + 1];
+        }
+        vec->v.vec.len--; /* stack: drop back; queue: length already shifted */
+        return make_void();
+    }
+    if (strcmp(method, "top") == 0) {
+        /* stack.top() → back element */
+        if (vec->v.vec.len == 0) ocpp_error(I, "top() on empty stack");
+        return vec->v.vec.data[vec->v.vec.len - 1];
+    }
     ocpp_error(I, "Unknown vector method '%s'", method);
     return make_void();
 }
@@ -3417,8 +3466,8 @@ static OcppValue map_method(OcppInterpreter *I, OcppValue *mp, const char *metho
     }
     if (strcmp(method, "insert") == 0) {
         if (nargs < 1) return make_void();
-        /* insert(pair) or insert({key, val}) */
         if (args[0].type == CVAL_PAIR) {
+            /* map: insert(pair{key,val}) */
             OcppValue key = *args[0].v.pair.first;
             OcppValue val = *args[0].v.pair.second;
             if (map_find_key(mp, key) < 0) {
@@ -3426,6 +3475,22 @@ static OcppValue map_method(OcppInterpreter *I, OcppValue *mp, const char *metho
                 int idx = mp->v.map.len++;
                 mp->v.map.keys[idx] = value_deep_copy(key);
                 mp->v.map.vals[idx] = value_deep_copy(val);
+            }
+        } else if (nargs >= 2) {
+            /* map: insert(key, val) */
+            if (map_find_key(mp, args[0]) < 0) {
+                map_ensure_cap(mp, mp->v.map.len + 1);
+                int idx = mp->v.map.len++;
+                mp->v.map.keys[idx] = value_deep_copy(args[0]);
+                mp->v.map.vals[idx] = value_deep_copy(args[1]);
+            }
+        } else {
+            /* set: insert(key) — store the element as the key, val=1 */
+            if (map_find_key(mp, args[0]) < 0) {
+                map_ensure_cap(mp, mp->v.map.len + 1);
+                int idx = mp->v.map.len++;
+                mp->v.map.keys[idx] = value_deep_copy(args[0]);
+                mp->v.map.vals[idx] = make_int(1);
             }
         }
         return make_void();
@@ -4758,9 +4823,13 @@ static void exec_node(OcppInterpreter *I, OcppNode *n) {
 
         if (n->val_type == CVAL_VECTOR) {
             init_val = make_vector(CVAL_INT);
+            /* stack/queue share the vector storage but pop/top/front
+             * differ — record which flavor was declared. */
+            if (strcmp(n->class_name, "stack") == 0)      init_val.v.vec.kind = 1;
+            else if (strcmp(n->class_name, "queue") == 0) init_val.v.vec.kind = 2;
             if (n->n_children > 0 && n->children[0]) {
                 OcppValue rv = eval_node(I, n->children[0]);
-                if (rv.type == CVAL_VECTOR) init_val = rv;
+                if (rv.type == CVAL_VECTOR) { int k = init_val.v.vec.kind; init_val = rv; init_val.v.vec.kind = k; }
             }
             /* Init from initializer list in stmts */
             if (n->stmts && n->n_stmts > 0) {

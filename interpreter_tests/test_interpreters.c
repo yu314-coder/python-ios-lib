@@ -124,6 +124,14 @@ static void test_c(void) {
         "int main(){printf(\"%d%d\",isnan(0.0),isinf(0.0));return 0;}", "00");
     c_case("math lround/copysign [feat]",
         "int main(){printf(\"%d %d\",(int)lround(2.6),(int)copysign(3.0,-1.0));return 0;}", "3 -3");
+
+    /* [feat] free reclamation — malloc/free loop past the arena size */
+    c_case("free reclamation [feat]",
+        "int main(){for(int i=0;i<100000;i++){int*p=(int*)malloc(8);p[0]=i;free(p);}"
+        "printf(\"ok\");return 0;}", "ok");
+    c_case("freed block reused+zeroed [feat]",
+        "int main(){int*a=(int*)malloc(4);a[0]=99;free(a);int*b=(int*)malloc(4);"
+        "printf(\"%d\",b[0]);return 0;}", "0");
 }
 
 static void test_cpp(void) {
@@ -202,6 +210,20 @@ static void test_cpp(void) {
         "#include <iostream>\n#include <vector>\n#include <algorithm>\nint main(){"
         "std::vector<int> v;v.push_back(0);v.push_back(0);fill(v.begin(),v.end(),7);"
         "std::cout<<v[0]<<v[1];return 0;}", "77");
+
+    /* [feat] new containers: set / unordered_map / stack / queue */
+    cpp_case("set dedup+count [feat]",
+        "#include <iostream>\n#include <set>\nusing namespace std;int main(){set<int> s;"
+        "s.insert(3);s.insert(1);s.insert(3);cout<<s.size()<<s.count(1)<<s.count(9);return 0;}", "210");
+    cpp_case("unordered_map [feat]",
+        "#include <iostream>\n#include <unordered_map>\nusing namespace std;int main(){"
+        "unordered_map<int,int> m;m[5]=50;m[7]=70;cout<<m[5]<<\" \"<<m[7];return 0;}", "50 70");
+    cpp_case("stack push/top/pop [feat]",
+        "#include <iostream>\n#include <stack>\nusing namespace std;int main(){stack<int> st;"
+        "st.push(1);st.push(2);st.push(3);cout<<st.top();st.pop();cout<<st.top();return 0;}", "32");
+    cpp_case("queue push/front/pop [feat]",
+        "#include <iostream>\n#include <queue>\nusing namespace std;int main(){queue<int> q;"
+        "q.push(1);q.push(2);q.push(3);cout<<q.front();q.pop();cout<<q.front();return 0;}", "12");
 }
 
 static void test_fortran(void) {

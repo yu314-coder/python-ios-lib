@@ -141,11 +141,13 @@ typedef struct OcppValue {
             char class_name[64];
             int vmem_addr;   /* for this pointer */
         } obj;
-        struct {             /* CVAL_VECTOR */
+        struct {             /* CVAL_VECTOR (also backs list/deque/stack/queue) */
             struct OcppValue *data;
             int len;
             int cap;
             OcppValType elem_type;
+            int kind;        /* 0=vector/list/deque, 1=stack, 2=queue —
+                              * disambiguates pop()/top()/front() semantics */
         } vec;
         struct {             /* CVAL_MAP */
             struct OcppValue *keys;
