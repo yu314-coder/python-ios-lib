@@ -167,6 +167,8 @@ let package = Package(
         .library(name: "Cffi", targets: ["Cffi"]),
         .library(name: "Tinycss2", targets: ["Tinycss2"]),
         .library(name: "Cssselect2", targets: ["Cssselect2", "Tinycss2"]),
+        .library(name: "Pydeck",
+                 targets: ["Pydeck", "NumPy", "Jinja2", "Markupsafe"]),
 
         // ── Requires multiple deps ──
         // Manim covers the entire animation stack. Hard-imports at
@@ -600,6 +602,15 @@ let package = Package(
                 path: "Sources/Cssselect2",
                 resources: [.copy("cssselect2"),
             .copy("cssselect2-0.8.0.dist-info")]),
+
+        // pydeck — deck.gl bindings (the ~23 MB is prebuilt deck.gl JS
+        // served as static assets). Hard-imports numpy (bindings/layer.py)
+        // + jinja2 (HTML export); the ipywidgets Jupyter widget is a
+        // separate lazy module, so core `import pydeck` works without it.
+        .target(name: "Pydeck",
+                dependencies: ["NumPy", "Jinja2"],
+                path: "Sources/Pydeck",
+                resources: [.copy("pydeck"), .copy("pydeck-0.9.2.dist-info")]),
 
         // screeninfo — multi-monitor query. manim's camera reads this
         // to decide default frame size if not configured.
