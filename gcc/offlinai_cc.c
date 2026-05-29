@@ -331,6 +331,14 @@ static const Keyword keywords[] = {
     {"constexpr", TOK_CONSTEXPR},
     {"_Noreturn", TOK_CONST}, /* treat as const */
     {"auto", TOK_AUTO_TYPE},
+    /* C99/C23: bool / _Bool / restrict / inline mapped to the closest
+     * existing type token (TOK_INT). Modern code uses these as plain
+     * declarations; the interpreter doesn't differentiate widths so a
+     * 1-byte _Bool is functionally the same as int here. */
+    {"bool", TOK_INT}, {"_Bool", TOK_INT},
+    {"restrict", TOK_CONST}, {"__restrict", TOK_CONST}, {"__restrict__", TOK_CONST},
+    {"inline", TOK_CONST}, {"__inline", TOK_CONST}, {"__inline__", TOK_CONST},
+    {"volatile", TOK_CONST},
     {NULL, TOK_EOF}
 };
 
@@ -1353,9 +1361,14 @@ static OccNode *parse_vardecl(OccInterpreter *I, OccValType vt) {
             expect(I, TOK_RBRACKET, "]");
         }
         decl->array_size = total_size > 0 ? total_size : 0;
-        /* Store dimension info for multi-dim indexing */
-        decl->num_val = dim_count; /* repurpose num_val for n_dims */
-        for (int d = 0; d < 4; d++) decl->str_val[d] = (char)dim_sizes[d]; /* hack: store dims in str_val bytes */
+        /* Store dimension info for multi-dim indexing. Use full int slots
+         * (arr_dims/n_dims) — the old code packed each extent into a
+         * single str_val byte, so any dimension > 255 wrapped and the
+         * 2-D stride (cols) came out wildly wrong. num_val is kept in
+         * sync for any legacy reader. */
+        decl->n_dims = dim_count;
+        decl->num_val = dim_count;
+        for (int d = 0; d < 4; d++) decl->arr_dims[d] = dim_sizes[d];
     }
     /* initializer */
     if (match(I, TOK_ASSIGN)) {
@@ -1697,8 +1710,43 @@ static OccNode *parse_stmt(OccInterpreter *I) {
                 }
             }
         } else {
-            /* typedef int Alias; — skip type, grab alias */
-            while (!check(I, TOK_SEMICOLON) && !check(I, TOK_EOF)) advance(I);
+            /* typedef <basic-type> <Alias>; — capture the alias so it
+             * can be used as a type later. Walk the type tokens, then
+             * the alias identifier (the last IDENT before ;), and
+             * register it as a typedef so subsequent declarations of
+             * `Alias var;` pick the right base type. */
+            char base[128] = {0};
+            char alias_name[128] = {0};
+            /* Collect the base type tokens (int, long long, unsigned, etc.) */
+            int base_len = 0;
+            while (!check(I, TOK_SEMICOLON) && !check(I, TOK_EOF)) {
+                OccToken *t = peek(I);
+                /* Last IDENT before ';' or '[' is the alias name. */
+                if (t->type == TOK_IDENT) {
+                    OccToken *next = (I->tok_pos + 1 < I->n_tokens) ?
+                                      &I->tokens[I->tok_pos + 1] : NULL;
+                    if (next && (next->type == TOK_SEMICOLON ||
+                                  next->type == TOK_LBRACKET)) {
+                        int al = t->length < 127 ? t->length : 127;
+                        memcpy(alias_name, t->start, al);
+                        advance(I);
+                        continue;
+                    }
+                }
+                /* Otherwise it's part of the base type. */
+                if (base_len + t->length < 127) {
+                    if (base_len > 0) base[base_len++] = ' ';
+                    memcpy(base + base_len, t->start, t->length);
+                    base_len += t->length;
+                }
+                advance(I);
+            }
+            if (alias_name[0] && I->n_typedefs < 64) {
+                strncpy(I->typedefs[I->n_typedefs].alias, alias_name, 127);
+                strncpy(I->typedefs[I->n_typedefs].original,
+                        base[0] ? base : "int", 127);
+                I->n_typedefs++;
+            }
         }
         expect(I, TOK_SEMICOLON, ";");
         return new_node(ND_BLOCK, line);
@@ -1756,6 +1804,32 @@ static OccNode *parse_stmt(OccInterpreter *I) {
         if (!check(I, TOK_RBRACE) && !check(I, TOK_EOF))
             add_child(label, parse_stmt(I));
         return label;
+    }
+
+    /* Typedef-alias variable declaration: `MyType x;` where MyType
+     * was registered via `typedef int MyType;`. Rewrite the alias
+     * token's type to the corresponding base-type token so the
+     * standard type-parser handles it. */
+    if (check(I, TOK_IDENT)) {
+        OccToken *t = peek(I);
+        for (int ti = 0; ti < I->n_typedefs; ti++) {
+            const char *alias = I->typedefs[ti].alias;
+            int alen = (int)strlen(alias);
+            if (alen == t->length && memcmp(t->start, alias, alen) == 0) {
+                /* Determine which base-type keyword to use. */
+                const char *base = I->typedefs[ti].original;
+                OccTokenType base_tok = TOK_INT;
+                if (strstr(base, "double"))      base_tok = TOK_DOUBLE;
+                else if (strstr(base, "float"))  base_tok = TOK_FLOAT;
+                else if (strstr(base, "char"))   base_tok = TOK_CHAR;
+                else if (strstr(base, "void"))   base_tok = TOK_VOID;
+                else if (strstr(base, "long"))   base_tok = TOK_LONG;
+                else if (strstr(base, "short"))  base_tok = TOK_SHORT;
+                /* Rewrite this token so the existing parser flow works. */
+                t->type = base_tok;
+                break;
+            }
+        }
     }
 
     /* variable declaration (including static) */
@@ -2068,6 +2142,22 @@ static OccValue call_user_func(OccInterpreter *I, const char *fname, OccValue *a
     return call_builtin(I, fname, args, nargs);
 }
 
+/* Element accessor for mem* builtins. Handles the two ways the
+ * interpreter stores byte/element-addressable memory:
+ *   • VAL_PTR   — heap from malloc/calloc/realloc, lives in vmem
+ *   • VAL_ARRAY — a local array; data ptr is shared (eval returns
+ *                 arrays by value with v.arr.data aliased), so writes
+ *                 through it persist (same property qsort relies on).
+ * Returns NULL past the end so callers stop cleanly. */
+static OccValue *occ_mem_slot(OccInterpreter *I, OccValue v, int i) {
+    if (i < 0) return NULL;
+    if (v.type == VAL_PTR)
+        return vmem_get(I, v.v.ptr.addr + i);
+    if (v.type == VAL_ARRAY && v.v.arr.data && i < v.v.arr.len)
+        return &v.v.arr.data[i];
+    return NULL;
+}
+
 static OccValue call_builtin(OccInterpreter *I, const char *name, OccValue *args, int nargs) {
     /* printf family */
     if (strcmp(name, "printf") == 0 || strcmp(name, "fprintf") == 0) {
@@ -2240,10 +2330,58 @@ static OccValue call_builtin(OccInterpreter *I, const char *name, OccValue *args
         return make_void();
     }
 
-    /* memset/memcpy/memmove/memcmp */
-    if (strcmp(name, "memset") == 0) return nargs > 0 ? args[0] : make_int(0);
-    if (strcmp(name, "memcpy") == 0) return nargs > 0 ? args[0] : make_int(0);
-    if (strcmp(name, "memmove") == 0) return nargs > 0 ? args[0] : make_int(0);
+    /* memset/memcpy/memmove/memcmp.
+     * The vmem model is element-addressed (1 slot == 1 byte/element),
+     * so the byte counts here are treated as slot counts — matching the
+     * malloc/calloc/realloc convention elsewhere in this file. */
+    if (strcmp(name, "memset") == 0) {
+        if (nargs >= 3) {
+            long long fill = val_to_int(args[1]);
+            int n = (int)val_to_int(args[2]);
+            for (int i = 0; i < n; i++) {
+                OccValue *slot = occ_mem_slot(I, args[0], i);
+                if (!slot) break;
+                *slot = make_int(fill);
+            }
+        }
+        return nargs > 0 ? args[0] : make_int(0);
+    }
+    if (strcmp(name, "memcpy") == 0) {
+        if (nargs >= 3) {
+            int n = (int)val_to_int(args[2]);
+            for (int i = 0; i < n; i++) {
+                OccValue *d = occ_mem_slot(I, args[0], i);
+                OccValue *s = occ_mem_slot(I, args[1], i);
+                if (!d || !s) break;
+                *d = *s;
+            }
+        }
+        return nargs > 0 ? args[0] : make_int(0);
+    }
+    if (strcmp(name, "memmove") == 0) {
+        if (nargs >= 3) {
+            int n = (int)val_to_int(args[2]);
+            /* Overlap-safe: when dst > src in the same vmem region, copy
+             * back-to-front so we don't clobber source slots first. */
+            int da = args[0].type == VAL_PTR ? args[0].v.ptr.addr : -1;
+            int sa = args[1].type == VAL_PTR ? args[1].v.ptr.addr : -2;
+            if (da > sa) {
+                for (int i = n - 1; i >= 0; i--) {
+                    OccValue *d = occ_mem_slot(I, args[0], i);
+                    OccValue *s = occ_mem_slot(I, args[1], i);
+                    if (d && s) *d = *s;
+                }
+            } else {
+                for (int i = 0; i < n; i++) {
+                    OccValue *d = occ_mem_slot(I, args[0], i);
+                    OccValue *s = occ_mem_slot(I, args[1], i);
+                    if (!d || !s) break;
+                    *d = *s;
+                }
+            }
+        }
+        return nargs > 0 ? args[0] : make_int(0);
+    }
     if (strcmp(name, "memcmp") == 0) {
         /* simplified: compare as strings if both are strings/arrays */
         if (nargs >= 3) {
@@ -2763,17 +2901,27 @@ static OccValue eval_node(OccInterpreter *I, OccNode *n) {
             /* Check for nested index: arr[i][j] */
             OccNode *idx_node = n->children[0];
             if (idx_node->children[0]->type == ND_INDEX) {
-                /* 2D: outer[inner[base][i]][j] */
+                /* 2D: arr[i][j] = rhs */
                 OccVar *v = resolve_lvalue(I, idx_node->children[0]->children[0]);
                 if (v && v->val.type == VAL_ARRAY) {
-                    int outer_idx = (int)val_to_int(eval_node(I, idx_node->children[0]->children[1]));
-                    int inner_idx = (int)val_to_int(eval_node(I, idx_node->children[1]));
-                    if (outer_idx >= 0 && outer_idx < v->val.v.arr.len &&
-                        v->val.v.arr.data[outer_idx].type == VAL_ARRAY) {
-                        OccValue *inner = &v->val.v.arr.data[outer_idx];
-                        if (inner_idx >= 0 && inner_idx < inner->v.arr.len) {
-                            inner->v.arr.data[inner_idx] = rhs;
-                        }
+                    int row = (int)val_to_int(eval_node(I, idx_node->children[0]->children[1]));
+                    int col = (int)val_to_int(eval_node(I, idx_node->children[1]));
+                    if (v->val.v.arr.n_dims >= 2) {
+                        /* Declared `int m[R][C]` is allocated FLAT (one
+                         * buffer of R*C), so index as data[row*cols+col].
+                         * This matches the read and += paths; the old code
+                         * assumed a jagged layout (data[row] is a sub-array)
+                         * and silently dropped the write. */
+                        int cols = v->val.v.arr.dims[1];
+                        int flat = row * cols + col;
+                        if (flat >= 0 && flat < v->val.v.arr.len)
+                            v->val.v.arr.data[flat] = rhs;
+                    } else if (row >= 0 && row < v->val.v.arr.len &&
+                               v->val.v.arr.data[row].type == VAL_ARRAY) {
+                        /* Jagged / array-of-arrays fallback */
+                        OccValue *inner = &v->val.v.arr.data[row];
+                        if (col >= 0 && col < inner->v.arr.len)
+                            inner->v.arr.data[col] = rhs;
                     }
                     return rhs;
                 }
@@ -3369,10 +3517,13 @@ static void exec_node(OccInterpreter *I, OccNode *n) {
             init.v.arr.len = sz;
             init.v.arr.cap = sz;
             init.v.arr.elem_type = n->val_type;
-            /* Store multi-dimensional info */
-            int nd = (int)n->num_val;
+            /* Store multi-dimensional info. Read the full-int extents
+             * (arr_dims) instead of the old byte-packed str_val, so
+             * dimensions > 255 (e.g. int m[1000][1000]) keep the correct
+             * stride. v.arr.dims is already int[4]. */
+            int nd = n->n_dims > 0 ? n->n_dims : (int)n->num_val;
             init.v.arr.n_dims = nd > 0 ? nd : 0;
-            for (int d = 0; d < 4; d++) init.v.arr.dims[d] = (unsigned char)n->str_val[d];
+            for (int d = 0; d < 4; d++) init.v.arr.dims[d] = n->arr_dims[d];
             init.v.arr.data = (OccValue *)calloc(sz, sizeof(OccValue));
             if (n->children[0] && n->children[0]->type == ND_ARRAY_INIT) {
                 for (int i = 0; i < n->children[0]->n_stmts && i < sz; i++)
@@ -3468,7 +3619,11 @@ static void exec_node(OccInterpreter *I, OccNode *n) {
             OccNode *c = n->stmts[i];
             if (c->type == ND_DEFAULT) { found_default = i; continue; }
             if (c->type == ND_CASE) {
-                long long cv = (long long)eval_node(I, c->children[0]).v.i;
+                /* Use val_to_int (not raw .v.i): a case constant may be a
+                 * char ('A'), enum, or #define that evaluates to
+                 * VAL_CHAR/VAL_DOUBLE, in which case .v.i reads the wrong
+                 * union member and compares garbage. Mirrors `sv` above. */
+                long long cv = val_to_int(eval_node(I, c->children[0]));
                 if (cv == sv || matched) {
                     matched = 1;
                     for (int j = 0; j < c->n_stmts; j++) {

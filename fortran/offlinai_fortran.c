@@ -373,6 +373,20 @@ static OfortFunc *find_func(OfortInterpreter *I, const char *name) {
 }
 
 static void register_func(OfortInterpreter *I, const char *name, OfortNode *node, int is_function) {
+    /* Idempotent registration — pre-pass + normal exec walk can both
+     * register the same internal procedure, so update the existing
+     * entry in place when present. */
+    char upper[256];
+    str_upper(upper, name, 256);
+    for (int i = 0; i < I->n_funcs; i++) {
+        char fu[256];
+        str_upper(fu, I->funcs[i].name, 256);
+        if (strcmp(fu, upper) == 0) {
+            I->funcs[i].node = node;
+            I->funcs[i].is_function = is_function;
+            return;
+        }
+    }
     if (I->n_funcs >= OFORT_MAX_FUNCS) ofort_error(I, "Too many functions/subroutines");
     OfortFunc *f = &I->funcs[I->n_funcs++];
     strncpy(f->name, name, 255);
@@ -770,9 +784,30 @@ static int check(OfortInterpreter *I, OfortTokenType type) {
     return peek(I)->type == type;
 }
 
+/* Token types that are keywords in some contexts but valid identifier
+ * names elsewhere — RESULT, IN, OUT, INOUT, NONE, DATA, SAVE, KIND,
+ * etc. When we ask for an IDENT we accept any of these. */
+static int is_contextual_keyword(OfortTokenType t) {
+    switch (t) {
+        case FTOK_RESULT: case FTOK_IN: case FTOK_OUT: case FTOK_INOUT:
+        case FTOK_NONE: case FTOK_DATA: case FTOK_SAVE:
+        case FTOK_DIMENSION: case FTOK_ALLOCATABLE: case FTOK_PARAMETER:
+        case FTOK_INTENT: case FTOK_DEFAULT: case FTOK_CONTAINS:
+            return 1;
+        default:
+            return 0;
+    }
+}
+
 static OfortToken *expect(OfortInterpreter *I, OfortTokenType type) {
     OfortToken *t = peek(I);
     if (t->type != type) {
+        /* Forgive contextual keywords where an IDENT is expected — a
+         * variable named ``result`` (or ``in``, etc.) is legal in
+         * Fortran outside its declarative role. */
+        if (type == FTOK_IDENT && is_contextual_keyword(t->type)) {
+            return advance(I);
+        }
         ofort_error(I, "Expected token type %d, got %d at line %d", type, t->type, t->line);
     }
     return advance(I);
@@ -938,6 +973,46 @@ static OfortNode *parse_primary(OfortInterpreter *I) {
         advance(I);
         return parse_primary(I);
     }
+    /* Type keyword used as a conversion intrinsic — ``REAL(i)``,
+     * ``INT(x)``, ``DBLE(x)``, ``CHAR(n)``, ``LOGICAL(b)``. The Fortran
+     * tokenizer classifies these as type keywords, not identifiers, so
+     * the IDENT-followed-by-LPAREN path below misses them. We rewrite
+     * the token's name from the literal text and fall through. */
+    if ((t->type == FTOK_REAL || t->type == FTOK_INTEGER ||
+         t->type == FTOK_DOUBLE_PRECISION || t->type == FTOK_CHARACTER ||
+         t->type == FTOK_LOGICAL || t->type == FTOK_COMPLEX) &&
+        peek_ahead(I, 1)->type == FTOK_LPAREN) {
+        const char *intrinsic_name = "REAL";
+        switch (t->type) {
+            case FTOK_REAL:             intrinsic_name = "REAL"; break;
+            case FTOK_INTEGER:          intrinsic_name = "INT"; break;
+            case FTOK_DOUBLE_PRECISION: intrinsic_name = "DBLE"; break;
+            case FTOK_CHARACTER:        intrinsic_name = "CHAR"; break;
+            case FTOK_LOGICAL:          intrinsic_name = "LOGICAL"; break;
+            case FTOK_COMPLEX:          intrinsic_name = "CMPLX"; break;
+            default: break;
+        }
+        advance(I);
+        OfortNode *n = alloc_node(I, FND_FUNC_CALL);
+        strncpy(n->name, intrinsic_name, 255);
+        n->line = t->line;
+        expect(I, FTOK_LPAREN);
+        n->stmts = (OfortNode **)calloc(4, sizeof(OfortNode *));
+        int cap = 4;
+        n->n_stmts = 0;
+        while (!check(I, FTOK_RPAREN) && !check(I, FTOK_EOF)) {
+            if (n->n_stmts > 0) expect(I, FTOK_COMMA);
+            if (n->n_stmts >= cap) {
+                cap *= 2;
+                n->stmts = (OfortNode **)realloc(n->stmts,
+                                                  cap * sizeof(OfortNode *));
+            }
+            n->stmts[n->n_stmts++] = parse_expr(I);
+        }
+        expect(I, FTOK_RPAREN);
+        return n;
+    }
+
     /* identifier — could be variable, function call, or array ref */
     if (t->type == FTOK_IDENT) {
         advance(I);
@@ -1497,15 +1572,34 @@ static OfortNode *parse_select_case(OfortInterpreter *I) {
 
             if (check(I, FTOK_DEFAULT) || check_ident_upper(I, "DEFAULT")) {
                 advance(I);
-                cb->children[0] = NULL; /* default case */
+                cb->children[0] = NULL; /* default case (n_stmts stays 0) */
             } else {
                 expect(I, FTOK_LPAREN);
-                cb->children[0] = parse_expr(I);
-                /* check for range: case (lo:hi) */
-                if (check(I, FTOK_COLON)) {
-                    advance(I);
-                    cb->children[1] = parse_expr(I);
-                    cb->n_children = 2;
+                /* One or more comma-separated selectors; each is a single
+                 * value or a lo:hi range. Stored as item nodes in
+                 * cb->stmts so CASE value-lists like CASE (1, 2, 5:10)
+                 * parse — previously the comma hit expect(RPAREN) and
+                 * hard-errored. children[] stays reserved for the body;
+                 * a default case is the one with n_stmts == 0. */
+                cb->stmts = NULL; cb->n_stmts = 0;
+                int scap = 0;
+                while (1) {
+                    OfortNode *item = alloc_node(I, FND_CASE_BLOCK);
+                    item->children[0] = parse_expr(I);
+                    item->n_children = 1;
+                    if (check(I, FTOK_COLON)) {  /* lo:hi range */
+                        advance(I);
+                        item->children[1] = parse_expr(I);
+                        item->n_children = 2;
+                    }
+                    if (cb->n_stmts >= scap) {
+                        scap = scap ? scap * 2 : 4;
+                        cb->stmts = (OfortNode **)realloc(cb->stmts,
+                                        sizeof(OfortNode *) * scap);
+                    }
+                    cb->stmts[cb->n_stmts++] = item;
+                    if (!check(I, FTOK_COMMA)) break;
+                    advance(I); /* consume comma, parse next selector */
                 }
                 expect(I, FTOK_RPAREN);
             }
@@ -1846,12 +1940,34 @@ static OfortNode *parse_statement(OfortInterpreter *I) {
 
     /* declarations */
     if (is_type_keyword(t->type)) {
-        /* Could be a declaration or a function with type prefix */
-        /* Look ahead for :: or ident followed by = or ( or , */
-        int saved = I->tok_pos;
-        /* Check if this is "TYPE :: name" (type definition) when token is FTOK_TYPE */
-        /* Since TYPE is mapped to FTOK_TYPE for derived types too, handle in TYPE case below */
+        /* Type prefix on FUNCTION declarations: `INTEGER FUNCTION foo()`
+         * — skip the type and dispatch to parse_function. The function
+         * sets its return type from RESULT() / body's assignment to the
+         * function name; we'll just attribute it to the type prefix. */
+        OfortToken *next = peek_ahead(I, 1);
+        if (next && next->type == FTOK_FUNCTION) {
+            OfortValType ret_type = token_to_valtype(t->type);
+            advance(I);  /* consume the type prefix */
+            OfortNode *fn = parse_function(I);
+            if (fn) fn->val_type = ret_type;
+            return fn;
+        }
         return parse_declaration(I);
+    }
+
+    /* RECURSIVE / PURE / ELEMENTAL prefixes on procedure declarations
+     * — these don't change semantics in this interpreter, so just
+     * skip the keyword and re-dispatch. Recognised either as their
+     * own keyword (if the tokenizer maps them) or as an IDENT in
+     * the upper-case ALL form. */
+    if (t->type == FTOK_IDENT) {
+        const char *s = t->str_val;
+        if (s && (strcasecmp(s, "RECURSIVE") == 0 ||
+                  strcasecmp(s, "PURE") == 0 ||
+                  strcasecmp(s, "ELEMENTAL") == 0)) {
+            advance(I);
+            return parse_statement(I);
+        }
     }
 
     /* TYPE definition (derived type) */
@@ -1861,9 +1977,46 @@ static OfortNode *parse_statement(OfortInterpreter *I) {
         if (next->type == FTOK_DCOLON || next->type == FTOK_IDENT) {
             return parse_type_def(I);
         }
-        /* TYPE(typename) is used as a type — skip for now */
-        advance(I);
-        return NULL;
+        /* TYPE(typename) :: var [, var2 ...] — derived-type declarator.
+         * We materialise this as an FND_VARDECL with ``class_name``
+         * set to the type name; the evaluator looks the type up and
+         * builds a default-initialised value with the right fields.
+         * Multiple declarators get wrapped in a FND_BLOCK. */
+        advance(I);  /* TYPE */
+        expect(I, FTOK_LPAREN);
+        OfortToken *tname = expect(I, FTOK_IDENT);
+        expect(I, FTOK_RPAREN);
+        if (check(I, FTOK_DCOLON)) advance(I);
+        OfortNode *first = NULL;
+        OfortNode *block = NULL;
+        int bcap = 0;
+        while (1) {
+            OfortToken *vt = expect(I, FTOK_IDENT);
+            OfortNode *d = alloc_node(I, FND_VARDECL);
+            d->line = vt->line;
+            strncpy(d->name, vt->str_val, 255);
+            d->val_type = FVAL_DERIVED;
+            strncpy(d->str_val, tname->str_val, sizeof(d->str_val) - 1);
+            if (!first) {
+                first = d;
+            } else {
+                if (!block) {
+                    block = alloc_node(I, FND_BLOCK);
+                    bcap = 8;
+                    block->stmts = (OfortNode **)calloc(bcap, sizeof(OfortNode *));
+                    block->stmts[block->n_stmts++] = first;
+                }
+                if (block->n_stmts >= bcap) {
+                    bcap *= 2;
+                    block->stmts = (OfortNode **)realloc(block->stmts,
+                                                          sizeof(OfortNode *) * bcap);
+                }
+                block->stmts[block->n_stmts++] = d;
+            }
+            if (check(I, FTOK_COMMA)) { advance(I); continue; }
+            break;
+        }
+        return block ? block : first;
     }
 
     /* PROGRAM */
@@ -1991,7 +2144,11 @@ static OfortNode *parse_statement(OfortInterpreter *I) {
     }
 
     /* Expression statement or assignment: ident = expr, or ident(args) = expr, or call */
-    if (t->type == FTOK_IDENT) {
+    if (t->type == FTOK_IDENT || is_contextual_keyword(t->type)) {
+        /* Demote a contextual keyword used here to an IDENT so the
+         * expression parser treats ``result = ...`` as a variable
+         * assignment. */
+        if (is_contextual_keyword(t->type)) t->type = FTOK_IDENT;
         OfortNode *expr = parse_expr(I);
         if (check(I, FTOK_ASSIGN)) {
             advance(I);
@@ -2023,11 +2180,14 @@ static OfortNode *parse_block_until_end(OfortInterpreter *I, const char *end_key
     int cap = 0;
 
     while (!check_end(I, end_keyword) && peek(I)->type != FTOK_EOF) {
-        /* Also break on CONTAINS for modules */
-        if (end_keyword && strcmp(end_keyword, "MODULE") == 0 && check(I, FTOK_CONTAINS)) {
+        /* Also break on CONTAINS for any enclosing program unit (MODULE,
+         * PROGRAM, FUNCTION, SUBROUTINE). Internal procedures parse
+         * the same way as their top-level counterparts; we append them
+         * to the parent block so the evaluator registers them when it
+         * walks the parent's stmts. */
+        if (end_keyword && check(I, FTOK_CONTAINS)) {
             advance(I);
             skip_newlines(I);
-            /* parse contained procedures */
             while (!check_end(I, end_keyword) && peek(I)->type != FTOK_EOF) {
                 skip_newlines(I);
                 if (check_end(I, end_keyword)) break;
@@ -2128,11 +2288,22 @@ static void value_to_string(OfortInterpreter *I, OfortValue v, char *buf, int bu
             snprintf(buf, bufsize, "%lld", v.v.i);
             break;
         case FVAL_REAL:
-            snprintf(buf, bufsize, "%.7g", v.v.r);
+        case FVAL_DOUBLE: {
+            /* Default list-directed output for REAL/DOUBLE emits a
+             * value with a visible decimal point. ``%g`` strips
+             * trailing zeros and can elide the point entirely (e.g.
+             * ``4.0`` → ``"4"``), so we append ``.`` when the
+             * formatted result has no decimal indicator and the value
+             * is finite. */
+            const char *fmt = (v.type == FVAL_DOUBLE) ? "%.15g" : "%.7g";
+            snprintf(buf, bufsize, fmt, v.v.r);
+            if (buf[0] && !strchr(buf, '.') && !strchr(buf, 'e') &&
+                !strchr(buf, 'E') && !strchr(buf, 'n') && !strchr(buf, 'i')) {
+                size_t bl = strlen(buf);
+                if (bl + 1 < (size_t)bufsize) { buf[bl] = '.'; buf[bl + 1] = '\0'; }
+            }
             break;
-        case FVAL_DOUBLE:
-            snprintf(buf, bufsize, "%.15g", v.v.r);
-            break;
+        }
         case FVAL_COMPLEX:
             snprintf(buf, bufsize, "(%.7g,%.7g)", v.v.cx.re, v.v.cx.im);
             break;
@@ -2142,6 +2313,24 @@ static void value_to_string(OfortInterpreter *I, OfortValue v, char *buf, int bu
         case FVAL_LOGICAL:
             snprintf(buf, bufsize, "%s", v.v.b ? "T" : "F");
             break;
+        case FVAL_ARRAY: {
+            /* List-directed output of a whole array: space-separated
+             * elements. */
+            int written = 0;
+            int n = v.v.arr.len;
+            for (int i = 0; i < n; i++) {
+                char elem[128];
+                value_to_string(I, v.v.arr.data[i], elem, sizeof(elem));
+                int needed = (int)strlen(elem) + (i > 0 ? 1 : 0);
+                if (written + needed >= bufsize - 1) break;
+                if (i > 0) buf[written++] = ' ';
+                int len = (int)strlen(elem);
+                memcpy(buf + written, elem, len);
+                written += len;
+            }
+            buf[written] = '\0';
+            break;
+        }
         default:
             buf[0] = '\0';
             break;
@@ -2815,6 +3004,18 @@ static void exec_node(OfortInterpreter *I, OfortNode *n) {
 
     case FND_PROGRAM: {
         push_scope(I);
+        /* Pre-register internal procedures (from ``CONTAINS``) so the
+         * executable part can call them regardless of declaration
+         * order. */
+        OfortNode *pbody = n->children[0];
+        if (pbody) {
+            for (int i = 0; i < pbody->n_stmts; i++) {
+                OfortNode *s = pbody->stmts[i];
+                if (s && (s->type == FND_SUBROUTINE || s->type == FND_FUNCTION)) {
+                    register_func(I, s->name, s, s->type == FND_FUNCTION);
+                }
+            }
+        }
         exec_node(I, n->children[0]);
         pop_scope(I);
         break;
@@ -2908,6 +3109,29 @@ static void exec_node(OfortInterpreter *I, OfortNode *n) {
 
     case FND_VARDECL:
     case FND_PARAMDECL: {
+        /* If this declaration is just naming a type for a name that
+         * already exists in the current scope (e.g. a function
+         * parameter or the auto-declared function-result variable
+         * inside a FUNCTION body), keep the existing value. Without
+         * this, the body's ``INTEGER :: x`` line would zero out the
+         * parameter ``x`` and the body sees the wrong value. */
+        if (!n->is_allocatable && n->n_dims == 0 &&
+            !(n->n_children > 0 && n->children[0])) {
+            OfortScope *cs = I->current_scope;
+            char up[256]; str_upper(up, n->name, 256);
+            for (int qi = 0; qi < cs->n_vars; qi++) {
+                char vu[256]; str_upper(vu, cs->vars[qi].name, 256);
+                if (strcmp(up, vu) == 0) {
+                    /* Already declared (likely as a param or the
+                     * function-result auto-variable); update intent
+                     * and keep its current value. Skip declare_var. */
+                    cs->vars[qi].intent = n->intent;
+                    if (n->is_parameter || n->type == FND_PARAMDECL)
+                        cs->vars[qi].is_parameter = 1;
+                    return;
+                }
+            }
+        }
         OfortValue val;
         if (n->n_dims > 0 && !n->is_allocatable) {
             /* Array declaration */
@@ -2920,6 +3144,21 @@ static void exec_node(OfortInterpreter *I, OfortNode *n) {
             val.v.arr.allocated = 0;
         } else if (n->n_children > 0 && n->children[0]) {
             val = eval_node(I, n->children[0]);
+        } else if (n->val_type == FVAL_DERIVED && n->str_val[0]) {
+            /* Default-initialise the derived-type instance with its
+             * type definition's fields. */
+            OfortTypeDef *td = find_type_def(I, n->str_val);
+            if (!td) ofort_error(I, "Unknown type '%s'", n->str_val);
+            memset(&val, 0, sizeof(val));
+            val.type = FVAL_DERIVED;
+            val.v.dt.n_fields = td->n_fields;
+            val.v.dt.fields = (OfortValue *)calloc(td->n_fields, sizeof(OfortValue));
+            val.v.dt.field_names = (char(*)[64])calloc(td->n_fields, sizeof(char[64]));
+            strncpy(val.v.dt.type_name, td->name, 63);
+            for (int i = 0; i < td->n_fields; i++) {
+                strcpy(val.v.dt.field_names[i], td->field_names[i]);
+                val.v.dt.fields[i] = default_value(td->field_types[i], td->field_char_lens[i]);
+            }
         } else {
             val = default_value(n->val_type, n->char_len);
         }
@@ -3099,41 +3338,47 @@ static void exec_node(OfortInterpreter *I, OfortNode *n) {
 
     case FND_SELECT_CASE: {
         OfortValue sel = eval_node(I, n->children[0]);
-        int matched = 0;
+        int matched = 0, default_idx = -1;
         for (int i = 0; i < n->n_stmts && !matched; i++) {
             OfortNode *cb = n->stmts[i];
-            if (!cb->children[0]) {
-                /* DEFAULT */
-                int body_idx = cb->n_children - 1;
-                exec_node(I, cb->children[body_idx]);
-                matched = 1;
-            } else {
-                OfortValue case_val = eval_node(I, cb->children[0]);
-                int match = 0;
-                if (cb->n_children >= 3) {
-                    /* range: lo:hi */
-                    OfortValue hi = eval_node(I, cb->children[1]);
-                    long long sv = val_to_int(sel);
-                    match = (sv >= val_to_int(case_val) && sv <= val_to_int(hi));
-                    free_value(&hi);
-                } else {
-                    /* single value */
-                    if (sel.type == FVAL_CHARACTER || case_val.type == FVAL_CHARACTER) {
-                        char sb[OFORT_MAX_STRLEN], cb2[OFORT_MAX_STRLEN];
-                        value_to_string(I, sel, sb, sizeof(sb));
-                        value_to_string(I, case_val, cb2, sizeof(cb2));
-                        match = (strcmp(sb, cb2) == 0);
-                    } else {
-                        match = (val_to_int(sel) == val_to_int(case_val));
-                    }
-                }
-                free_value(&case_val);
-                if (match) {
-                    int body_idx = cb->n_children - 1;
-                    exec_node(I, cb->children[body_idx]);
-                    matched = 1;
-                }
+            if (cb->n_stmts == 0) {
+                /* DEFAULT (no selector items) — defer until all explicit
+                 * cases have been checked, so it works wherever it
+                 * appears in source order. */
+                default_idx = i;
+                continue;
             }
+            /* Match against each selector item: a single value or lo:hi
+             * range. ANY item matching selects this block's body. */
+            int match = 0;
+            for (int k = 0; k < cb->n_stmts && !match; k++) {
+                OfortNode *item = cb->stmts[k];
+                OfortValue lo = eval_node(I, item->children[0]);
+                if (item->n_children == 2 && item->children[1]) {
+                    OfortValue hi = eval_node(I, item->children[1]);
+                    long long sv = val_to_int(sel);
+                    match = (sv >= val_to_int(lo) && sv <= val_to_int(hi));
+                    free_value(&hi);
+                } else if (sel.type == FVAL_CHARACTER || lo.type == FVAL_CHARACTER) {
+                    char sb[OFORT_MAX_STRLEN], cb2[OFORT_MAX_STRLEN];
+                    value_to_string(I, sel, sb, sizeof(sb));
+                    value_to_string(I, lo, cb2, sizeof(cb2));
+                    match = (strcmp(sb, cb2) == 0);
+                } else {
+                    match = (val_to_int(sel) == val_to_int(lo));
+                }
+                free_value(&lo);
+            }
+            if (match) {
+                int body_idx = cb->n_children - 1;
+                if (body_idx >= 0) exec_node(I, cb->children[body_idx]);
+                matched = 1;
+            }
+        }
+        if (!matched && default_idx >= 0) {
+            OfortNode *cb = n->stmts[default_idx];
+            int body_idx = cb->n_children - 1;
+            if (body_idx >= 0) exec_node(I, cb->children[body_idx]);
         }
         free_value(&sel);
         break;

@@ -174,6 +174,7 @@ static void ocpp_error(OcppInterpreter *I, const char *fmt, ...);
 static OcppValue eval_node(OcppInterpreter *I, OcppNode *n);
 static void exec_node(OcppInterpreter *I, OcppNode *n);
 static OcppValue call_function(OcppInterpreter *I, const char *name, OcppValue *args, int nargs);
+static OcppValue call_function_ref(OcppInterpreter *I, const char *name, OcppValue *args, OcppValue **lvalues, int nargs);
 static OcppValue call_method(OcppInterpreter *I, OcppValue *obj, const char *method, OcppValue *args, int nargs);
 static OcppValue call_stl_func(OcppInterpreter *I, const char *name, OcppValue *args, int nargs);
 static OcppClassDef *find_class(OcppInterpreter *I, const char *name);
@@ -309,7 +310,7 @@ static const char *val_to_str(OcppValue v, char *buf, int bufsz) {
         case CVAL_INT: snprintf(buf, bufsz, "%lld", v.v.i); break;
         case CVAL_FLOAT: case CVAL_DOUBLE: snprintf(buf, bufsz, "%g", v.v.f); break;
         case CVAL_CHAR: snprintf(buf, bufsz, "%c", v.v.c); break;
-        case CVAL_BOOL: snprintf(buf, bufsz, "%s", v.v.b ? "true" : "false"); break;  /* changed: was 1/0, now true/false */
+        case CVAL_BOOL: snprintf(buf, bufsz, "%d", v.v.b ? 1 : 0); break;  /* Standard C++: prints 1/0 without boolalpha */
         case CVAL_STRING: return v.v.s ? v.v.s : "";
         case CVAL_NULLPTR: snprintf(buf, bufsz, "nullptr"); break;
         default: buf[0] = '\0'; break;
@@ -711,12 +712,13 @@ static void tokenize(OcppInterpreter *I, const char *src) {
                     if (t->type == CTOK_BOOL_LIT) {
                         t->bool_val = (start[0] == 't') ? 1 : 0;
                     }
-                    /* STL names only as keywords if using_namespace_std */
-                    if ((t->type == CTOK_COUT || t->type == CTOK_CIN ||
-                         t->type == CTOK_ENDL || t->type == CTOK_STRING_TYPE) &&
-                        !I->using_namespace_std) {
-                        t->type = CTOK_IDENT;
-                    }
+                    /* STL names are always recognised — the parser
+                     * later interprets std::cout vs cout in context.
+                     * Original code only set the flag during evaluation,
+                     * which was too late: by then tokens had already
+                     * been classified. Always treating these as STL
+                     * keywords matches gcc/g++ ergonomics where the
+                     * names are reserved through <iostream>. */
                     found = 1;
                     break;
                 }
@@ -938,6 +940,7 @@ static OcppValType token_to_valtype(OcppInterpreter *I, OcppTokenType t) {
 
 static OcppNode *parse_expr(OcppInterpreter *I);
 static OcppNode *parse_assign_expr(OcppInterpreter *I);
+static OcppNode *parse_add(OcppInterpreter *I);
 static OcppNode *parse_stmt(OcppInterpreter *I);
 static OcppNode *parse_block(OcppInterpreter *I);
 static OcppNode *parse_declaration(OcppInterpreter *I);
@@ -1031,7 +1034,12 @@ static OcppNode *parse_primary(OcppInterpreter *I) {
                 }
                 n->stmts[n->n_stmts++] = endl_n;
             } else {
-                OcppNode *expr = parse_assign_expr(I);
+                /* Use parse_add (below the shift level) so the next
+                 * ``<<`` doesn't get consumed as a left-shift inside
+                 * the cout item. Without this, ``cout << "a" << "b"``
+                 * parses as ``cout << ("a" << "b")`` and evaluates the
+                 * inner shift to 0. */
+                OcppNode *expr = parse_add(I);
                 if (n->n_stmts >= cap) {
                     cap *= 2;
                     n->stmts = (OcppNode **)realloc(n->stmts, cap * sizeof(OcppNode *));
@@ -1078,10 +1086,33 @@ static OcppNode *parse_primary(OcppInterpreter *I) {
         advance(I);
         OcppNode *n = alloc_node(I, NP_NEW_EXPR);
         n->line = t->line;
-        /* class/type name */
-        OcppToken *name_tok = expect(I, CTOK_IDENT);
-        tok_str(name_tok, n->class_name, sizeof(n->class_name));
-        /* Optional constructor args */
+        /* The type after `new` can be either a built-in (``new int``)
+         * or a class/identifier (``new Foo``). Capture either as the
+         * class_name and remember the base value-type. */
+        if (is_type_token(peek(I)->type)) {
+            OcppTokenType tt = peek(I)->type;
+            n->val_type = token_to_valtype(I, tt);
+            /* Stringify the type keyword for class_name (so the
+             * evaluator can dispatch a built-in allocation). */
+            OcppToken *type_tok = advance(I);
+            tok_str(type_tok, n->class_name, sizeof(n->class_name));
+            /* Consume any further type modifiers (``unsigned long`` etc.) */
+            while (is_type_token(peek(I)->type) && peek(I)->type != CTOK_CONST)
+                advance(I);
+        } else {
+            OcppToken *name_tok = expect(I, CTOK_IDENT);
+            tok_str(name_tok, n->class_name, sizeof(n->class_name));
+            n->val_type = CVAL_OBJECT;
+        }
+        /* Array allocation: ``new T[count]`` */
+        if (match(I, CTOK_LBRACKET)) {
+            n->is_array = 1;
+            n->children[1] = parse_expr(I);
+            n->n_children = 2;
+            expect(I, CTOK_RBRACKET);
+            return n;
+        }
+        /* Optional constructor args: ``new T(arg, ...)`` */
         if (match(I, CTOK_LPAREN)) {
             int cap = 8;
             n->stmts = (OcppNode **)calloc(cap, sizeof(OcppNode *));
@@ -1101,6 +1132,11 @@ static OcppNode *parse_primary(OcppInterpreter *I) {
         advance(I);
         OcppNode *n = alloc_node(I, NP_DELETE_EXPR);
         n->line = t->line;
+        /* ``delete[]`` for array forms — accept and remember. */
+        if (match(I, CTOK_LBRACKET)) {
+            expect(I, CTOK_RBRACKET);
+            n->is_array = 1;
+        }
         n->children[0] = parse_expr(I);
         n->n_children = 1;
         return n;
@@ -1128,10 +1164,19 @@ static OcppNode *parse_primary(OcppInterpreter *I) {
             n->n_stmts = 0;
             n->stmts = (OcppNode **)calloc(8, sizeof(OcppNode *));
             int cap_idx = 0;
+            /* captures + params SHARE param_names[16]; cap the combined
+             * count so a lambda with many captures/params can't write past
+             * the fixed arrays (was a heap/stack overflow — no bounds check). */
+            const int slot_max = (int)(sizeof(n->param_names) / sizeof(n->param_names[0]));
             while (!check(I, CTOK_RBRACKET) && !check(I, CTOK_EOF)) {
                 if (cap_idx > 0) expect(I, CTOK_COMMA);
                 int by_ref = 0;
                 if (check(I, CTOK_AMP)) { advance(I); by_ref = 1; }
+                if (cap_idx >= slot_max) {
+                    /* out of capture slots — consume the token and drop it */
+                    if (check(I, CTOK_IDENT) || check(I, CTOK_ASSIGN)) advance(I);
+                    continue;
+                }
                 if (check(I, CTOK_IDENT)) {
                     OcppToken *cap_tok = advance(I);
                     tok_str(cap_tok, n->param_names[cap_idx], sizeof(n->param_names[0]));
@@ -1141,6 +1186,10 @@ static OcppNode *parse_primary(OcppInterpreter *I) {
                     /* [=] capture all by value */
                     advance(I);
                     strcpy(n->param_names[cap_idx], "=");
+                    cap_idx++;
+                } else if (by_ref) {
+                    /* [&] alone — capture all by reference */
+                    strcpy(n->param_names[cap_idx], "&");
                     cap_idx++;
                 }
             }
@@ -1152,19 +1201,27 @@ static OcppNode *parse_primary(OcppInterpreter *I) {
             n->n_params = 0;
             while (!check(I, CTOK_RPAREN) && !check(I, CTOK_EOF)) {
                 if (n->n_params > 0) expect(I, CTOK_COMMA);
-                /* type */
+                /* Will this param fit alongside the captures already stored? */
+                int slot = cap_idx + n->n_params;
+                int have_slot = (slot < slot_max);
+                /* type (parse regardless, to stay token-synced) */
+                OcppValType pty;
                 if (is_type_token(peek(I)->type)) {
-                    n->param_types[n->n_params] = token_to_valtype(I, advance(I)->type);
+                    pty = token_to_valtype(I, advance(I)->type);
                 } else {
                     advance(I);
-                    n->param_types[n->n_params] = CVAL_INT;
+                    pty = CVAL_INT;
                 }
                 /* optional & */
                 if (check(I, CTOK_AMP)) advance(I);
                 /* name */
                 OcppToken *pname = expect(I, CTOK_IDENT);
-                tok_str(pname, n->param_names[cap_idx + n->n_params], sizeof(n->param_names[0]));
-                n->n_params++;
+                if (have_slot) {
+                    n->param_types[n->n_params] = pty;
+                    tok_str(pname, n->param_names[slot], sizeof(n->param_names[0]));
+                    n->n_params++;
+                }
+                /* else: out of slots — param parsed but dropped (memory-safe) */
             }
             expect(I, CTOK_RPAREN);
 
@@ -1283,6 +1340,22 @@ static OcppNode *parse_primary(OcppInterpreter *I) {
         OcppNode *n = alloc_node(I, NP_IDENT);
         n->line = t->line;
         tok_str(t, n->name, sizeof(n->name));
+        /* Qualified name: ``ns::name`` (or further ``a::b::c``).
+         * The tokenizer emits ``::`` as CTOK_SCOPE. We collapse each
+         * ``::ident`` pair into the IDENT's name with a ``::`` joiner;
+         * the evaluator looks up qualified names in the namespace's
+         * scope. */
+        while (check(I, CTOK_SCOPE)) {
+            advance(I);
+            OcppToken *next = expect(I, CTOK_IDENT);
+            int cur = (int)strlen(n->name);
+            if (cur + 2 + next->length < (int)sizeof(n->name)) {
+                n->name[cur++] = ':';
+                n->name[cur++] = ':';
+                memcpy(n->name + cur, next->start, next->length);
+                n->name[cur + next->length] = '\0';
+            }
+        }
         return n;
     }
     if (t->type == CTOK_STRING_TYPE) {
@@ -1613,6 +1686,13 @@ static int is_declaration(OcppInterpreter *I) {
         }
     }
     if (t == CTOK_TEMPLATE || t == CTOK_VIRTUAL) return 1;
+    /* ``static`` / ``const`` / ``constexpr`` storage-class prefixes
+     * mean a declaration is coming. Check the token after the
+     * qualifier(s) to be sure. */
+    if (t == CTOK_STATIC || t == CTOK_CONST) {
+        OcppTokenType t2 = peek_at(I, 1)->type;
+        if (is_type_token(t2) || t2 == CTOK_IDENT) return 1;
+    }
     return 0;
 }
 
@@ -1633,9 +1713,36 @@ static OcppNode *parse_declaration(OcppInterpreter *I) {
         OcppToken *tp = expect(I, CTOK_IDENT);
         tok_str(tp, tmpl->type_param, sizeof(tmpl->type_param));
         expect(I, CTOK_GT);
+        /* Register the type parameter as a placeholder class so that
+         * uses like ``T max_of(T a, T b)`` parse — the parser sees
+         * ``T`` and recognises it as a class type (with no fields).
+         * The evaluator handles ``T``-typed values by passing them
+         * through with their runtime type intact. */
+        int dummy_class_added = 0;
+        if (tmpl->type_param[0] && I->n_classes < OCPP_MAX_CLASSES &&
+            find_class(I, tmpl->type_param) == NULL) {
+            OcppClassDef *cd = &I->classes[I->n_classes++];
+            memset(cd, 0, sizeof(*cd));
+            strncpy(cd->name, tmpl->type_param, sizeof(cd->name) - 1);
+            dummy_class_added = 1;
+        }
         /* Parse the actual function/class declaration */
         tmpl->children[0] = parse_declaration(I);
         tmpl->n_children = 1;
+        /* Pop the placeholder class so it doesn't leak into later
+         * declarations. Find by name in case other classes got
+         * registered in between. */
+        if (dummy_class_added) {
+            for (int i = I->n_classes - 1; i >= 0; i--) {
+                if (strcmp(I->classes[i].name, tmpl->type_param) == 0) {
+                    /* Shift the rest down. */
+                    for (int j = i; j < I->n_classes - 1; j++)
+                        I->classes[j] = I->classes[j + 1];
+                    I->n_classes--;
+                    break;
+                }
+            }
+        }
         return tmpl;
     }
 
@@ -1707,8 +1814,26 @@ static OcppNode *parse_declaration(OcppInterpreter *I) {
             else n->val_type = CVAL_PAIR;
 
             if (match(I, CTOK_ASSIGN)) {
-                n->children[0] = parse_assign_expr(I);
-                n->n_children = 1;
+                /* ``= {1,2,3}`` brace-initializer for STL containers
+                 * — handle it as an element list, not as an assign
+                 * expression (which can't start with ``{``). */
+                if (check(I, CTOK_LBRACE)) {
+                    advance(I);
+                    int cap = 8;
+                    n->stmts = (OcppNode **)calloc(cap, sizeof(OcppNode *));
+                    while (!check(I, CTOK_RBRACE) && !check(I, CTOK_EOF)) {
+                        if (n->n_stmts > 0) expect(I, CTOK_COMMA);
+                        if (n->n_stmts >= cap) {
+                            cap *= 2;
+                            n->stmts = (OcppNode **)realloc(n->stmts, cap * sizeof(OcppNode *));
+                        }
+                        n->stmts[n->n_stmts++] = parse_assign_expr(I);
+                    }
+                    expect(I, CTOK_RBRACE);
+                } else {
+                    n->children[0] = parse_assign_expr(I);
+                    n->n_children = 1;
+                }
             } else if (check(I, CTOK_LPAREN)) {
                 /* Constructor syntax: vector<int> v(5, 0) */
                 advance(I);
@@ -1720,7 +1845,7 @@ static OcppNode *parse_declaration(OcppInterpreter *I) {
                 }
                 expect(I, CTOK_RPAREN);
             } else if (check(I, CTOK_LBRACE)) {
-                /* Initializer list: vector<int> v = {1,2,3} or vector<int> v{1,2,3} */
+                /* C++11 brace initializer (no equals): vector<int> v{1,2,3} */
                 advance(I);
                 int cap = 8;
                 n->stmts = (OcppNode **)calloc(cap, sizeof(OcppNode *));
@@ -1770,6 +1895,38 @@ static OcppNode *parse_declaration(OcppInterpreter *I) {
     int is_ref = 0;
     if (check(I, CTOK_AMP)) { advance(I); is_ref = 1; }
 
+    /* Function-pointer declaration: ``T (*name)(params) [= expr];``.
+     * We don't track the parameter signature — the variable just holds
+     * a string with the target function's name (or a lambda) and the
+     * NP_CALL path dispatches by lookup. */
+    if (check(I, CTOK_LPAREN) && peek_at(I, 1)->type == CTOK_STAR &&
+        peek_at(I, 2)->type == CTOK_IDENT &&
+        peek_at(I, 3)->type == CTOK_RPAREN &&
+        peek_at(I, 4)->type == CTOK_LPAREN) {
+        advance(I); advance(I); /* ( * */
+        OcppToken *fp_name = advance(I);
+        expect(I, CTOK_RPAREN);
+        expect(I, CTOK_LPAREN);
+        /* Skip the parameter type list — we don't bind it. */
+        int depth = 1;
+        while (depth > 0 && !check(I, CTOK_EOF)) {
+            if (check(I, CTOK_LPAREN)) depth++;
+            else if (check(I, CTOK_RPAREN)) { depth--; if (depth == 0) break; }
+            advance(I);
+        }
+        expect(I, CTOK_RPAREN);
+        OcppNode *vd = alloc_node(I, NP_VARDECL);
+        vd->line = fp_name->line;
+        tok_str(fp_name, vd->name, sizeof(vd->name));
+        vd->val_type = CVAL_STRING;
+        if (match(I, CTOK_ASSIGN)) {
+            vd->children[0] = parse_assign_expr(I);
+            vd->n_children = 1;
+        }
+        expect(I, CTOK_SEMICOLON);
+        return vd;
+    }
+
     /* Name */
     if (!check(I, CTOK_IDENT)) {
         ocpp_error(I, "Line %d: expected identifier in declaration", peek(I)->line);
@@ -1778,7 +1935,124 @@ static OcppNode *parse_declaration(OcppInterpreter *I) {
     char name[256];
     tok_str(name_tok, name, sizeof(name));
 
-    /* Function declaration? */
+    /* Function declaration? Distinguish from a constructor-style
+     * variable declaration: ``ClassName var(args...)``. If the type
+     * was a user class AND the next token isn't a parameter-shaped
+     * thing (type / class-name / `)` for empty), treat this as a
+     * variable declaration with constructor call instead. */
+    if (check(I, CTOK_LPAREN) && is_class_type) {
+        OcppTokenType after_lparen = peek_at(I, 1)->type;
+        int looks_like_function_params =
+            after_lparen == CTOK_RPAREN ||  /* `()` — could be either; default to var */
+            is_type_token(after_lparen) ||
+            after_lparen == CTOK_CONST;
+        /* ``IDENT IDENT`` pattern — e.g. ``T x`` in template params —
+         * looks like a function-parameter declaration, not a ctor
+         * call. Same for ``IDENT*``, ``IDENT&``. */
+        if (!looks_like_function_params && after_lparen == CTOK_IDENT) {
+            OcppTokenType t2 = peek_at(I, 2)->type;
+            if (t2 == CTOK_IDENT || t2 == CTOK_STAR || t2 == CTOK_AMP) {
+                /* The first IDENT is a type (class name or template
+                 * parameter), and what follows is the param name —
+                 * this is a function declaration. */
+                looks_like_function_params = 1;
+            } else {
+                /* Check if the inner IDENT is itself a known class /
+                 * STL container. If so, treat as parameter type. */
+                char inner[64] = {0};
+                OcppToken *it = peek_at(I, 1);
+                int ilen = it->length < 63 ? it->length : 63;
+                memcpy(inner, it->start, ilen);
+                if (find_class(I, inner) || strcmp(inner, "vector") == 0 ||
+                    strcmp(inner, "map") == 0 || strcmp(inner, "pair") == 0)
+                    looks_like_function_params = 1;
+            }
+        }
+        /* For class-typed names, prefer the variable interpretation
+         * when the inside doesn't begin with a type keyword. */
+        if (!looks_like_function_params) {
+            advance(I);  /* ( */
+            OcppNode *vd = alloc_node(I, NP_VARDECL);
+            vd->line = name_tok->line;
+            strcpy(vd->name, name);
+            vd->val_type = CVAL_OBJECT;
+            strcpy(vd->class_name, type_class_name);
+            OcppNode *init = alloc_node(I, NP_CALL);
+            strcpy(init->name, type_class_name);
+            int icap = 4;
+            init->stmts = (OcppNode **)calloc(icap, sizeof(OcppNode *));
+            while (!check(I, CTOK_RPAREN) && !check(I, CTOK_EOF)) {
+                if (init->n_stmts > 0) expect(I, CTOK_COMMA);
+                if (init->n_stmts >= icap) {
+                    icap *= 2;
+                    init->stmts = (OcppNode **)realloc(init->stmts,
+                                                       icap * sizeof(OcppNode *));
+                }
+                init->stmts[init->n_stmts++] = parse_assign_expr(I);
+            }
+            expect(I, CTOK_RPAREN);
+            vd->children[0] = init;
+            vd->n_children = 1;
+            /* ``Class a(...), b(...), c = ...;`` — chain to additional
+             * declarators that share the same base class type. */
+            if (check(I, CTOK_COMMA)) {
+                OcppNode *block = alloc_node(I, NP_BLOCK);
+                block->line = vd->line;
+                block->op = -1; /* inline block — no nested scope */
+                block->stmts = (OcppNode **)calloc(8, sizeof(OcppNode *));
+                block->n_stmts = 0;
+                block->stmts[block->n_stmts++] = vd;
+                int bcap = 8;
+                while (match(I, CTOK_COMMA)) {
+                    int tail_ptr = 0, tail_ref = 0;
+                    while (check(I, CTOK_STAR)) { advance(I); tail_ptr++; }
+                    if (check(I, CTOK_AMP))   { advance(I); tail_ref = 1; }
+                    if (!check(I, CTOK_IDENT))
+                        ocpp_error(I, "Line %d: expected identifier in declaration",
+                                   peek(I)->line);
+                    OcppToken *tname = advance(I);
+                    OcppNode *m = alloc_node(I, NP_VARDECL);
+                    m->line = tname->line;
+                    tok_str(tname, m->name, sizeof(m->name));
+                    m->val_type = tail_ptr > 0 ? CVAL_PTR : CVAL_OBJECT;
+                    m->is_reference = tail_ref;
+                    strcpy(m->class_name, type_class_name);
+                    if (match(I, CTOK_ASSIGN)) {
+                        m->children[0] = parse_assign_expr(I);
+                        m->n_children = 1;
+                    } else if (check(I, CTOK_LPAREN)) {
+                        advance(I);
+                        OcppNode *tinit = alloc_node(I, NP_CALL);
+                        strcpy(tinit->name, type_class_name);
+                        int tcap = 4;
+                        tinit->stmts = (OcppNode **)calloc(tcap, sizeof(OcppNode *));
+                        while (!check(I, CTOK_RPAREN) && !check(I, CTOK_EOF)) {
+                            if (tinit->n_stmts > 0) expect(I, CTOK_COMMA);
+                            if (tinit->n_stmts >= tcap) {
+                                tcap *= 2;
+                                tinit->stmts = (OcppNode **)realloc(tinit->stmts,
+                                                                     tcap * sizeof(OcppNode *));
+                            }
+                            tinit->stmts[tinit->n_stmts++] = parse_assign_expr(I);
+                        }
+                        expect(I, CTOK_RPAREN);
+                        m->children[0] = tinit;
+                        m->n_children = 1;
+                    }
+                    if (block->n_stmts >= bcap) {
+                        bcap *= 2;
+                        block->stmts = (OcppNode **)realloc(block->stmts,
+                                                            bcap * sizeof(OcppNode *));
+                    }
+                    block->stmts[block->n_stmts++] = m;
+                }
+                expect(I, CTOK_SEMICOLON);
+                return block;
+            }
+            expect(I, CTOK_SEMICOLON);
+            return vd;
+        }
+    }
     if (check(I, CTOK_LPAREN)) {
         advance(I);
         OcppNode *fn = alloc_node(I, NP_FUNCDECL);
@@ -1846,9 +2120,80 @@ static OcppNode *parse_declaration(OcppInterpreter *I) {
         if (check(I, CTOK_CONST)) advance(I);
         if (check(I, CTOK_OVERRIDE)) advance(I);
 
+        /* Pure virtual: ``= 0`` after a method declaration marks the
+         * function as abstract. Skip the marker — we don't enforce
+         * abstractness, but we accept the syntax. */
+        if (check(I, CTOK_ASSIGN)) {
+            advance(I);
+            if (check(I, CTOK_INT_LIT) && (int)peek(I)->num_val == 0) {
+                advance(I);
+                fn->is_virtual = 1;
+            } else {
+                /* Default function value — unusual but parseable. */
+                parse_assign_expr(I);
+            }
+        }
+
+        /* Constructor initializer list: ``Foo(...) : field(arg), ... { }``
+         * Records the field-init pairs as synthetic assignments
+         * prepended to the function body. */
+        OcppNode *init_block = NULL;
+        if (check(I, CTOK_COLON)) {
+            advance(I);
+            init_block = alloc_node(I, NP_BLOCK);
+            init_block->stmts = (OcppNode **)calloc(8, sizeof(OcppNode *));
+            init_block->n_stmts = 0;
+            int icap = 8;
+            do {
+                /* `<field>(<expr>)` */
+                if (!check(I, CTOK_IDENT)) break;
+                OcppToken *field = advance(I);
+                if (!check(I, CTOK_LPAREN)) break;
+                advance(I);
+                OcppNode *expr = check(I, CTOK_RPAREN) ?
+                                  alloc_node(I, NP_INT_LIT) :
+                                  parse_assign_expr(I);
+                expect(I, CTOK_RPAREN);
+                /* Synthesise ``this->field = expr;`` */
+                OcppNode *thisn = alloc_node(I, NP_THIS_EXPR);
+                OcppNode *member = alloc_node(I, NP_MEMBER);
+                member->children[0] = thisn;
+                member->n_children = 1;
+                tok_str(field, member->name, sizeof(member->name));
+                OcppNode *assign = alloc_node(I, NP_ASSIGN);
+                assign->children[0] = member;
+                assign->children[1] = expr;
+                assign->n_children = 2;
+                if (init_block->n_stmts >= icap) {
+                    icap *= 2;
+                    init_block->stmts = (OcppNode **)realloc(init_block->stmts,
+                                                              icap * sizeof(OcppNode *));
+                }
+                init_block->stmts[init_block->n_stmts++] = assign;
+            } while (match(I, CTOK_COMMA));
+        }
+
         /* Body */
         if (check(I, CTOK_LBRACE)) {
-            fn->children[0] = parse_block(I);
+            OcppNode *body = parse_block(I);
+            if (init_block && init_block->n_stmts > 0) {
+                /* Prepend the init-list assignments to the body. */
+                OcppNode *combined = alloc_node(I, NP_BLOCK);
+                int cap = init_block->n_stmts + (body->n_stmts > 0 ? body->n_stmts : 1);
+                combined->stmts = (OcppNode **)calloc(cap, sizeof(OcppNode *));
+                combined->n_stmts = 0;
+                for (int i = 0; i < init_block->n_stmts; i++)
+                    combined->stmts[combined->n_stmts++] = init_block->stmts[i];
+                if (body->type == NP_BLOCK) {
+                    for (int i = 0; i < body->n_stmts; i++)
+                        combined->stmts[combined->n_stmts++] = body->stmts[i];
+                } else {
+                    combined->stmts[combined->n_stmts++] = body;
+                }
+                fn->children[0] = combined;
+            } else {
+                fn->children[0] = body;
+            }
             fn->n_children = 1;
         } else {
             expect(I, CTOK_SEMICOLON);
@@ -1856,7 +2201,10 @@ static OcppNode *parse_declaration(OcppInterpreter *I) {
         return fn;
     }
 
-    /* Variable declaration */
+    /* Variable declaration. Build the first node, then handle the
+     * comma-separated form `int x, y, z;` by parsing additional
+     * identifiers using the same base type and wrapping the whole
+     * thing in a NP_BLOCK. */
     OcppNode *n = alloc_node(I, NP_VARDECL);
     n->line = name_tok->line;
     strcpy(n->name, name);
@@ -1916,6 +2264,80 @@ static OcppNode *parse_declaration(OcppInterpreter *I) {
         n->n_children = 1;
     }
 
+    /* Comma-separated additional declarators: `int x, y, z;`
+     *   Each tail declarator inherits the base type / class type /
+     *   const / static flags. Pointer / reference qualifiers are
+     *   per-declarator (`int *p, q;` declares `p` as pointer and `q`
+     *   as plain int), as is the array-brackets suffix. */
+    if (check(I, CTOK_COMMA)) {
+        OcppNode *block = alloc_node(I, NP_BLOCK);
+        block->line = n->line;
+        block->op = -1; /* inline block — no nested scope */
+        block->stmts = (OcppNode **)calloc(8, sizeof(OcppNode *));
+        block->n_stmts = 0;
+        block->stmts[block->n_stmts++] = n;
+        int cap = 8;
+        while (match(I, CTOK_COMMA)) {
+            /* Per-declarator pointer / reference. */
+            int tail_ptr = 0, tail_ref = 0;
+            while (check(I, CTOK_STAR)) { advance(I); tail_ptr++; }
+            if (check(I, CTOK_AMP))   { advance(I); tail_ref = 1; }
+            if (!check(I, CTOK_IDENT))
+                ocpp_error(I, "Line %d: expected identifier in declaration",
+                           peek(I)->line);
+            OcppToken *tail_name = advance(I);
+            OcppNode *m = alloc_node(I, NP_VARDECL);
+            m->line = tail_name->line;
+            tok_str(tail_name, m->name, sizeof(m->name));
+            m->val_type = tail_ptr > 0 ? CVAL_PTR : base_type;
+            m->is_reference = tail_ref;
+            m->is_const = is_const_decl;
+            m->is_static = is_static_decl;
+            if (is_class_type) strcpy(m->class_name, type_class_name);
+            if (check(I, CTOK_LBRACKET)) {
+                advance(I);
+                m->is_array = 1;
+                if (!check(I, CTOK_RBRACKET)) {
+                    m->array_size = (int)peek(I)->num_val;
+                    advance(I);
+                }
+                expect(I, CTOK_RBRACKET);
+            }
+            if (match(I, CTOK_ASSIGN)) {
+                m->children[0] = parse_assign_expr(I);
+                m->n_children = 1;
+            } else if (check(I, CTOK_LPAREN) && is_class_type) {
+                /* ``Class a(...), b(...);`` — constructor-style init on
+                 * a tail declarator. */
+                advance(I);
+                OcppNode *init = alloc_node(I, NP_CALL);
+                strcpy(init->name, type_class_name);
+                int icap = 4;
+                init->stmts = (OcppNode **)calloc(icap, sizeof(OcppNode *));
+                while (!check(I, CTOK_RPAREN) && !check(I, CTOK_EOF)) {
+                    if (init->n_stmts > 0) expect(I, CTOK_COMMA);
+                    if (init->n_stmts >= icap) {
+                        icap *= 2;
+                        init->stmts = (OcppNode **)realloc(init->stmts,
+                                                            icap * sizeof(OcppNode *));
+                    }
+                    init->stmts[init->n_stmts++] = parse_assign_expr(I);
+                }
+                expect(I, CTOK_RPAREN);
+                m->children[0] = init;
+                m->n_children = 1;
+            }
+            if (block->n_stmts >= cap) {
+                cap *= 2;
+                block->stmts = (OcppNode **)realloc(block->stmts,
+                                                     cap * sizeof(OcppNode *));
+            }
+            block->stmts[block->n_stmts++] = m;
+        }
+        expect(I, CTOK_SEMICOLON);
+        return block;
+    }
+
     expect(I, CTOK_SEMICOLON);
     return n;
 }
@@ -1927,6 +2349,20 @@ static OcppNode *parse_class_decl(OcppInterpreter *I) {
     cls->line = peek(I)->line;
     OcppToken *name_tok = expect(I, CTOK_IDENT);
     tok_str(name_tok, cls->name, sizeof(cls->name));
+
+    /* Eagerly register the class name in the class table so that
+     * subsequent `Foo x;` declarations parsed later in this same
+     * source unit recognise ``Foo`` as a type. ``find_class`` /
+     * ``is_declaration`` consult this table during parsing; without
+     * pre-registration we'd have to defer class-typed variable
+     * declarations to a second pass. The full body fields are
+     * captured later during evaluation of NP_CLASS_DECL. */
+    if (I->n_classes < OCPP_MAX_CLASSES &&
+        find_class(I, cls->name) == NULL) {
+        OcppClassDef *cd = &I->classes[I->n_classes++];
+        memset(cd, 0, sizeof(*cd));
+        strncpy(cd->name, cls->name, sizeof(cd->name) - 1);
+    }
 
     /* Inheritance */
     if (match(I, CTOK_COLON)) {
@@ -1986,25 +2422,63 @@ static OcppNode *parse_class_decl(OcppInterpreter *I) {
                     ctor->n_params++;
                 }
                 expect(I, CTOK_RPAREN);
-                /* Initializer list: : field(val), ... */
+                /* Initializer list: ``: field(val), field2(val2), ...``
+                 * Synthesise ``this->field = val;`` assignments and
+                 * prepend them to the constructor body so the fields
+                 * actually get initialised at runtime. */
+                OcppNode *init_block = NULL;
                 if (check(I, CTOK_COLON)) {
                     advance(I);
-                    while (!check(I, CTOK_LBRACE) && !check(I, CTOK_EOF)) {
-                        if (check(I, CTOK_IDENT)) advance(I);
-                        if (check(I, CTOK_LPAREN)) {
-                            advance(I);
-                            int d = 1;
-                            while (d > 0 && !check(I, CTOK_EOF)) {
-                                if (check(I, CTOK_LPAREN)) d++;
-                                if (check(I, CTOK_RPAREN)) d--;
-                                if (d > 0) advance(I);
-                            }
-                            if (check(I, CTOK_RPAREN)) advance(I);
+                    init_block = alloc_node(I, NP_BLOCK);
+                    int icap = 8;
+                    init_block->stmts = (OcppNode **)calloc(icap, sizeof(OcppNode *));
+                    init_block->n_stmts = 0;
+                    do {
+                        if (!check(I, CTOK_IDENT)) break;
+                        OcppToken *field = advance(I);
+                        if (!check(I, CTOK_LPAREN)) break;
+                        advance(I);  /* ( */
+                        OcppNode *val = check(I, CTOK_RPAREN) ?
+                                          alloc_node(I, NP_INT_LIT) :
+                                          parse_assign_expr(I);
+                        expect(I, CTOK_RPAREN);
+                        OcppNode *thisn = alloc_node(I, NP_THIS_EXPR);
+                        OcppNode *member = alloc_node(I, NP_MEMBER);
+                        member->children[0] = thisn;
+                        member->n_children = 1;
+                        tok_str(field, member->name, sizeof(member->name));
+                        OcppNode *assign = alloc_node(I, NP_ASSIGN);
+                        assign->children[0] = member;
+                        assign->children[1] = val;
+                        assign->n_children = 2;
+                        if (init_block->n_stmts >= icap) {
+                            icap *= 2;
+                            init_block->stmts = (OcppNode **)realloc(
+                                init_block->stmts, icap * sizeof(OcppNode *));
                         }
-                        if (check(I, CTOK_COMMA)) advance(I);
-                    }
+                        init_block->stmts[init_block->n_stmts++] = assign;
+                    } while (match(I, CTOK_COMMA));
                 }
-                ctor->children[0] = parse_block(I);
+                OcppNode *body = parse_block(I);
+                if (init_block && init_block->n_stmts > 0) {
+                    /* Prepend init assignments to the body. */
+                    OcppNode *combined = alloc_node(I, NP_BLOCK);
+                    int total = init_block->n_stmts +
+                                 (body->type == NP_BLOCK ? body->n_stmts : 1);
+                    combined->stmts = (OcppNode **)calloc(total, sizeof(OcppNode *));
+                    combined->n_stmts = 0;
+                    for (int j = 0; j < init_block->n_stmts; j++)
+                        combined->stmts[combined->n_stmts++] = init_block->stmts[j];
+                    if (body->type == NP_BLOCK) {
+                        for (int j = 0; j < body->n_stmts; j++)
+                            combined->stmts[combined->n_stmts++] = body->stmts[j];
+                    } else {
+                        combined->stmts[combined->n_stmts++] = body;
+                    }
+                    ctor->children[0] = combined;
+                } else {
+                    ctor->children[0] = body;
+                }
                 ctor->n_children = 1;
                 if (cls->n_stmts >= cap) { cap *= 2; cls->stmts = (OcppNode **)realloc(cls->stmts, cap * sizeof(OcppNode *)); }
                 cls->stmts[cls->n_stmts++] = ctor;
@@ -2012,29 +2486,58 @@ static OcppNode *parse_class_decl(OcppInterpreter *I) {
             }
         }
 
-        /* Destructor: ~ClassName() */
-        if (check(I, CTOK_TILDE)) {
-            advance(I);
-            if (check(I, CTOK_IDENT)) advance(I);
-            expect(I, CTOK_LPAREN);
-            expect(I, CTOK_RPAREN);
-            OcppNode *dtor = alloc_node(I, NP_FUNCDECL);
-            dtor->line = peek(I)->line;
-            strcpy(dtor->name, "__dtor");
-            strcpy(dtor->class_name, cls->name);
-            dtor->children[0] = parse_block(I);
-            dtor->n_children = 1;
-            if (cls->n_stmts >= cap) { cap *= 2; cls->stmts = (OcppNode **)realloc(cls->stmts, cap * sizeof(OcppNode *)); }
-            cls->stmts[cls->n_stmts++] = dtor;
-            continue;
+        /* Destructor: ~ClassName() — also handles ``virtual ~Name() = 0;``
+         * and the ``=0`` pure-virtual marker. */
+        {
+            int dtor_saved = I->tok_pos;
+            if (check(I, CTOK_VIRTUAL)) advance(I);
+            if (check(I, CTOK_TILDE)) {
+                advance(I);
+                if (check(I, CTOK_IDENT)) advance(I);
+                expect(I, CTOK_LPAREN);
+                expect(I, CTOK_RPAREN);
+                OcppNode *dtor = alloc_node(I, NP_FUNCDECL);
+                dtor->line = peek(I)->line;
+                strcpy(dtor->name, "__dtor");
+                strcpy(dtor->class_name, cls->name);
+                /* Pure virtual: ``= 0;`` — no body. */
+                if (match(I, CTOK_ASSIGN)) {
+                    if (check(I, CTOK_INT_LIT)) advance(I);
+                    expect(I, CTOK_SEMICOLON);
+                    dtor->children[0] = NULL;
+                    dtor->n_children = 0;
+                } else if (match(I, CTOK_SEMICOLON)) {
+                    /* Declaration only, no body. */
+                    dtor->children[0] = NULL;
+                    dtor->n_children = 0;
+                } else {
+                    dtor->children[0] = parse_block(I);
+                    dtor->n_children = 1;
+                }
+                if (cls->n_stmts >= cap) { cap *= 2; cls->stmts = (OcppNode **)realloc(cls->stmts, cap * sizeof(OcppNode *)); }
+                cls->stmts[cls->n_stmts++] = dtor;
+                continue;
+            }
+            I->tok_pos = dtor_saved;
         }
 
         /* Operator overload: ReturnType operator+(Params) { ... } */
         if (check(I, CTOK_VIRTUAL)) advance(I);
         if (is_type_token(peek(I)->type) || check(I, CTOK_IDENT)) {
             int saved = I->tok_pos;
-            /* Try to see if this is an operator overload */
+            /* Try to see if this is an operator overload — the return
+             * type can be a builtin or a class identifier. */
             while (is_type_token(peek(I)->type) || check(I, CTOK_STAR) || check(I, CTOK_AMP)) advance(I);
+            /* A user type (class) appears as IDENT — consume one such
+             * token before looking for ``operator``. */
+            if (check(I, CTOK_IDENT)) {
+                char tname[64];
+                tok_str(peek(I), tname, sizeof(tname));
+                if (find_class(I, tname) || strcmp(tname, cls->name) == 0) {
+                    advance(I);
+                    while (check(I, CTOK_STAR) || check(I, CTOK_AMP)) advance(I);
+                }
+            }
             if (check(I, CTOK_OPERATOR)) {
                 advance(I);
                 OcppNode *op_decl = alloc_node(I, NP_OPERATOR_DECL);
@@ -2489,11 +2992,24 @@ static OcppClassDef *find_class(OcppInterpreter *I, const char *name) {
 }
 
 static void register_class(OcppInterpreter *I, OcppNode *cls_node) {
-    if (I->n_classes >= OCPP_MAX_CLASSES)
-        ocpp_error(I, "Too many classes");
-    OcppClassDef *cd = &I->classes[I->n_classes++];
-    memset(cd, 0, sizeof(*cd));
-    strncpy(cd->name, cls_node->name, 63);
+    /* If parse_class_decl pre-registered an empty stub for this name
+     * (so user code can declare `Foo x;` later in the same source),
+     * reuse that slot instead of allocating a new one — otherwise the
+     * stub stays empty and field lookups fail. */
+    OcppClassDef *cd = find_class(I, cls_node->name);
+    if (cd) {
+        /* Reset only the parts we're about to populate; keep ``name``. */
+        char saved_name[64];
+        strncpy(saved_name, cd->name, 63); saved_name[63] = '\0';
+        memset(cd, 0, sizeof(*cd));
+        strncpy(cd->name, saved_name, 63);
+    } else {
+        if (I->n_classes >= OCPP_MAX_CLASSES)
+            ocpp_error(I, "Too many classes");
+        cd = &I->classes[I->n_classes++];
+        memset(cd, 0, sizeof(*cd));
+        strncpy(cd->name, cls_node->name, 63);
+    }
     if (cls_node->base_class[0])
         strncpy(cd->base_class, cls_node->base_class, 63);
 
@@ -2513,10 +3029,27 @@ static void register_class(OcppInterpreter *I, OcppNode *cls_node) {
         }
     }
 
-    /* Process class body */
+    /* Process class body. Multi-var member declarations like
+     * ``int w, h;`` get parsed into a NP_BLOCK holding several
+     * NP_VARDECLs; we flatten those into individual fields. */
     for (int i = 0; i < cls_node->n_stmts; i++) {
         OcppNode *mem = cls_node->stmts[i];
         if (!mem) continue;
+        if (mem->type == NP_BLOCK && mem->n_stmts > 0) {
+            for (int j = 0; j < mem->n_stmts; j++) {
+                OcppNode *sub = mem->stmts[j];
+                if (sub && sub->type == NP_VARDECL &&
+                    cd->n_fields < OCPP_MAX_FIELDS) {
+                    strncpy(cd->field_names[cd->n_fields], sub->name, 63);
+                    cd->field_types[cd->n_fields] = sub->val_type;
+                    cd->field_access[cd->n_fields] = sub->access;
+                    cd->field_inits[cd->n_fields] =
+                        (sub->n_children > 0) ? sub->children[0] : NULL;
+                    cd->n_fields++;
+                }
+            }
+            continue;
+        }
         if (mem->type == NP_VARDECL) {
             /* Field */
             if (cd->n_fields < OCPP_MAX_FIELDS) {
@@ -3159,6 +3692,18 @@ static OcppValue eval_node(OcppInterpreter *I, OcppNode *n) {
             if (v->is_reference && v->ref_target) return *v->ref_target;
             return v->val;
         }
+        /* Implicit ``this->name`` inside a method / operator body —
+         * if a member with that name exists on the current object,
+         * resolve to its value. */
+        if (I->this_depth > 0) {
+            OcppValue *self = I->this_stack[I->this_depth - 1];
+            if (self && self->type == CVAL_OBJECT) {
+                for (int i = 0; i < self->v.obj.n_fields; i++) {
+                    if (strcmp(self->v.obj.field_names[i], n->name) == 0)
+                        return self->v.obj.fields[i];
+                }
+            }
+        }
         /* Check enum values */
         for (int i = 0; i < I->n_enum_vals; i++) {
             if (strcmp(I->enum_vals[i].name, n->name) == 0)
@@ -3366,10 +3911,16 @@ static OcppValue eval_node(OcppInterpreter *I, OcppNode *n) {
         return make_bool(val_to_bool(eval_node(I, n->children[1])));
     }
 
-    case NP_NEG: return is_numeric(eval_node(I, n->children[0])) ?
-        (eval_node(I, n->children[0]).type == CVAL_DOUBLE || eval_node(I, n->children[0]).type == CVAL_FLOAT ?
-         make_float(-val_to_double(eval_node(I, n->children[0]))) :
-         make_int(-val_to_int(eval_node(I, n->children[0])))) : make_int(0);
+    case NP_NEG: {
+        /* Evaluate the operand exactly ONCE — the old ternary called
+         * eval_node up to 4 times, so `-f()` / `-x++` ran repeatedly
+         * (wrong results + duplicated side effects). */
+        OcppValue nv = eval_node(I, n->children[0]);
+        if (!is_numeric(nv)) return make_int(0);
+        if (nv.type == CVAL_DOUBLE || nv.type == CVAL_FLOAT)
+            return make_float(-val_to_double(nv));
+        return make_int(-val_to_int(nv));
+    }
     case NP_NOT: return make_bool(!val_to_bool(eval_node(I, n->children[0])));
     case NP_BIT_NOT: return make_int(~val_to_int(eval_node(I, n->children[0])));
 
@@ -3507,12 +4058,24 @@ static OcppValue eval_node(OcppInterpreter *I, OcppNode *n) {
     }
 
     case NP_CALL: {
-        /* Evaluate arguments */
+        /* Evaluate arguments. Also capture lvalue pointers so we can
+         * thread them through to by-reference parameters (``int&``):
+         * the callee's ref params will write back to the caller's
+         * storage instead of a private copy. */
         OcppValue args[16];
+        OcppValue *arg_lvalues[16] = {0};
         int nargs = n->n_stmts;
         if (nargs > 16) nargs = 16;
         for (int i = 0; i < nargs; i++) {
             args[i] = eval_node(I, n->stmts[i]);
+            /* Best-effort lvalue capture — only succeeds for things
+             * that have storage (identifiers, member access, array
+             * index). For literals / temporaries this stays NULL. */
+            if (n->stmts[i]->type == NP_IDENT ||
+                n->stmts[i]->type == NP_MEMBER ||
+                n->stmts[i]->type == NP_INDEX) {
+                arg_lvalues[i] = eval_lvalue(I, n->stmts[i]);
+            }
         }
 
         /* Method call: obj.method() or obj->method() */
@@ -3568,12 +4131,37 @@ static OcppValue eval_node(OcppInterpreter *I, OcppNode *n) {
         /* User-defined function */
         for (int i = 0; i < I->n_funcs; i++) {
             if (strcmp(I->funcs[i].name, n->name) == 0) {
-                return call_function(I, n->name, args, nargs);
+                return call_function_ref(I, n->name, args, arg_lvalues, nargs);
             }
         }
 
-        /* Lambda call */
+        /* Implicit ``this->method(...)`` — a bare call inside a method
+         * body should dispatch to a sibling method on the current
+         * object. */
+        if (n->op == 0 && I->this_depth > 0) {
+            OcppValue *self = I->this_stack[I->this_depth - 1];
+            if (self && self->type == CVAL_OBJECT) {
+                OcppClassDef *scd = find_class(I, self->v.obj.class_name);
+                if (scd) {
+                    for (int i = 0; i < scd->n_methods; i++) {
+                        if (strcmp(scd->methods[i].name, n->name) == 0) {
+                            return call_method(I, self, n->name, args, nargs);
+                        }
+                    }
+                }
+            }
+        }
+
+        /* Function-pointer or lambda call — both stored as variables. */
         OcppVar *lv = scope_find(I->current_scope, n->name);
+        if (lv && lv->val.type == CVAL_STRING && lv->val.v.s) {
+            const char *target = lv->val.v.s;
+            for (int i = 0; i < I->n_funcs; i++) {
+                if (strcmp(I->funcs[i].name, target) == 0) {
+                    return call_function_ref(I, target, args, arg_lvalues, nargs);
+                }
+            }
+        }
         if (lv && lv->val.type == CVAL_LAMBDA) {
             OcppValue *lambda = &lv->val;
             OcppScope *prev = I->current_scope;
@@ -3631,6 +4219,29 @@ static OcppValue eval_node(OcppInterpreter *I, OcppNode *n) {
     }
 
     case NP_NEW_EXPR: {
+        /* Array form: ``new T[count]`` — represented as a vector so the
+         * usual ``a[i]`` indexing path works for both reads and writes. */
+        if (n->is_array) {
+            int count = 0;
+            if (n->n_children > 1 && n->children[1]) {
+                OcppValue cv = eval_node(I, n->children[1]);
+                count = (int)val_to_int(cv);
+            }
+            if (count < 0) count = 0;
+            OcppClassDef *acdef = find_class(I, n->class_name);
+            OcppValue vec = make_vector(acdef ? CVAL_OBJECT : n->val_type);
+            vec_ensure_cap(&vec, count > 0 ? count : 1);
+            for (int i = 0; i < count; i++) {
+                OcppValue elem;
+                if (acdef) {
+                    elem = create_object(I, n->class_name, NULL, 0);
+                } else {
+                    elem = create_default_val(n->val_type);
+                }
+                vec.v.vec.data[vec.v.vec.len++] = elem;
+            }
+            return vec;
+        }
         /* Allocate object on vmem heap */
         OcppClassDef *cdef = find_class(I, n->class_name);
         if (cdef) {
@@ -3707,14 +4318,59 @@ static OcppValue eval_node(OcppInterpreter *I, OcppNode *n) {
         lval.v.lambda.n_captures = 0;
         lval.v.lambda.captures = (OcppValue *)calloc(n_captures > 0 ? n_captures : 1, sizeof(OcppValue));
         lval.v.lambda.capture_names = (char (*)[64])calloc(n_captures > 0 ? n_captures : 1, 64);
+        /* Resolve capture-all markers ``=`` / ``&`` by snapshotting
+         * every variable visible in the enclosing scope chain. */
+        int capture_all = 0;
         for (int i = 0; i < n_captures; i++) {
-            const char *cap_name = n->param_names[i];
-            if (strcmp(cap_name, "=") == 0) continue; /* capture-all — simplified */
-            OcppVar *cv = scope_find(I->current_scope, cap_name);
-            if (cv) {
-                strcpy(lval.v.lambda.capture_names[lval.v.lambda.n_captures], cap_name);
-                lval.v.lambda.captures[lval.v.lambda.n_captures] = value_deep_copy(cv->val);
-                lval.v.lambda.n_captures++;
+            if (strcmp(n->param_names[i], "=") == 0 ||
+                strcmp(n->param_names[i], "&") == 0) {
+                capture_all = 1;
+                break;
+            }
+        }
+        if (capture_all) {
+            free(lval.v.lambda.captures);
+            free(lval.v.lambda.capture_names);
+            /* Walk the scope chain and collect every variable name. */
+            int cap = 16;
+            lval.v.lambda.captures = (OcppValue *)calloc(cap, sizeof(OcppValue));
+            lval.v.lambda.capture_names = (char (*)[64])calloc(cap, 64);
+            OcppScope *sc = I->current_scope;
+            while (sc) {
+                for (int j = 0; j < sc->n_vars; j++) {
+                    /* Skip duplicates from shadowing — keep the
+                     * innermost binding we saw first. */
+                    int dup = 0;
+                    for (int k = 0; k < lval.v.lambda.n_captures; k++) {
+                        if (strcmp(lval.v.lambda.capture_names[k], sc->vars[j].name) == 0) {
+                            dup = 1; break;
+                        }
+                    }
+                    if (dup) continue;
+                    if (lval.v.lambda.n_captures >= cap) {
+                        cap *= 2;
+                        lval.v.lambda.captures = (OcppValue *)realloc(
+                            lval.v.lambda.captures, sizeof(OcppValue) * cap);
+                        lval.v.lambda.capture_names = (char (*)[64])realloc(
+                            lval.v.lambda.capture_names, 64 * cap);
+                    }
+                    strcpy(lval.v.lambda.capture_names[lval.v.lambda.n_captures],
+                           sc->vars[j].name);
+                    lval.v.lambda.captures[lval.v.lambda.n_captures] =
+                        value_deep_copy(sc->vars[j].val);
+                    lval.v.lambda.n_captures++;
+                }
+                sc = sc->parent;
+            }
+        } else {
+            for (int i = 0; i < n_captures; i++) {
+                const char *cap_name = n->param_names[i];
+                OcppVar *cv = scope_find(I->current_scope, cap_name);
+                if (cv) {
+                    strcpy(lval.v.lambda.capture_names[lval.v.lambda.n_captures], cap_name);
+                    lval.v.lambda.captures[lval.v.lambda.n_captures] = value_deep_copy(cv->val);
+                    lval.v.lambda.n_captures++;
+                }
             }
         }
         lval.v.lambda.n_params = n->n_params;
@@ -3736,6 +4392,46 @@ static OcppValue eval_node(OcppInterpreter *I, OcppNode *n) {
 }
 
 /* ── Call user-defined function ── */
+static OcppValue call_function_ref(OcppInterpreter *I, const char *name,
+                                    OcppValue *args, OcppValue **lvalues,
+                                    int nargs) {
+    /* Forward to call_function but route by-ref params through the
+     * lvalue array. The bind-params block below honours lvalues if
+     * provided. */
+    /* Find the function node directly to access param_is_ref. */
+    OcppNode *fnode = NULL;
+    for (int i = 0; i < I->n_funcs; i++) {
+        if (strcmp(I->funcs[i].name, name) == 0) {
+            fnode = I->funcs[i].node;
+            break;
+        }
+    }
+    if (!fnode || !fnode->n_children || !fnode->children[0])
+        return call_function(I, name, args, nargs);
+
+    OcppScope *prev = I->current_scope;
+    OcppScope *fscope = scope_create(I->global_scope);
+    I->current_scope = fscope;
+
+    for (int i = 0; i < fnode->n_params && i < nargs; i++) {
+        OcppVar *pv = scope_set(I, fscope, fnode->param_names[i], args[i]);
+        if (fnode->param_is_ref[i] && lvalues && lvalues[i]) {
+            /* Point the parameter at the caller's lvalue; writes to
+             * ``*pv`` will go to the caller's variable. */
+            pv->is_reference = 1;
+            pv->ref_target = lvalues[i];
+        }
+    }
+
+    exec_node(I, fnode->children[0]);
+    OcppValue result = I->returning ? I->return_val : make_void();
+    I->returning = 0;
+
+    I->current_scope = prev;
+    scope_destroy(fscope);
+    return result;
+}
+
 static OcppValue call_function(OcppInterpreter *I, const char *name, OcppValue *args, int nargs) {
     OcppFunc *fn = NULL;
     for (int i = 0; i < I->n_funcs; i++) {
@@ -3839,13 +4535,43 @@ static void exec_node(OcppInterpreter *I, OcppNode *n) {
     case NP_BLOCK:
     case NP_NAMESPACE_DECL: {
         OcppScope *prev = I->current_scope;
-        if (n->type == NP_BLOCK || n->type == NP_NAMESPACE_DECL) {
+        /* ``op == -1`` on an NP_BLOCK marks a "flatten" block — the
+         * statements run in the surrounding scope, as used to group
+         * the desugared declarators from ``int a, b, c;`` so each
+         * variable lands in the enclosing function's scope. */
+        int inline_block = (n->type == NP_BLOCK && n->op == -1);
+        if ((n->type == NP_BLOCK && !inline_block) ||
+            n->type == NP_NAMESPACE_DECL) {
             I->current_scope = scope_create(I->current_scope);
         }
         if (n->type == NP_NAMESPACE_DECL && n->n_children > 0) {
             OcppNode *body = n->children[0];
             for (int i = 0; i < body->n_stmts; i++) {
-                exec_node(I, body->stmts[i]);
+                OcppNode *child = body->stmts[i];
+                /* Register namespaced functions under ``ns::name`` too,
+                 * so callers can resolve qualified names like
+                 * ``math::square`` without runtime namespace bookkeeping.
+                 * Skip if already present (re-executed namespace). */
+                if (child && child->type == NP_FUNCDECL && n->name[0]) {
+                    char qname[160];
+                    snprintf(qname, sizeof(qname), "%s::%s",
+                             n->name, child->name);
+                    int already = 0;
+                    for (int j = 0; j < I->n_funcs; j++) {
+                        if (strcmp(I->funcs[j].name, qname) == 0) {
+                            I->funcs[j].node = child;
+                            already = 1;
+                            break;
+                        }
+                    }
+                    if (!already && I->n_funcs < OCPP_MAX_FUNCS) {
+                        OcppFunc *f = &I->funcs[I->n_funcs++];
+                        strncpy(f->name, qname, sizeof(f->name) - 1);
+                        f->node = child;
+                        f->class_name[0] = '\0';
+                    }
+                }
+                exec_node(I, child);
                 if (I->returning || I->breaking) break;
             }
         } else {
@@ -3854,7 +4580,8 @@ static void exec_node(OcppInterpreter *I, OcppNode *n) {
                 if (I->returning || I->breaking) break;
             }
         }
-        if (n->type == NP_BLOCK || n->type == NP_NAMESPACE_DECL) {
+        if ((n->type == NP_BLOCK && !inline_block) ||
+            n->type == NP_NAMESPACE_DECL) {
             OcppScope *old = I->current_scope;
             I->current_scope = prev;
             scope_destroy(old);
@@ -3908,6 +4635,28 @@ static void exec_node(OcppInterpreter *I, OcppNode *n) {
         OcppValue init_val;
         int is_auto = (strcmp(n->label, "auto") == 0);
 
+        /* ``static`` local — initialise once, reuse across calls.
+         * We stash the value on the interpreter's global scope under
+         * a mangled name keyed by the declaration's source line so
+         * each lexical static gets its own slot, and bind the local
+         * name to that storage on every subsequent call. */
+        if (n->is_static && I->current_scope != I->global_scope) {
+            char static_key[160];
+            snprintf(static_key, sizeof(static_key),
+                     "__static_L%d_%s", n->line, n->name);
+            OcppVar *existing = scope_find(I->global_scope, static_key);
+            if (existing) {
+                /* Already initialised — bind local name as a reference
+                 * to the global slot so writes propagate forward. */
+                OcppVar *lv = scope_set(I, I->current_scope, n->name,
+                                         existing->val);
+                lv->is_reference = 1;
+                lv->ref_target = &existing->val;
+                return;
+            }
+            /* First-time init: fall through, then also save to global. */
+        }
+
         if (n->val_type == CVAL_VECTOR) {
             init_val = make_vector(CVAL_INT);
             if (n->n_children > 0 && n->children[0]) {
@@ -3925,7 +4674,16 @@ static void exec_node(OcppInterpreter *I, OcppNode *n) {
         } else if (n->val_type == CVAL_MAP) {
             init_val = make_map(CVAL_STRING, CVAL_INT);
         } else if (n->val_type == CVAL_PAIR) {
-            if (n->n_children > 0) {
+            if (n->n_stmts >= 2) {
+                /* Constructor syntax: pair<int,int> p(3, 4); */
+                OcppValue a = eval_node(I, n->stmts[0]);
+                OcppValue b = eval_node(I, n->stmts[1]);
+                init_val = make_pair(a, b);
+            } else if (n->n_stmts == 1) {
+                /* Brace init with single field — uncommon, default second */
+                OcppValue a = eval_node(I, n->stmts[0]);
+                init_val = make_pair(a, make_int(0));
+            } else if (n->n_children > 0) {
                 init_val = eval_node(I, n->children[0]);
             } else {
                 init_val = make_pair(make_int(0), make_int(0));
@@ -3975,6 +4733,19 @@ static void exec_node(OcppInterpreter *I, OcppNode *n) {
                     v->ref_target = &ref->val;
                 }
             }
+        }
+        /* For first-time static init: also store in global scope so
+         * subsequent calls can find and rebind it. We point the local
+         * variable's storage at the global slot so writes propagate. */
+        if (n->is_static && I->current_scope != I->global_scope) {
+            char static_key[160];
+            snprintf(static_key, sizeof(static_key),
+                     "__static_L%d_%s", n->line, n->name);
+            OcppVar *gv = scope_set(I, I->global_scope, static_key, init_val);
+            /* Make the local variable a reference to the global slot
+             * so mutations in this scope persist to the static store. */
+            v->is_reference = 1;
+            v->ref_target = &gv->val;
         }
         break;
     }

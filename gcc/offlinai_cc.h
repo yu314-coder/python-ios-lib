@@ -154,6 +154,9 @@ typedef struct OccNode {
     OccValType val_type;       /* declared type */
     int is_array;
     int array_size;
+    int arr_dims[4];           /* multi-dim array extents (was packed into
+                                * str_val bytes — truncated >255; now full int) */
+    int n_dims;                /* number of array dimensions */
     int op;                    /* for compound assign */
     int is_static;             /* static variable flag */
     char label[64];            /* for goto/label */
