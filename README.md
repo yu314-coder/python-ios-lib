@@ -1,17 +1,63 @@
-# python-ios-lib
+# python-ios-lib · CodeBench
 
-Full Python 3.14 runtime for iOS/iPadOS with **30+ offline libraries including real PyTorch + HuggingFace transformers + Rust tokenizers**. No JIT, App Store safe.
+**python-ios-lib** is a full **Python 3.14 runtime for iOS/iPadOS** packaged for Swift Package Manager — 30+ offline libraries, including the first public on-device builds of **PyTorch**, **HuggingFace transformers**, and real **Rust tokenizers**. No JIT, no network, App Store safe.
 
-> **New:** Full `import torch` (v2.1), `import transformers` (v4.41), and `import tokenizers` (v0.19, real Rust cross-compile) all work on-device. Train and fine-tune transformer models on an iPad with zero network. [Full integration test: 24/24 passing.](docs/libs/transformers.md#test-coverage)
+**CodeBench** is the reference iPad & iPhone app built on it: a complete **offline coding, scientific-computing, and on-device-AI workstation**. Everything it does runs with zero network, no accounts, and no subscriptions.
 
-### Recent app-side changes
+> **Highlight:** Full `import torch` (v2.1), `import transformers` (v4.41), and `import tokenizers` (v0.19, real Rust cross-compile) all work on-device. Train and fine-tune transformer models on an iPad with zero network. [Full integration test: 24/24 passing.](docs/libs/transformers.md#test-coverage)
 
-- **Monaco code editor with IntelliSense** running in a WKWebView — Python keyword snippets, signature help (~70-entry SIG_DB), hover docs, and resolve-from-Python for numpy / scipy / sklearn / matplotlib / sympy completions. See `CodeBench/MonacoEditorView.swift`.
-- **Auto-save**: edits persist to disk on every keystroke (debounced ~600 ms) plus on run, tab-switch, view-disappear, and app-backgrounding. Fixes the "edit `a.tex`, reopen, 0 B" bug.
-- **Tombstone system** — files deleted via the file browser trash icon, `rm` / `rmdir` in the shell, or ncdu's `d` key are recorded in `<Workspace>/.offlinai_deleted` so the starter-script seeder (`pip_demo.py`, `torch_test_all.py`, etc.) no longer re-creates them on next launch.
-- **LaTeX bundle expanded** — 33 MB texmf tree now ships with full Latin Modern Type 1 fonts, expl3 code (1.3 MB), firstaid, graphics-def, hyphenation, stringenc, unicode-data, and pdftex.map. Math-mode rendering via SwiftMath is unlimited and reliable; the native `pdflatex` builtin is gated off pending replacement of the 2019-era `pdftex.xcframework` (see [Media docs](docs/libs/media.md#local-latex-engine-offlinai_latex)).
-- **Shell builtins**: `pdflatex` / `latex` / `tex` / `pdftex` / `xelatex` / `latex-diagnose`, `ncdu` with raw arrow-key navigation and real-ncdu styling, `top` with Apple-chip detection, `git clone` via zipball fetch, and universal `--help` / `-h` interception.
-- **matplotlib shim hardening** — user scripts no longer crash on chained attribute access like `ax.xaxis.line.set_color(...)` or `ax.title.set_text(...)`. The plotly-backed matplotlib compatibility shim now uses a chainable `_NoopChainable` singleton for unshimmed attributes (across both `pyplot.py` and the five module stubs in `mpl_toolkits/mplot3d/__init__.py` — `_Art3DModule`, `_Proj3DModule`, `_Axis3DModule`, `_ProjectionModule`, plus the `_art3d_getattr_fallback`), so any chain into a missing attribute degrades silently to `None` instead of raising `'function' object has no attribute X` mid-chain. Plus a swathe of type-mismatch fixes: `get_xticks` / `get_yticks` newly added (were missing on `_Axes` and crashing via the fallback), `get_legend_handles_labels` actually discovers labelled artists from `lines` / `patches` / `collections` / `containers`, `get_array` returns `np.array([])` not `None`, an `_AxisLine` stub for the axis-baseline styling pattern, `set_title(loc=, pad=, y=)` and `set_xticks(minor=)` no longer silently swallow upstream kwargs, and the `__figure__` sentinel that was leaking into `fig.update_layout` (raising `Invalid property '__figure__'` and aborting the whole layout) is now unpacked into the top level. Result: full styling — titles, axis ranges, background colors — actually applies to plotly-rendered charts.
+---
+
+## CodeBench — the offline coding workstation
+
+CodeBench turns an iPad or iPhone into a self-contained development machine. The Python runtime, every library, the language tooling, and the AI models all live on-device — it works in airplane mode.
+
+### ✍️ Code editor
+- **Monaco** (the VS Code editor core) in a WKWebView, with syntax highlighting for **Python, C, C++, Fortran, Swift, JavaScript, LaTeX, and Markdown**.
+- **IntelliSense** across *every* importable module — completion, member/attribute listing, signature help (~70-entry signature DB), and hover docs. numpy / scipy / sklearn / matplotlib / sympy completions resolve live from the running interpreter.
+- **Auto-save** on every keystroke (debounced ~600 ms), plus on run, tab-switch, background, and view-disappear.
+- Light / Dark / System themes, live cursor position, and a **command palette** for fuzzy file + command search.
+
+### 🧮 Languages & runtimes
+- **Python 3.14** — the full CPython runtime (BeeWare) with 100+ bundled libraries (see [All Libraries](#all-libraries)).
+- **C / C++ / Fortran** — pure-Swift tree-walking interpreters that need no Python and no JIT (see [Interpreters](#c-interpreters-no-python-needed)).
+- **Swift** and **JavaScript** — additional interpreters for quick snippets.
+
+### ▶️ Run code & see results
+- Inline output plus a **preview pane** for rich results: matplotlib / Plotly charts, HTML/JS (via the bundled pywebview shim), PDFs, images, video (MP4/MOV/WEBM/GIF), manim animations, rendered Markdown, and LaTeX/math.
+- A **real PTY terminal** — `os.isatty()` is true, so `pip`, `git clone`, `ncdu`, `pytest`, `rich`, and `tqdm` render with full ANSI color and interactivity; 100+ shell builtins.
+- **Jupyter notebooks** (`.ipynb`) — code + Markdown cells, per-cell run, persistent namespace, stdout / plot / HTML capture, saved back to nbformat v4.
+
+### 🤖 On-device AI assistant
+- A built-in chat assistant that runs **entirely on-device** via llama.cpp, **GPU-accelerated** through a Metal bridge — no API keys, nothing leaves the device.
+- One-tap **model catalog**: download & manage open-weight GGUF models — Qwen 3.5, Gemma 4, Llama 3.2, Phi-3.5, Mistral, Qwen2.5-Coder, DeepSeek-R1-Distill, Granite, SmolLM2 — with quantization tuned per device RAM.
+- **ChatGPT-style UI** — streaming replies, collapsible "thinking" for reasoning models, and **compiled LaTeX/math** in answers (via SwiftMath).
+- **Attach files** to the chat, ask the assistant to **run Python directly** and see output in the preview, ground answers on imported docs with **RAG**, and **compare two models** side-by-side.
+- Power tools: on-device **LoRA fine-tuning** and **ExecuTorch** (`.pte`) inference for PyTorch workflows.
+
+### 🗂️ Files, workspace & system
+- Tree **file browser** with sort/search and create/rename/delete, plus **folder mounting** — mount iCloud / external / USB folders via the document picker (bookmarks persist across launches).
+- **Libraries browser** — searchable catalog of every bundled package with version, summary, and in-app documentation.
+- **Settings** (editor font/theme, terminal, manim render quality, AI options) and a **System Info** screen (device, OS, Python path, memory, storage, available native runtimes).
+- **Background execution** — long manim renders and model training keep running, with checkpointing, while the app is backgrounded.
+
+### ∑ Math & LaTeX
+- Inline math (`$…$`) renders to native vector glyphs via **SwiftMath** — instant, no web view.
+- Full `\documentclass{…}` documents (TikZ, pgfplots, beamer, …) compile to PDF via **busytex**, a WebAssembly TeX Live build — all offline.
+
+---
+
+### Recent changes
+
+- **IntelliSense** now enumerates *all* importable modules and lazily fetches each module's members on demand — typing `webview.` lists the real API surface, not a hardcoded few.
+- **AI Assist** gained file attachments, a ChatGPT-style chat UI with collapsible reasoning and compiled LaTeX, and the ability to run generated Python and show its output directly in the preview pane.
+- **pywebview shim completed** — the full Window API (resize / move / minimize / fullscreen, confirmation dialogs, event streams) plus a complete cookie API; embed HTML/CSS/JS UIs in the preview pane from Python.
+- **Settings & System Info** and the **Libraries browser** were redesigned; the bundled site-packages were trimmed of zero-runtime-effect dead weight to shrink the install.
+- **LaTeX bundle expanded** — 33 MB texmf tree with full Latin Modern Type 1 fonts, expl3, firstaid, graphics-def, hyphenation, and pdftex.map; SwiftMath math rendering is unlimited and reliable.
+- **Tombstone system** — files deleted in the browser, via `rm` / `rmdir`, or ncdu's `d` key are recorded in `<Workspace>/.offlinai_deleted` so the starter-script seeder never re-creates them.
+- **matplotlib shim hardening** — chained attribute access (`ax.xaxis.line.set_color(...)`, `ax.title.set_text(...)`) no longer crashes scripts, and titles / axis ranges / background colors now actually apply to Plotly-rendered charts. See [matplotlib.md](docs/matplotlib.md).
+
+---
 
 ## Setup — wiring this package into a fresh iOS app
 
