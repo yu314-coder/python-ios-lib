@@ -224,6 +224,7 @@ YourApp.app/
 │   ├── Python.framework/Python                 ← BeeWare CPython dylib
 │   ├── libfortran_io_stubs.dylib               ← from step 4.2
 │   ├── libsf_error_state.dylib                 ← from step 4.2
+│   ├── libscipy_blas_stubs.dylib               ← dcabs1 helper (scipy.linalg)
 │   └── libav*.dylib, libsw*.dylib              ← FFmpeg, install_name fixed
 ├── python-stdlib/                              ← step 4.1 (BeeWare stdlib)
 │   ├── os.py, json/, encodings/, …
@@ -255,14 +256,100 @@ because Apple's bundle rules don't accept the typical Python-iOS
 layout that BeeWare's `install_python` produces.
 
 This section documents every category we hit and how they're fixed.
-**The new `scripts/appstore/wrap-loose-dylibs.sh`** (added 2026-04)
-is a single drop-in build phase that handles all of them
-automatically — it supersedes the older
-`wrap-binaries-as-frameworks.sh` (kept for reference but no longer
-recommended).
+There are **two classes** of rejection, and which fix you need depends on
+**how you consume this package**:
+
+- **(A) Loose Mach-O → `ITMS-90171` "binary file is not permitted".** Apple
+  forbids any `.so`/`.dylib` that isn't inside a `.framework`. Every app hits
+  this; the fix depends on your layout:
+  - **Swift Package Manager** (you get `python-ios-lib_*.bundle/` +
+    `python-stdlib/lib-dynload/`): use
+    [`scripts/appstore/wrap-binaries-as-frameworks.sh`](scripts/appstore/wrap-binaries-as-frameworks.sh)
+    + [`python_ios_lib_import_hook.py`](scripts/appstore/python_ios_lib_import_hook.py).
+    It wraps every `.so` in `lib-dynload/` **and** the SPM bundles into
+    `Frameworks/*.framework`, rewrites the cross-`LC_LOAD_DYLIB` references, and
+    the import hook re-routes `import numpy._core…` to the framework at runtime.
+  - **Manual `app_packages/` layout** (the CodeBench reference app, where
+    BeeWare's binary-module signing already emits `.framework` + `.fwork`
+    placeholders): use
+    [`scripts/appstore/wrap-loose-dylibs.sh`](scripts/appstore/wrap-loose-dylibs.sh),
+    which fixes up the `.fwork` paths and wraps the remaining loose dylibs.
+- **(B) Content rejections** (private API, static `.a`, `MinimumOSVersion`,
+  bitcode, `MH_BUNDLE`, macOS-only dylibs, standalone executables) depend on
+  *which* libraries you bundle. `wrap-loose-dylibs.sh` carries a fix for each
+  (table below); the same cleanups apply to either layout.
+
+> **Note:** earlier revisions marked `wrap-binaries-as-frameworks.sh` as "no
+> longer recommended" — that was wrong for SwiftPM consumers and is the root
+> cause of the `ITMS-90171` reports. It is the **supported** path for the
+> resource-bundle layout. Step-by-step in
+> [App Store Connect submission](#app-store-connect-submission) below.
 
 > TestFlight + dev (`Run`) builds work WITHOUT any of this. App Store
 > submission is the only path that triggers Apple's strict validator.
+
+### App Store Connect submission
+
+For a **Swift Package Manager** app (the common case), these are the steps that
+take an archive from `ITMS-90171`-rejected to accepted:
+
+**1. Framework-wrap the loose `.so` (build phase).** Build Phases → + → New Run
+Script Phase, shell `/bin/bash`, placed AFTER "Copy Bundle Resources" / your
+stdlib-copy phase and BEFORE Xcode's implicit code-sign:
+
+```sh
+WRAP="${BUILD_ROOT}/../../SourcePackages/checkouts/python-ios-lib/scripts/appstore/wrap-binaries-as-frameworks.sh"
+[ -f "$WRAP" ] && bash "$WRAP"
+```
+
+It wraps `python-stdlib/lib-dynload/*.so` and every
+`python-ios-lib_*.bundle/**/*.so` into `Frameworks/<name>.framework/`, rewrites
+cross-references, re-signs, and writes
+`python-ios-lib_extension_manifest.txt` for the runtime hook.
+
+**2. Install the runtime import hook.** Copy `python_ios_lib_import_hook.py`
+into your bundled `python-stdlib/`, then in your embedding bootstrap —
+immediately after `Py_Initialize()` and BEFORE any user import:
+
+```c
+setenv("PYTHON_IOS_LIB_HOOK_DIR",
+       [[[NSBundle.mainBundle.bundleURL
+          URLByAppendingPathComponent:@"python-stdlib"] path] UTF8String], 1);
+PyRun_SimpleString(
+    "import sys, os\n"
+    "sys.path.insert(0, os.environ['PYTHON_IOS_LIB_HOOK_DIR'])\n"
+    "import python_ios_lib_import_hook\n"
+    "python_ios_lib_import_hook.install()\n");
+```
+
+The hook is **fail-safe**: if the manifest is absent (a dev `Run` build that
+skipped step 1), `install()` is a no-op — so the same code path works for both
+dev and release.
+
+**3. C BLAS stub (only if you used the in-app stub route).** Adding
+`blas_compat_stubs.c` to *Compile Sources* can fail with *"Module
+'ObjectiveC.NSObject' requires feature 'objc'"* / *"Could not build module
+'Foundation'"* — the `.c` file is inheriting the app's Objective-C prefix
+header. Rename it to **`blas_compat_stubs.m`** (Objective-C is a superset of C),
+or exclude it from the prefix header.
+
+**4. Build Settings & Info.plist** (full list in the next table):
+`ENABLE_USER_SCRIPT_SANDBOXING = NO`, `ENABLE_BITCODE = NO`,
+`IPHONEOS_DEPLOYMENT_TARGET ≥ 17.0`, ExecuTorch xcframeworks set to **"Do Not
+Embed"**, `ITSAppUsesNonExemptEncryption = false`, and — if `UIBackgroundModes`
+contains `processing` — a `BGTaskSchedulerPermittedIdentifiers` array.
+
+**5. Content rejections (category B).** Depending on the libraries you bundle
+you may still trip the issues in the table below (private API, static `.a`,
+`MinimumOSVersion`, `MH_BUNDLE`, …); apply the matching fix for each.
+
+**6. dSYM warning.** *"Upload Symbols Failed: archive did not include a dSYM for
+Python.framework"* is a **non-blocking warning**, not a rejection — the prebuilt
+`Python.framework` ships without a dSYM. Untick **"Upload your app's symbols"**
+in the Distribute flow, or ignore it.
+
+Only an actual archive → App Store Connect (or TestFlight) upload runs Apple's
+full validator, so verify there.
 
 ### Old vs new — what changed in the App Store path
 
@@ -400,13 +487,14 @@ remains, so you can never accidentally upload a broken bundle.
 | Symptom | Cause | Fix |
 |---|---|---|
 | `Trying to load an unsigned library` on first numpy/scipy import | SwiftPM strips signatures from `.so` resources | Run Script in step 4 must re-sign all `.so` |
+| `symbol not found in flat namespace '_dcabs1_'` importing `scipy.signal` / `scipy.linalg` on a real device | Apple's Accelerate doesn't export the reference-BLAS helper `dcabs1` (only `cython_blas` needs it — `lsame` IS in Accelerate) | ships `Frameworks/scipy_aux/libscipy_blas_stubs.dylib` providing it + an `LC_LOAD_DYLIB` on `cython_blas.so` so the flat lookup resolves. Already baked into the bundled `.so`; re-run `scripts/appstore/build-blas-stubs.sh` after rebuilding scipy. |
 | `Library not loaded: /tmp/ffmpeg-ios/install/lib/libavcodec.62.dylib` | PyAV `.so` has hardcoded build-time install_names | `install_name_tool -change` step in step 4.4 |
 | `AttributeError: 'installed_base'` from inside `pydoc` | BeeWare per-arch `_sysconfigdata` not on `sys.path` | Step 4.1 copies it; step 5 sets `_PYTHON_SYSCONFIGDATA_NAME` |
 | `ModuleNotFoundError: No module named 'cloup'` (or click, tqdm, rich, …) | Transitive dep wasn't auto-linked from `Manim` | Verify with the bundle layout — every product in step 3 should have a corresponding `python-ios-lib_*.bundle` dir; if missing, tick it explicitly in Xcode |
 | `Error importing numpy: you should not try to import numpy from its source directory` | numpy's `_multiarray_umath.so` failed to load (usually unsigned) | Re-check the codesign loop output in build log |
 | Empty `importlib.metadata.distributions()` | Your earlier Package.swift didn't ship `*.dist-info` dirs as resources | Fixed in current Package.swift |
 | Render appears to hang | iOS jetsam killing for memory pressure | `PYTHONMALLOC=malloc` is set in step 5; lower preview quality, avoid long `MathTex` chains |
-| App Store: `Invalid bundle structure. The 'X.so' binary file is not permitted.` | Apple validator rejects loose Mach-O outside `.framework/` | Add the wrap script + import hook from "App Store distribution" section above |
+| App Store: `Invalid bundle structure. The 'X.so' binary file is not permitted.` (`ITMS-90171`) | Apple rejects loose Mach-O outside `.framework/`; SwiftPM ships `.so` loose in `python-ios-lib_*.bundle/` + `python-stdlib/lib-dynload/` | Run `wrap-binaries-as-frameworks.sh` + load `python_ios_lib_import_hook.py` — see [App Store Connect submission](#app-store-connect-submission) |
 | App Store: `Missing Info.plist value. The Info.plist key 'BGTaskSchedulerPermittedIdentifiers' must contain a list of identifiers when 'UIBackgroundModes' has a value of 'processing'.` | Required when `UIBackgroundModes` includes `processing` | Add `BGTaskSchedulerPermittedIdentifiers` array to your Info.plist |
 | `Upload Symbols Failed: archive did not include a dSYM for X.dylib` | Release archive is missing debug symbols | Build Settings → Debug Information Format = `DWARF with dSYM File` for Release; not a rejection — just no crash symbolication |
 
@@ -422,7 +510,7 @@ Pick whichever combination you need. Dependencies auto-resolve.
 |---|---|---|
 | **CInterpreter** | C89/C99/C23 tree-walking interpreter (~3,661 lines) | [doc](docs/c-interpreter.md) |
 | **CppInterpreter** | C++ interpreter — classes, STL, templates, inheritance (~4,287 lines) | [doc](docs/cpp-interpreter.md) |
-| **FortranInterpreter** | Fortran — modules, allocatable arrays, 45+ intrinsics (~3,876 lines) | [doc](docs/fortran-interpreter.md) |
+| **FortranInterpreter** | Fortran via [ofort](https://github.com/Beliavsky/ofort) (Beliavsky, MIT) — modules, allocatable arrays, 45+ intrinsics | [doc](docs/fortran-interpreter.md) |
 | **NumPy** | NumPy 2.3.5 — arrays, linalg, FFT, random (native iOS) | [doc](docs/numpy.md) |
 | **SymPy** | SymPy 1.14 — symbolic math, calculus, solving | [doc](docs/sympy.md) |
 | **Plotly** | Plotly 6.6 — interactive charts, 3D plots | [doc](docs/plotly.md) |
@@ -440,7 +528,7 @@ Pick whichever combination you need. Dependencies auto-resolve.
 | **JsonSchema** | JSON Schema validation | [doc](docs/jsonschema.md) |
 | **CairoGraphics** | Cairo + Pango + HarfBuzz (2D graphics, native iOS) | [doc](docs/cairographics.md) |
 | **FFmpegPyAV** | FFmpeg (7 dylibs) + PyAV video encoding (native iOS) | [doc](docs/ffmpeg-pyav.md) |
-| **Decorator** | Single-file shim of Michele Simionato's `decorator` package — covers manim's needs | [doc](docs/decorator.md) |
+| **Decorator** | Michele Simionato's full `decorator` package (5.3.1, pure Python) — `decorator` / `contextmanager` / `dispatch_on` | [doc](docs/decorator.md) |
 | **PyWebView** | pywebview shim — embed HTML/CSS/JS UI in your iOS app from Python via the host's preview pane (full cookie API + file IPC) | [doc](docs/pywebview.md) |
 | **Werkzeug** | WSGI utilities + dev server (3.1.x, 52 modules). iOS-patched: `multiprocessing.Value` fallback, reloader auto-disable, preview-signal hook, clean-shutdown hook | [doc](docs/werkzeug.md) · [stack](docs/web-stack.md) |
 | **Tornado** | Async HTTP/WebSocket framework (6.5.x, 73 modules). Pure-Python; macOS `speedups.abi3.so` stripped, transparent Python fallback. Streamlit's transport, usable standalone | [doc](docs/tornado.md) · [stack](docs/web-stack.md) |
@@ -694,7 +782,7 @@ Transformers also bundles huggingface_hub, filelock, safetensors
 
 ## All Libraries
 
-The `app_packages/site-packages/` bundle ships **~115 Python packages** — every entry below is importable on-device with **no `pip install` needed**. Anything you'd typically `pip install` for an HF training script is already here, except for a short list at the end that depends on un-cross-compileable C/Rust extensions.
+The `app_packages/site-packages/` bundle ships **~180 Python packages** — every entry below is importable on-device with **no `pip install` needed**. Anything you'd typically `pip install` for an HF training script is already here, except for a short list at the end that depends on un-cross-compileable C/Rust extensions.
 
 ### Machine Learning stack (bundled)
 
@@ -765,9 +853,14 @@ The `app_packages/site-packages/` bundle ships **~115 Python packages** — ever
 |---|---|---|
 | **numpy** | 2.3.5 | Native arm64 (cross-compiled from source) |
 | **scipy** | 1.15.0 | Native + Python shim |
+| **pandas** | 2.2.3 | Native arm64 (cross-compiled) — DataFrames |
+| **statsmodels** | 0.14.4 | Native arm64 — statistical models / tests |
 | **sympy** | 1.14.0 | Pure Python |
 | **mpmath** | 1.4.1 | Pure Python |
 | **networkx** | 3.6.1 | Pure Python |
+| **pint** | 0.25.3 | Pure Python — physical units & dimensional analysis |
+| **uncertainties** | 3.2.3 | Pure Python — error propagation (numpy-aware) |
+| **periodictable** | 2.1.0 | Pure Python — chemistry element / isotope data (masses, densities) |
 
 ### Visualization
 
@@ -807,6 +900,7 @@ The `app_packages/site-packages/` bundle ships **~115 Python packages** — ever
 | **fpdf** | PDF write |
 | **reportlab** | PDF generation (full vector + text) |
 | **openpyxl** + **xlsxwriter** + **et_xmlfile** | Excel `.xlsx` read / write |
+| **qrcode** | QR-code generation (PNG via the bundled PIL, or pure-Python SVG) |
 
 ### LaTeX
 
@@ -854,6 +948,7 @@ Per-lib docs: [werkzeug.md](docs/werkzeug.md) · [flask.md](docs/flask.md) · [d
 | **jsonschema** 4.26.0 + **jsonschema_specifications** + **referencing** + **rpds** | JSON Schema validation |
 | **fsspec** | Filesystem abstraction (HF transformers / hub dep) |
 | **filelock** 3.28.0 | Cross-process file locking |
+| **tinydb** 4.8.2 | Zero-dependency JSON document database (offline) |
 
 ### CLI / Terminal UI
 
@@ -866,6 +961,8 @@ Per-lib docs: [werkzeug.md](docs/werkzeug.md) · [flask.md](docs/flask.md) · [d
 | **colorama** | ANSI on every platform |
 | **markdown_it** + **mdurl** | Markdown parser |
 | **pygments** 2.18.0 | Syntax highlighting (500+ languages) |
+| **plotext** 5.3.2 | Plot charts directly in the terminal (no matplotlib) |
+| **ftfy** 6.3.1 | Fix mojibake / broken unicode text |
 
 ### Testing / Linting / Dev Tools
 
@@ -884,6 +981,9 @@ Per-lib docs: [werkzeug.md](docs/werkzeug.md) · [flask.md](docs/flask.md) · [d
 | **regex** 2024.11.6 | Extended regex (tokenizers use this) |
 | **packaging** 26.0 | Version / requirement parsing |
 | **more_itertools** + **lark** | Iteration + grammar parsing |
+| **dill** 0.4.1 | Extended pickling — closures, lambdas, whole sessions |
+| **pyparsing** 3.3.2 | PEG-style grammar parsing |
+| **wcwidth** 0.7.0 | Terminal display width of unicode characters |
 | **dateutil** + **pytz** + **pendulum** | Date / time |
 | **attr** / **attrs** 24.2.0 + **cattrs** | Attribute classes / converters |
 | **platformdirs** | OS-specific paths |
@@ -929,16 +1029,15 @@ CodeBench ships a patched `pip` that installs pure-Python wheels on-device into 
 
 | Package | Reason | Workaround |
 |---|---|---|
-| **`datasets`** | needs `pyarrow` (Apache Arrow C++) + `pandas` (compiled C) | Subclass `torch.utils.data.Dataset` (5-10 lines) |
+| **`datasets`** | needs `pyarrow` (Apache Arrow C++); `pandas` itself is now bundled | Subclass `torch.utils.data.Dataset` (5-10 lines) |
 | **`pyarrow`** | Apache Arrow C++ core | None — write your own loader using `json` / `csv` stdlib modules |
-| **`pandas`** | Compiled C extensions for sort / date / etc. | numpy + pure-Python is usually enough; or use polars (also blocked) |
 | **`sentencepiece`** | C++ subword tokenizer | Only needed for Llama / T5 / BART tokenizer formats; GPT-2 / Qwen / Mistral / Phi use BPE and work without it |
 | **`protobuf`** | C-based binary serialization | Use JSON / msgpack where possible |
 | **`bitsandbytes`** | CUDA-only quantization kernels | Use llama.cpp GGUF Q4/Q8 quantization for inference |
 | **`flash-attn`**, **`xformers`** | CUDA-only attention kernels | Bridge's `F.scaled_dot_product_attention` patch IS GPU-accelerated |
 | **`triton`** | LLVM JIT codegen | iOS forbids JIT; no equivalent |
 | **`deepspeed`**, **`fairscale`** | Multi-GPU training infrastructure | Single-device on iPad; not applicable |
-| **`polars`** | Rust DataFrame core | Same situation as pandas |
+| **`polars`** | Rust DataFrame core | Use the bundled `pandas` instead |
 | **`onnxruntime`** | C++ ONNX runtime | Use ExecuTorch (already bundled separately as an XCFramework) for inference |
 
 ---
@@ -1061,7 +1160,7 @@ notes, limitations, troubleshooting, and build provenance.
 |---|---|
 | **cffi + pycparser** | [docs/cffi.md](docs/cffi.md) |
 | **regex + typing_extensions** | [docs/regex-and-typing.md](docs/regex-and-typing.md) |
-| **decorator** (CodeBench shim — manim's only deps) | [docs/decorator.md](docs/decorator.md) |
+| **decorator** (full upstream package, pure Python) | [docs/decorator.md](docs/decorator.md) |
 
 ### Build / packaging
 
