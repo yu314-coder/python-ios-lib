@@ -304,8 +304,19 @@ WRAP="${BUILD_ROOT}/../../SourcePackages/checkouts/python-ios-lib/scripts/appsto
 
 It wraps `python-stdlib/lib-dynload/*.so` and every
 `python-ios-lib_*.bundle/**/*.so` into `Frameworks/<name>.framework/`, rewrites
-cross-references, re-signs, and writes
-`python-ios-lib_extension_manifest.txt` for the runtime hook.
+cross-references, **flips each binary from `MH_BUNDLE` to `MH_DYLIB` and inserts
+`LC_ID_DYLIB`**, re-signs, and writes `python-ios-lib_extension_manifest.txt`
+for the runtime hook.
+
+> **The `MH_BUNDLE → MH_DYLIB` flip is mandatory.** Python `.so` extensions are
+> Mach-O type `MH_BUNDLE`, and Apple's validator rejects a `.framework` whose
+> executable is `MH_BUNDLE` — *"has type 'BUNDLE'… Only 'EXECUTE' is permitted"*
+> (`90124`), *"missing load commands"* (`90210`), *"standalone library… not
+> permitted"* (`90171`). The wrap script calls `scripts/appstore/fix-macho-type.py`
+> automatically to do it, so **keep that file alongside `wrap-binaries-as-frameworks.sh`**
+> (both ship in `scripts/appstore/`) and ensure `python3` is on the build machine.
+> Wrapping the `.so` into a framework **without** this flip is the #1 cause of a
+> still-rejected archive.
 
 **2. Install the runtime import hook.** Copy `python_ios_lib_import_hook.py`
 into your bundled `python-stdlib/`, then in your embedding bootstrap —

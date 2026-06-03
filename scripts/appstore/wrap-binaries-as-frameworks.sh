@@ -31,6 +31,7 @@ set -e
 APP="${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}"
 FRAMEWORKS="$APP/Frameworks"
 IDENT="${EXPANDED_CODE_SIGN_IDENTITY:--}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MANIFEST="$APP/python-ios-lib_extension_manifest.txt"
 RPATH_MAP="${TEMP_DIR:-/tmp}/python-ios-lib_rpath_map_$$.txt"
 
@@ -234,6 +235,31 @@ done < <(find "$FRAMEWORKS" -name "*.framework" -type d -print0 | \
          while IFS= read -r -d '' fw; do
              find "$fw" -maxdepth 1 -type f -print0
          done)
+
+# ============================================================
+# 3b. Flip MH_BUNDLE → MH_DYLIB on every wrapped binary  (REQUIRED for App Store)
+#     Python .so extensions are Mach-O type MH_BUNDLE (filetype 0x8). Apple's
+#     archive validator rejects a .framework whose executable is MH_BUNDLE:
+#       • 90124  "executable … has type 'BUNDLE' … Only 'EXECUTE' is permitted"
+#       • 90210  "missing load commands"  (MH_BUNDLE has no LC_ID_DYLIB)
+#       • 90171  "binary file is not permitted … standalone library"
+#     fix-macho-type.py flips header byte 12 to MH_DYLIB (0x6) and inserts an
+#     LC_ID_DYLIB. It MUST run here — before the re-sign pass — because it
+#     mutates the Mach-O (which invalidates any signature).
+# ============================================================
+FIXER=""
+for cand in "$SCRIPT_DIR/fix-macho-type.py" \
+            "${SRCROOT}/scripts/appstore/fix-macho-type.py" \
+            "${SRCROOT}/scripts/fix-macho-type.py"; do
+    [ -f "$cand" ] && { FIXER="$cand"; break; }
+done
+if [ -n "$FIXER" ]; then
+    echo "wrap-binaries: flipping MH_BUNDLE → MH_DYLIB via $(basename "$FIXER")"
+    python3 "$FIXER" "$APP" || echo "error: fix-macho-type.py failed — App Store will reject the MH_BUNDLE frameworks"
+else
+    echo "error: fix-macho-type.py not found beside this script or under \$SRCROOT/scripts[/appstore];"
+    echo "       wrapped .so stay MH_BUNDLE and App Store WILL reject them (codes 90124/90210/90171)."
+fi
 
 # ============================================================
 # 4. Pass 3: re-sign every framework now that install_name_tool changes
