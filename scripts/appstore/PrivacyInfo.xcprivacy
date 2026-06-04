@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Minimal privacy manifest for the framework-wrapped Python extension modules
+  that statically link OpenSSL/BoringSSL (Python's _ssl / _hashlib → the
+  `stdlib_ssl.framework` / `stdlib_hashlib.framework` Apple flags).
+
+  Apple requires every binary that bundles a "commonly used third-party SDK"
+  (OpenSSL is on the list) to ship a PrivacyInfo.xcprivacy, or App Store Connect
+  rejects with ITMS-91061. These modules perform cryptography only — no
+  tracking, no data collection — so all collection/tracking keys are empty.
+
+  If a later upload returns ITMS-91053 ("missing required-reason API"), add the
+  specific NSPrivacyAccessedAPIType + reason code Apple names to the array below.
+-->
+<plist version="1.0">
+<dict>
+    <key>NSPrivacyTracking</key>
+    <false/>
+    <key>NSPrivacyTrackingDomains</key>
+    <array/>
+    <key>NSPrivacyCollectedDataTypes</key>
+    <array/>
+    <key>NSPrivacyAccessedAPITypes</key>
+    <array/>
+</dict>
+</plist>

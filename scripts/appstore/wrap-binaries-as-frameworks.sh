@@ -262,6 +262,37 @@ else
 fi
 
 # ============================================================
+# 3c. Privacy manifests (ITMS-91061). Any binary bundling a "commonly used
+#     third-party SDK" must ship a PrivacyInfo.xcprivacy or App Store Connect
+#     rejects. OpenSSL/BoringSSL is on that list and is statically linked into
+#     Python's _ssl / _hashlib (→ stdlib_ssl/stdlib_hashlib.framework). Drop a
+#     minimal manifest (no tracking, no data collection) into every wrapped
+#     framework whose binary carries OpenSSL markers — BEFORE the re-sign below,
+#     so codesign seals it into the bundle.
+# ============================================================
+PRIVACY_SRC=""
+for cand in "$SCRIPT_DIR/PrivacyInfo.xcprivacy" \
+            "${SRCROOT}/scripts/appstore/PrivacyInfo.xcprivacy" \
+            "${SRCROOT}/scripts/PrivacyInfo.xcprivacy"; do
+    [ -f "$cand" ] && { PRIVACY_SRC="$cand"; break; }
+done
+if [ -n "$PRIVACY_SRC" ]; then
+    while IFS= read -r -d '' fw; do
+        fname=$(basename "$fw" .framework)
+        bin="$fw/$fname"
+        [ -f "$bin" ] || continue
+        if strings "$bin" 2>/dev/null | grep -qiE 'BoringSSL|openssl_grpc|OpenSSL [0-9]+\.' \
+           || echo "$fname" | grep -qiE '(ssl|hashlib|crypto)'; then
+            cp "$PRIVACY_SRC" "$fw/PrivacyInfo.xcprivacy"
+            echo "wrap-binaries: privacy manifest → $fname.framework (OpenSSL — ITMS-91061)"
+        fi
+    done < <(find "$FRAMEWORKS" -name "*.framework" -type d -print0)
+else
+    echo "warning: PrivacyInfo.xcprivacy not found beside this script or under \$SRCROOT/scripts[/appstore] —"
+    echo "         OpenSSL-linked frameworks (stdlib_ssl/stdlib_hashlib) will be rejected with ITMS-91061."
+fi
+
+# ============================================================
 # 4. Pass 3: re-sign every framework now that install_name_tool changes
 #    are in (codesign invalidates after any binary mutation)
 # ============================================================

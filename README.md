@@ -305,7 +305,8 @@ WRAP="${BUILD_ROOT}/../../SourcePackages/checkouts/python-ios-lib/scripts/appsto
 It wraps `python-stdlib/lib-dynload/*.so` and every
 `python-ios-lib_*.bundle/**/*.so` into `Frameworks/<name>.framework/`, rewrites
 cross-references, **flips each binary from `MH_BUNDLE` to `MH_DYLIB` and inserts
-`LC_ID_DYLIB`**, re-signs, and writes `python-ios-lib_extension_manifest.txt`
+`LC_ID_DYLIB`**, **drops a `PrivacyInfo.xcprivacy` into the OpenSSL-linked
+frameworks**, re-signs, and writes `python-ios-lib_extension_manifest.txt`
 for the runtime hook.
 
 > **The `MH_BUNDLE → MH_DYLIB` flip is mandatory.** Python `.so` extensions are
@@ -317,6 +318,17 @@ for the runtime hook.
 > (both ship in `scripts/appstore/`) and ensure `python3` is on the build machine.
 > Wrapping the `.so` into a framework **without** this flip is the #1 cause of a
 > still-rejected archive.
+
+> **Privacy manifest (`ITMS-91061`).** Python's `_ssl` / `_hashlib` statically
+> link **OpenSSL/BoringSSL**, a "commonly used third-party SDK" — so the wrapped
+> `stdlib_ssl.framework` / `stdlib_hashlib.framework` must each carry a
+> `PrivacyInfo.xcprivacy` or App Store Connect rejects with *"Missing privacy
+> manifest"* (`ITMS-91061`). The wrap script copies the minimal manifest at
+> [`scripts/appstore/PrivacyInfo.xcprivacy`](scripts/appstore/PrivacyInfo.xcprivacy)
+> (no tracking, no data collection) into every OpenSSL-linked framework before
+> re-signing — keep that file beside the script. If a later upload returns
+> `ITMS-91053` ("missing required-reason API"), add the named reason code to the
+> manifest's `NSPrivacyAccessedAPITypes` array.
 
 **2. Install the runtime import hook.** Copy `python_ios_lib_import_hook.py`
 into your bundled `python-stdlib/`, then in your embedding bootstrap —
