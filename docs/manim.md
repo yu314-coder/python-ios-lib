@@ -276,6 +276,38 @@ killed by jetsam on long scenes.
   on each VMobject — keeps the point count ~40% lower for math glyphs.
 - `use_svg_cache=False` default on `SVGMobject`.
 
+### High-resolution (4K / 8K) rendering
+
+Earlier the bundled config refused anything above 1080p outright: the
+animated-GIF assembly buffer held every full-resolution frame as a PIL
+image, so memory scaled with `resolution × frame_count` and tripped the
+jetsam watermark long before 8K. The render path now *streams* rather
+than accumulates, which makes 4K and 8K memory-safe:
+
+- **Bounded GIF frame buffer.** Captured frames are capped
+  (`_MAX_COLLECT = 240`) and downsampled at capture time
+  (`_GIF_MAX_W = 480`), so the buffer is a small constant regardless of
+  render resolution or scene length. Full-resolution frames still stream
+  straight to the mp4 via `SceneFileWriter` and are never accumulated.
+  (The GIF is a lightweight preview; the mp4 is the full-quality output.)
+- **Resolution-tiered RAM pre-flight.** Before rendering, peak need is
+  estimated by resolution (≈ 3 GB for 8K, ≈ 2 GB for 4K, less below) and
+  the render is refused *gracefully* — with a "lower the quality" message
+  — only if the device genuinely lacks the free RAM. This replaced the
+  old hard 4K cap.
+- **Return freed pages to the OS.** `PYTHONMALLOC=malloc` plus
+  `malloc_zone_pressure_relief(NULL, 0)` between animations, so released
+  memory actually leaves `phys_footprint` (what jetsam measures) instead
+  of sitting in CPython's allocator pool.
+- **Quality presets extended.** Selectable quality now runs
+  480p / 720p / 1080p / 1440p / **4K** / **8K** (index 5 is a custom
+  7680×4320 preset with an explicit frame rate).
+
+Rendering stays on cairo's CPU rasterizer; only the H.264 *encode* uses
+the GPU (`h264_videotoolbox`). GPU-accelerated *rasterization* is not
+feasible on iOS — cairo has no Metal backend, and manim's OpenGL renderer
+needs a windowing context iOS doesn't provide (`moderngl` is a stub).
+
 ### Write / Create on busytex MathTex (column reveal)
 
 `MathTex` / `Tex` route through `offlinai_latex`, which produces a
@@ -347,3 +379,8 @@ Don't `git checkout` these files casually — see `~/.claude/projects/-Volumes-D
 - LaTeX rendering requires offlinai_latex's pdftex; complex packages
   may need adding to `tex_template.tex` manually.
 - Long scenes (> 30 s @ 1080p) hit jetsam if not chunked into sections.
+- 4K / 8K now render memory-safe (GIF buffer bounded, frames stream to
+  the mp4 instead of accumulating — see *High-resolution rendering*), but
+  they stay CPU-bound and slow. Scenes with > ~5000 simultaneous
+  VMobjects can still approach the jetsam ceiling regardless of
+  resolution — that limit is structural (see issue #1).
