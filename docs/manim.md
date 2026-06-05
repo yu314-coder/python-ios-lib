@@ -302,11 +302,25 @@ than accumulates, which makes 4K and 8K memory-safe:
 - **Quality presets extended.** Selectable quality now runs
   480p / 720p / 1080p / 1440p / **4K** / **8K** (index 5 is a custom
   7680×4320 preset with an explicit frame rate).
+- **Frame rate (FPS) is honored.** The Settings FPS selector applies to
+  every quality. manim's quality preset *resets* `frame_rate` to its built-in
+  default (15 / 30 / 60), so the chosen fps is re-applied **after** the preset
+  (in both the initial config and the per-render re-apply); before this fix
+  the FPS selector did nothing except at 8K. **Lower fps is the single biggest
+  speed lever** — 4K@60 → 4K@30 roughly halves the render, since nearly all the
+  per-frame cost scales with frame count. The `manim quality idx=… fps=…` log
+  line shows the fps actually applied.
 
-Rendering stays on cairo's CPU rasterizer; only the H.264 *encode* uses
-the GPU (`h264_videotoolbox`). GPU-accelerated *rasterization* is not
-feasible on iOS — cairo has no Metal backend, and manim's OpenGL renderer
-needs a windowing context iOS doesn't provide (`moderngl` is a stub).
+Rendering stays on cairo's CPU rasterizer by default; only the H.264 *encode*
+uses the GPU (`h264_videotoolbox`). An **experimental Metal cairo backend
+(CairoMetal)** can be toggled on (**Settings → Manim → GPU rendering**) — it
+renders correctly on the GPU but does **not** speed manim up: profiling a 4K
+render shows the cairo fill is only ~5% of the time, while ~67% is manim's
+per-frame Python animation engine (mobject interpolation), ~12% CPU
+path-building, and ~11% the already-hardware H.264 encode. So GPU
+rasterization can't move the needle — use **lower fps** for real speedups.
+(manim's own OpenGL renderer remains unusable on iOS — `moderngl` is a stub.)
+See `cairo(metal)/` and `docs/cairographics.md`.
 
 ### Multi-core / parallel CPU rendering
 

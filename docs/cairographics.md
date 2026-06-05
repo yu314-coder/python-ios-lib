@@ -159,10 +159,25 @@ before importing manim.
 
 ## Limitations
 
-- **No GPU acceleration.** Cairo's iOS build uses the software image
-  backend only — no OpenGL, no Quartz back-end. Per-frame rendering
-  for manim's high-quality presets (1080p / 4K) is CPU-bound; expect
-  ~5-30 fps depending on scene complexity.
+- **No GPU acceleration in the default build (software image backend).**
+  Cairo's iOS build uses the software image backend only — no OpenGL, no
+  Quartz back-end. Per-frame rendering for manim's quality presets
+  (1080p / 4K) is CPU-bound.
+
+  **Experimental GPU backend — CairoMetal.** A separate, self-contained
+  Metal implementation of the *exact* cairo subset manim uses lives in
+  `cairo(metal)/`: a `cairo_metal` CPython shim that is a pycairo drop-in,
+  backed by a stencil-then-cover Metal renderer drawing into an
+  IOSurface-backed texture (see `cairo(metal)/README.md` / `DESIGN.md`). It
+  renders manim correctly on the GPU and is toggleable in the CodeBench app
+  (**Settings → Manim → GPU rendering**). **It does NOT make manim faster,**
+  though — profiling a 4K render shows the cairo *fill* (the only stage the
+  GPU replaces) is only ~5% of the time, while ~67% is manim's per-frame
+  Python animation engine (mobject interpolation), ~12% CPU path-building,
+  and ~11% the already-hardware H.264 encode. So GPU rasterization cannot
+  move the needle here; the real speed levers are **lower fps** and
+  **CPU-side parallelism** (free-threaded Python). Kept as a working
+  proof-of-concept (first GPU-cairo for manim on iOS), off by default.
 - **No PDF / PostScript backend.** The `cairo-pdf.h` and `cairo-ps.h`
   headers are absent — PDF output goes through `pdftex` / SwiftLaTeX
   in this project, not Cairo's PDF surface.
