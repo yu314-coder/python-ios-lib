@@ -218,6 +218,26 @@ rewrite_cross_refs() {
                 fi
             done < "$RPATH_MAP"
         fi
+        # Field-reported fallback (issue #2): a bare @rpath / @loader_path dylib
+        # dep (e.g. @rpath/libfortran_io_stubs.dylib) whose basename didn't line
+        # up with any RPATH_MAP entry, but whose wrapped framework DOES exist on
+        # disk. Probe Frameworks/ directly for the loose_<stem> / <stem> wrapper
+        # so the reference still gets rewritten instead of crashing at runtime
+        # with "Library not loaded: @rpath/<lib>.dylib".
+        if [ -z "$new_load" ]; then
+            case "$old_path" in
+                *.dylib|*.so)
+                    local stem cand
+                    stem=$(echo "$old_basename" | sed -E 's/\.(dylib|so)$//; s/\.[0-9]+(\.[0-9]+)*$//')
+                    for cand in "$(sanitize "loose.${stem}")" "$(sanitize "${stem}")"; do
+                        if [ -n "$cand" ] && [ -f "$FRAMEWORKS/${cand}.framework/${cand}" ]; then
+                            new_load="@rpath/${cand}.framework/${cand}"
+                            break
+                        fi
+                    done
+                    ;;
+            esac
+        fi
         if [ -n "$new_load" ] && [ "$new_load" != "$old_path" ]; then
             install_name_tool -change "$old_path" "$new_load" "$target" 2>/dev/null || true
         fi
