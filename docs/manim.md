@@ -308,6 +308,35 @@ the GPU (`h264_videotoolbox`). GPU-accelerated *rasterization* is not
 feasible on iOS — cairo has no Metal backend, and manim's OpenGL renderer
 needs a windowing context iOS doesn't provide (`moderngl` is a stub).
 
+### Multi-core / parallel CPU rendering
+
+The per-frame cost that scales with resolution is cairo's software pixel
+fill, and animation frames are independent — so rendering frames across
+multiple CPU cores would cut 4K/8K wall-clock roughly linearly. **It is not
+enabled, because iOS blocks every cheap way to get there:**
+
+- **`multiprocessing` / `fork` / `subprocess` — unavailable on iOS.** The
+  sandbox forbids spawning processes; per PEP 730, invoking `fork`/`spawn`
+  freezes the calling process (`[Errno 45] ios does not support processes`).
+- **Threads don't parallelize CPU work.** The bundled CPython 3.14 is a
+  standard GIL build (`cpython-314`, not the free-threaded `cpython-314t`),
+  so a thread pool gives no speedup for the cairo fill.
+- **Sub-interpreters** (3.14 ships `concurrent.interpreters`) would side-step
+  the GIL in-process, but NumPy is not sub-interpreter-safe — a worker
+  interpreter crashes on `import`, and manim is built entirely on NumPy.
+
+The only real path is a **free-threaded Python rebuild** (`3.14t`,
+`Py_GIL_DISABLED`): threads *are* allowed on iOS (only processes aren't), and
+cairo is thread-safe per surface, so a thread pool could render frames
+concurrently — each worker with its own cairo context. Output stays
+byte-identical; speedup is bounded by core count and, at 8K, by memory
+(~132 MB per frame → roughly 2–3× there, more at lower resolutions).
+
+Note: the **video encode already overlaps rendering** — manim's
+`SceneFileWriter` runs the H.264 encoder on a background thread fed by a
+bounded frame queue (`listen_and_write`), so encode latency is hidden behind
+the next frame's render today.
+
 ### Write / Create on busytex MathTex (column reveal)
 
 `MathTex` / `Tex` route through `offlinai_latex`, which produces a
