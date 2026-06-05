@@ -22,7 +22,8 @@ build/
 *.mode1v3
 *.mode2v3
 Info.plist
-third_party/
+third_party/*
+!third_party/ofort/
 /scripts/
 test_all_libs.py
 

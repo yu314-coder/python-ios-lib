@@ -1,0 +1,117 @@
+Metadata-Version: 2.4
+Name: periodictable
+Version: 2.1.0
+Summary: Extensible periodic table of the elements
+Author-email: Paul Kienzle <paul.kienzle@nist.gov>
+License: Periodictable is in the public domain.
+        
+        Code in individual files has copyright and license set by individual authors.
+        
+        periodictable/cromerman.py
+        --------------------------
+        
+        Copyright (c) 2009 Trustees of the Columbia University
+        in the City of New York.  All rights reserved.
+        
+        DANSE Diffraction group, Simon J. L. Billinge
+        
+        File coded by:    Pavol Juhas
+        
+        Redistribution and use in source and binary forms, with or without
+        modification, are permitted provided that the following conditions
+        are met:
+        
+         * Redistributions of source code must retain the above copyright
+           notice, this list of conditions and the following disclaimer.
+        
+         * Redistributions in binary form must reproduce the above copyright
+           notice, this list of conditions and the following disclaimer in the
+           documentation and/or other materials provided with the distribution.
+        
+         * Neither the name of Columbia University nor the names of its
+           contributors may be used to endorse or promote products derived from
+           this software without specific prior written permission.
+        
+        THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+        "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+        LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+        A PARTICULAR PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT
+        OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+        SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED
+        TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+        PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+        LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+        NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+        SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+        
+Project-URL: documentation, https://periodictable.readthedocs.io
+Project-URL: repository, https://github.com/python-periodictable/periodictable
+Classifier: Development Status :: 5 - Production/Stable
+Classifier: Environment :: Console
+Classifier: Intended Audience :: Science/Research
+Classifier: License :: Public Domain
+Classifier: Operating System :: OS Independent
+Classifier: Programming Language :: Python
+Classifier: Programming Language :: Python :: 3
+Classifier: Topic :: Scientific/Engineering :: Chemistry
+Classifier: Topic :: Scientific/Engineering :: Physics
+Requires-Python: >=3.10
+Description-Content-Type: text/x-rst
+License-File: LICENSE.txt
+Requires-Dist: pyparsing>=3.0.0
+Requires-Dist: numpy
+Dynamic: license-file
+
+=========================================
+Extensible periodic table of the elements
+=========================================
+
+This package provides a periodic table of the elements with
+support for mass, density and xray/neutron scattering information.
+
+Neutron scattering calculations use values collected by the
+Atomic Institute of the Austrian Universities as they appear in the neutron
+data booklet, with support for some energy dependent scattering
+in rare earth elements given by Lynn and Seeger (1990). X-ray scattering
+calculations use a combination of empirical and theoretical values from
+the LBL Center for X-ray Optics.
+
+Tabulated values differ from those given in other sources such as the
+International Tables for Crystallography, Volume C, and so computed
+cross sections may give different results from other packages.
+
+Neutron activation calculations are based on Shleien (1998), with
+isotopes important to health physics. They do not perform a full
+activation analysis, but instead give a gross estimate of the amount
+of activation expected for a sample in the beam.
+
+Install using::
+
+    pip install periodictable
+
+There are several web interfaces to this package:
+
+* `NIST Center for Neutron Research (NCNR) <https://www.ncnr.nist.gov/resources/activation>`_
+* `Forschungs-Neutronenquelle Heinz Maier-Leibnitz (FRM II) <https://webapps.frm2.tum.de/intranet/activation/>`_
+* `SLD Calculator <https://sld-calculator.appspot.com/>`_
+
+Documentation is `available online <https://periodictable.readthedocs.io>`_.
+
+Source links:
+
+* https://github.com/python-periodictable/periodictable
+* https://github.com/python-periodictable/activation
+
+|CI| |RTD| |DOI|
+
+.. |CI| image:: https://github.com/python-periodictable/periodictable/workflows/Test/badge.svg
+   :alt: Build status
+   :target: https://github.com/python-periodictable/periodictable/actions
+
+.. |DOI| image:: https://zenodo.org/badge/1146700.svg
+   :alt: DOI tag
+   :target: https://zenodo.org/badge/latestdoi/1146700
+
+.. |RTD| image:: https://readthedocs.org/projects/periodictable/badge/?version=latest
+   :alt: Documentation status
+   :target: https://periodictable.readthedocs.io/en/latest/?badge=latest

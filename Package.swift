@@ -48,6 +48,15 @@ let package = Package(
         .library(name: "Decorator", targets: ["Decorator"]),
         .library(name: "PyWebView", targets: ["PyWebView"]),
 
+        // ── Small pure-Python utility libs (2026-05) ──
+        .library(name: "Dill", targets: ["Dill"]),
+        .library(name: "TinyDB", targets: ["TinyDB"]),
+        .library(name: "Plotext", targets: ["Plotext"]),
+        .library(name: "Wcwidth", targets: ["Wcwidth"]),
+        .library(name: "Ftfy", targets: ["Ftfy"]),
+        .library(name: "Pyparsing", targets: ["Pyparsing"]),
+        .library(name: "Periodictable", targets: ["Periodictable"]),
+
         // ── Web frameworks + scientific extras (2026-05) ──
         // Tropycal is standalone. Flask brings its full pure-Python
         // stack so it actually runs (Werkzeug + Jinja2 + Markupsafe +
@@ -257,13 +266,22 @@ let package = Package(
             publicHeadersPath: "."
         ),
 
-        // Fortran interpreter (~3,876 lines). Modules, allocatable arrays,
-        // 45+ intrinsics, subroutines, functions.
+        // Fortran interpreter — ofort by Beliavsky (MIT, see
+        // third_party/ofort/LICENSE). ofort began as an extraction of this
+        // project's original interpreter and was matured upstream:
+        // type-bound procedures, fixed-form source, ~80+ intrinsics, a
+        // statistics module. The public ofort_* C API is unchanged.
         .target(
             name: "FortranInterpreter",
-            path: "fortran",
-            sources: ["offlinai_fortran.c"],
-            publicHeadersPath: "."
+            path: "third_party/ofort",
+            exclude: ["src/main.c", "src/ofort_c_api.c", "README.md", "LICENSE"],
+            sources: [
+                "src/ofort.c",
+                "src/ofort_values.c",
+                "src/ofort_fixed_form.c",
+                "src/ofort_stats.c",
+            ],
+            publicHeadersPath: "include"
         ),
 
         // NumPy 2.3.5 — native iOS build (arrays, linalg, FFT, random)
@@ -662,11 +680,34 @@ let package = Package(
             .copy("rpds"),
             .copy("jsonschema_specifications")]),
 
-        // decorator — single-file shim of Michele Simionato's decorator
-        // package; provides `decorate` + `decorator` (manim's only deps
-        // from it). Pure Python, ~150 LOC.
-        .target(name: "Decorator", path: "Sources/Decorator", resources: [.copy("decorator.py"),
-            .copy("decorator-5.1.1.dist-info")]),
+        // decorator — Michele Simionato's full `decorator` package (5.3.1),
+        // pure Python. Full API (decorate / decorator / contextmanager /
+        // dispatch_on) — upgraded from the old minimal shim.
+        .target(name: "Decorator", path: "Sources/Decorator", resources: [.copy("decorator"),
+            .copy("decorator-5.3.1.dist-info")]),
+
+        // ── Small pure-Python utility libs (2026-05) ──
+        // dill — extended pickling (closures, lambdas, sessions). Pure Python.
+        .target(name: "Dill", path: "Sources/Dill", resources: [.copy("dill"),
+            .copy("dill-0.4.1.dist-info")]),
+        // tinydb — zero-dependency JSON document DB. Pure Python.
+        .target(name: "TinyDB", path: "Sources/TinyDB", resources: [.copy("tinydb"),
+            .copy("tinydb-4.8.2.dist-info")]),
+        // plotext — plots in the terminal (no matplotlib). Pure Python.
+        .target(name: "Plotext", path: "Sources/Plotext", resources: [.copy("plotext"),
+            .copy("plotext-5.3.2.dist-info")]),
+        // wcwidth — terminal cell-width of unicode chars (ftfy dep). Pure Python.
+        .target(name: "Wcwidth", path: "Sources/Wcwidth", resources: [.copy("wcwidth"),
+            .copy("wcwidth-0.7.0.dist-info")]),
+        // ftfy — fixes mojibake / broken unicode text. Pure Python.
+        .target(name: "Ftfy", dependencies: ["Wcwidth"], path: "Sources/Ftfy", resources: [.copy("ftfy"),
+            .copy("ftfy-6.3.1.dist-info")]),
+        // pyparsing — grammar parsing (periodictable dep). Pure Python.
+        .target(name: "Pyparsing", path: "Sources/Pyparsing", resources: [.copy("pyparsing"),
+            .copy("pyparsing-3.3.2.dist-info")]),
+        // periodictable — chemistry element/isotope data. Pure Python (+ NumPy).
+        .target(name: "Periodictable", dependencies: ["NumPy", "Pyparsing"], path: "Sources/Periodictable", resources: [.copy("periodictable"),
+            .copy("periodictable-2.1.0.dist-info")]),
 
         // pywebview — CodeBench shim of pywebview that routes
         // create_window/load_url/load_html into the host app's preview

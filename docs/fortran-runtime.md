@@ -7,8 +7,9 @@
 Provides minimal Flang runtime I/O + math intrinsic stubs so that
 scipy's Fortran-compiled modules can load on iOS. All Fortran I/O
 operations become silent no-ops; STOP statements abort with a clear
-message. A separate single-file Fortran interpreter is also bundled
-for executing user-supplied Fortran source at runtime.
+message. A separate Fortran interpreter — [**ofort**](https://github.com/Beliavsky/ofort)
+by Beliavsky (MIT) — is also bundled for executing user-supplied Fortran
+source at runtime; see [fortran-interpreter.md](fortran-interpreter.md).
 
 NOTE: This is NOT a port of `libgfortran` — scipy on iOS is built
 with **LLVM Flang** (`flang-new`), so the stubs cover Flang's

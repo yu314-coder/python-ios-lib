@@ -1,8 +1,10 @@
 # Fortran Interpreter
 
-> **Type:** Tree-walking Fortran 90/95/2003 interpreter | **Location:** `gcc/offlinai_fortran.c`, `gcc/offlinai_fortran.h` | **Language:** Fortran 90/95/2003 subset | **App Store safe**
+> **Type:** Tree-walking Fortran 90/95/2003 interpreter | **Upstream:** [ofort](https://github.com/Beliavsky/ofort) by Beliavsky (MIT) | **Location:** `CodeBench/ofort/*.c` (app target) · `fortran/offlinai_fortran.c` (package amalgamation) · public C API in `codebench_fortran.h` | **App Store safe**
 
 A self-contained Fortran interpreter that lexes, parses, and executes Fortran code at runtime. Supports free-form source, modules, allocatable arrays up to 7 dimensions, 45+ intrinsic functions, and formatted I/O. Case-insensitive as per the Fortran standard. No JIT, no compilation, no external tools needed.
+
+> **Source & license.** The interpreter core is [**ofort**](https://github.com/Beliavsky/ofort) by Beliavsky, **MIT-licensed** (see `CodeBench/ofort/LICENSE`). ofort was extracted from CodeBench's original Fortran interpreter and matured upstream, then adopted back into the app — so the C source under `CodeBench/ofort/` (notably `ofort.c`) is the single definition of the `ofort_*` symbols that `codebench_fortran.h` declares. `FortranRuntime.swift` is the thin Swift bridge that runs it on a large-stack worker thread. (This is the interpreter for *user-run* `.f90`/`.f95` files; it is distinct from the Flang runtime stubs in [fortran-runtime.md](fortran-runtime.md) that let scipy's compiled Fortran load.)
 
 Edits `.f90` / `.f95` / `.f03` / `.f` / `.for` files in the shared Monaco-powered editor with Fortran syntax highlighting and auto-save (debounced ~600 ms; also flushed on run, tab switch, view disappear, and app backgrounding).
 
