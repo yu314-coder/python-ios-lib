@@ -96,6 +96,20 @@ inputs clamp; bad sizes/formats error safely.
 
 ## Known gaps (specific, with the next action)
 
+> **Update (2026-06-06):** gaps 1–3 below are now **CLOSED** — RecordingSurface
+> drawing is implemented (opt-in via `CM_RECORDING_RASTER`), the omitted bindings
+> are exposed (glyphs / FT-font-from-file / raster-source / subsurface /
+> map_to_image / create_similar), and path introspection
+> (`copy_path` / `copy_path_flat` / `append_path` / `Path`) is done. The full
+> reference test (`cairo_gpu_full_test.py`, 55/55) surfaced three MINOR remaining
+> gaps: **(a) mesh-gradient rasterization** — `MeshPattern` + the Coons-patch API
+> construct fine, but `set_source(mesh)+paint` renders empty (niche; manim
+> doesn't use it); **(b) `RectangleInt`** type not exposed (`Region` works with
+> plain `(x,y,w,h)` tuples); **(c) context-alive-through-flush** — cairo_metal
+> commits its deferred GPU frame on `surface.flush()`, so a `Context` must outlive
+> the flush (real cairo is immediate-mode; manim / tests / the test script all
+> keep it alive, so unaffected in practice).
+
 1. **RecordingSurface cannot be drawn into.** It can be created and introspected
    (`ink_extents` / `get_extents` work), but `fill`/`stroke`/`paint` into a
    recording surface raise `Error(35)` DEVICE_ERROR — the recording op-log
