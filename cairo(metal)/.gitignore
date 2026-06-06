@@ -1,0 +1,22 @@
+# SwiftPM build output (the canonical `swift build` path).
+.build/
+Package.resolved
+
+# Makefile / build.sh output: static lib, compiled shaders, demo, rendered PNG.
+build/
+
+# Demo CI log.
+demo-run.log
+
+# Built Python extension (rebuild with python/build.sh).
+python/*.so
+
+# Python caches.
+__pycache__/
+*.pyc
+
+# macOS / editor cruft.
+.DS_Store
+*.xcuserstate
+xcuserdata/
+*.swp

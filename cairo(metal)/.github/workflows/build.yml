@@ -1,0 +1,123 @@
+name: build
+
+# Build CairoMetal on a macOS runner: compile the library with SwiftPM, compile
+# the Metal shaders with the Metal toolchain, build the demo, and (best-effort)
+# render demo.png. This mirrors ./build.sh exactly.
+#
+# Layout note: this package currently lives in the "cairo(metal)/" subdirectory
+# of a larger repo, and may later be split into its own repository (its sibling
+# app already was). GitHub Actions only runs workflow files found in
+# .github/workflows/ at the REPO ROOT, so to activate this in the monorepo,
+# copy/symlink it to <repo-root>/.github/workflows/. To keep it correct in BOTH
+# layouts, every step discovers the package directory at runtime (the dir that
+# contains Package.swift) instead of hardcoding a path with parentheses.
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: swift build + metal shaders + demo
+    # macOS runners are the only ones with Swift + the Metal toolchain. macos-14
+    # is Apple-silicon (arm64), matching the iOS arm64 deployment target.
+    runs-on: macos-14
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Pin a recent stable Xcode so the Swift + Metal toolchains are known.
+      - name: Select Xcode
+        run: sudo xcode-select -switch /Applications/Xcode_16.app
+
+      # Find the package root (the directory containing Package.swift) and export
+      # it for later steps. Handles both "package at repo root" and "package in
+      # cairo(metal)/ subdir" without ever embedding the parenthesized path.
+      - name: Locate package
+        id: pkg
+        shell: bash
+        run: |
+          set -euo pipefail
+          dir="$(dirname "$(find . -maxdepth 3 -name Package.swift -print -quit)")"
+          if [ -z "$dir" ] || [ ! -f "$dir/Package.swift" ]; then
+            echo "Could not locate Package.swift" >&2
+            exit 1
+          fi
+          echo "Package dir: $dir"
+          echo "dir=$dir" >> "$GITHUB_OUTPUT"
+
+      - name: Toolchain versions
+        shell: bash
+        run: |
+          xcrun --version
+          swift --version
+          echo "metal:    $(xcrun -sdk macosx -f metal)"
+          echo "metallib: $(xcrun -sdk macosx -f metallib)"
+
+      # ---- 1. Canonical build: SwiftPM. A clean failure here fails the job. ---
+      - name: swift build (SwiftPM)
+        shell: bash
+        run: |
+          cd "${{ steps.pkg.outputs.dir }}"
+          swift build -v
+
+      # ---- 2. Compile the Metal shaders into build/default.metallib. ---------
+      # Driven through the Makefile target so the metal/metallib invocation has a
+      # single source of truth shared with the local build.
+      - name: Compile Metal shaders
+        shell: bash
+        run: |
+          cd "${{ steps.pkg.outputs.dir }}"
+          make metallib
+          ls -la build/default.metallib
+
+      # ---- 3. Build the demo (always) and run it (best-effort). -------------
+      # Building the demo is a real link check and must pass. Running it needs a
+      # usable Metal device; GitHub's hosted macOS runners are virtualized and
+      # may not expose one, so the run is best-effort: a render is uploaded as an
+      # artifact when it succeeds, and a missing GPU does NOT fail the build.
+      - name: Build demo (link check)
+        shell: bash
+        run: |
+          cd "${{ steps.pkg.outputs.dir }}"
+          make demo
+
+      - name: Render demo (best-effort; needs a Metal device)
+        id: render
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          cd "${{ steps.pkg.outputs.dir }}"
+          make run | tee demo-run.log
+          test -f build/demo.png
+
+      - name: Report render result
+        shell: bash
+        run: |
+          cd "${{ steps.pkg.outputs.dir }}"
+          if [ -f build/demo.png ]; then
+            echo "Rendered build/demo.png:"
+            file build/demo.png
+          else
+            echo "::notice::Demo did not render (likely no Metal device on this runner). The library + shaders + demo all BUILT; only the on-device render step was skipped."
+          fi
+
+      - name: Upload rendered demo
+        uses: actions/upload-artifact@v4
+        with:
+          name: demo-png
+          path: ${{ steps.pkg.outputs.dir }}/build/demo.png
+          if-no-files-found: ignore
+
+      - name: Upload demo run log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: demo-run-log
+          path: ${{ steps.pkg.outputs.dir }}/demo-run.log
+          if-no-files-found: ignore
