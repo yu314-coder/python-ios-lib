@@ -2,7 +2,7 @@
 
 **Version:** 2.1.0 (patched for iOS arm64)
 **Type:** Native iOS — `libtorch_python.dylib` ships at 99 MB via Git LFS
-**SPM target:** `Torch`
+**SPM target:** `PyTorch`
 **Auto-includes:** (none — `torch` is the base)
 **Total Python modules:** 200+ (top-level + 40+ subpackages)
 
@@ -180,6 +180,26 @@ iOS: script + trace **work**; on-device JIT codegen does **not** (no Triton, no 
 | `torch/bin/torch_shm_manager` | Replaced with text placeholder (App Store ban on standalone executables) |
 
 The Metal bridge implementation lives in `app_packages/site-packages/_torch_metal_bridge.py`.
+
+## GPU acceleration on Metal
+
+Two paths route torch ops to the Apple GPU in this build — both **App-Store-safe** (public MPS only):
+
+1. **`_torch_metal_bridge`** *(always-on, transparent)* — auto-installs at import and wraps `torch.matmul` / `F.linear` / `F.scaled_dot_product_attention`, routing large matmuls through MPS (fp32/fp16/bf16), threshold-gated by `CODEBENCH_GPU_MATMUL_MIN_FLOPS`. Lives in `app_packages/site-packages/_torch_metal_bridge.py`.
+
+2. **`torchmetal`** *(explicit, opt-in)* — a newer, self-contained routing layer, also published as a standalone repo ([github.com/yu314-coder/torchmetal](https://github.com/yu314-coder/torchmetal)) and as the **`TorchMetal`** SwiftPM product of this package. Enable it with:
+
+   ```python
+   import torchmetal
+   torchmetal.enable()      # routes matmul/mm/bmm/addmm, F.linear / softmax /
+                            # layer_norm / gelu / scaled_dot_product_attention to MPS
+   # ... inference ...
+   torchmetal.disable()     # restore stock torch
+   ```
+
+   Size + dtype gated, with bit-exact CPU fallback. The biggest win is **fp16 matmul** (stock CPU torch has no fast fp16 GEMM). Designed for iOS; also runs on macOS. Ext = `torch_metal`, router = `torchmetal.py` + `torch_metal_runtime/default.metallib` (bundled in `app_packages`).
+
+`torchmetal` is the controllable path (`enable()` / `disable()`, tunable thresholds); the auto bridge is transparent. They overlap — prefer `torchmetal` when you want explicit control.
 
 ## Standalone example
 
