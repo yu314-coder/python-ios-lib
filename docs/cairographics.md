@@ -159,10 +159,11 @@ before importing manim.
 
 ## Limitations
 
-- **No GPU acceleration in the default build (software image backend).**
-  Cairo's iOS build uses the software image backend only — no OpenGL, no
-  Quartz back-end. Per-frame rendering for manim's quality presets
-  (1080p / 4K) is CPU-bound.
+- **Default (pycairo) rendering is software / CPU — GPU is opt-in via CairoMetal.**
+  The standard `import cairo` (pycairo) path uses Cairo's software image
+  backend only (no OpenGL, no Quartz back-end), so per-frame rendering for
+  manim's quality presets (1080p / 4K) is CPU-bound *by default*. A real GPU
+  path does exist — see **CairoMetal** below.
 
   **GPU backend — CairoMetal.** A self-contained Metal implementation of
   cairo lives in `cairo(metal)/`, and is now also published as a standalone
