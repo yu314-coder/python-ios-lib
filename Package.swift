@@ -243,6 +243,13 @@ let package = Package(
         .library(name: "Tokenizers",   targets: ["Tokenizers"]),
         .library(name: "Transformers",
                  targets: ["Transformers", "PyTorch", "Tokenizers"]),
+
+        // ── GPU acceleration on Apple Metal ──
+        // Also published as standalone repos:
+        //   github.com/yu314-coder/cairometal  (pycairo-compatible GPU cairo)
+        //   github.com/yu314-coder/torchmetal  (routes torch ops to Metal/MPS)
+        .library(name: "CairoMetal", targets: ["CairoMetal"]),
+        .library(name: "TorchMetal", targets: ["TorchMetal"]),
     ],
     targets: [
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1088,5 +1095,23 @@ let package = Package(
                 path: "Sources/Bottleneck",
                 resources: [.copy("bottleneck"),
                             .copy("bottleneck-1.6.0.dist-info")]),
+
+        // ── GPU acceleration on Apple Metal ──────────────────────────
+        // CairoMetal: pycairo-compatible GPU cairo (import cairo_metal).
+        // TorchMetal: routes hot torch ops to Metal/MPS
+        // (import torchmetal; torchmetal.enable()). Each ships its
+        // prebuilt iOS arm64 .so + compiled metallib as resources. Also
+        // standalone repos: github.com/yu314-coder/{cairometal,torchmetal}.
+        // The cairo(metal) engine bundled for manim lives in app_packages
+        // and is unchanged by these targets.
+        .target(name: "CairoMetal",
+                path: "Sources/CairoMetal",
+                resources: [.copy("cairo_metal.cpython-314-iphoneos.so"),
+                            .copy("cairo_metal_runtime")]),
+        .target(name: "TorchMetal",
+                path: "Sources/TorchMetal",
+                resources: [.copy("torch_metal.cpython-314-iphoneos.so"),
+                            .copy("torchmetal.py"),
+                            .copy("torch_metal_runtime")]),
     ]
 )

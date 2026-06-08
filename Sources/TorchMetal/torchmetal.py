@@ -1,0 +1,775 @@
+"""
+torch_metal.py  --  PyTorch -> Metal/MPS routing layer (the monkeypatch).
+
+Pure Python. `enable()` saves the original torch ops and installs size+dtype
+gated wrappers that route the hot inference ops onto the iPad/Mac GPU via the
+`torch_metal` CPython extension (built from python/torch_metal_ext.c). `disable()`
+restores everything. Idempotent.
+
+Routed ops (patch targets):
+    torch.matmul, torch.mm, torch.bmm, Tensor.__matmul__   -> MPSMatrixMultiplication
+    torch.addmm, F.linear                                  -> MPS matmul (+bias)
+    F.softmax, Tensor.softmax                              -> MPSMatrixSoftMax
+    F.layer_norm                                           -> custom Metal kernel
+    F.gelu                                                 -> custom Metal kernel
+    F.scaled_dot_product_attention                         -> MPS matmul + softmax
+
+DESIGN RULES (distilled from the existing CodeBench MetalMatmulBridge + probes):
+
+  * GATE every wrapper. Route to Metal only when ALL hold, else call the saved
+    original:
+      - the backend reports metal_available();
+      - every tensor operand is on CPU, contiguous (or cheaply made so), and
+        dtype in {float32, float16};
+      - the work is large enough to beat the GPU round-trip (per-op thresholds);
+      - autograd is off for the inputs (inference) -- we implement no backward.
+
+  * bf16 has NO numpy view (Tensor.numpy() on bf16 raises TypeError, verified),
+    so bf16 falls back to the original op. (The bridge's policy is cast-to-fp32
+    in Python before reaching the ext; we choose the simpler safe path: fall
+    back. Flip _BF16_UPCAST to True to cast->route->cast instead.)
+
+  * torch C-builtins (F.gelu / F.linear / F.scaled_dot_product_attention) have
+    NO introspectable signature (inspect.signature raises, verified). So every
+    wrapper is `def w(*args, **kwargs)` and pulls args defensively. We NEVER
+    reconstruct a signature. Any unexpected/unsupported kwarg -> fall back.
+
+  * Zero-copy: a contiguous fp32/fp16 CPU tensor shares memory with its
+    .numpy() view (verified data_ptr == array_interface ptr). We allocate the
+    output with np.empty(...) and wrap the result with torch.from_numpy (also
+    zero-copy). N-D tensors are reshaped to the 2-D/3-D the C API wants and the
+    result reshaped back.
+
+  * ROBUST FALLBACK: the whole routed path is wrapped in try/except; on ANY
+    exception, or if the ext returns rc != 0, we call the saved original. The
+    fast path never raises.
+"""
+
+from __future__ import annotations
+
+import math
+
+import torch
+import torch.nn.functional as F
+
+try:
+    import torch_metal as _ext
+except Exception as _e:  # pragma: no cover - import failure => no routing
+    _ext = None
+    _IMPORT_ERROR = _e
+else:
+    _IMPORT_ERROR = None
+
+
+# ---------------------------------------------------------------------------
+# Configuration / thresholds
+# ---------------------------------------------------------------------------
+
+# Default routing thresholds. Below these the CPU op + the GPU round-trip is a
+# wash or worse, so we leave the original in place. Tunable via enable(...).
+_DEFAULTS = {
+    # matmul/linear/attention: route when the multiply-accumulate volume
+    # (M*N*K-ish) is at least this. ~1e6 ≈ a 100^3 GEMM.
+    "min_matmul_flops": 1_000_000,
+    # elementwise (gelu) / per-row (softmax, layer_norm): route when numel is
+    # at least this. 1<<16 = 65536.
+    "min_elementwise": 1 << 16,
+}
+
+# If True, cast bf16 -> fp32, route, cast back. If False, bf16 falls back to the
+# original op. Default False (the safe path); the existing bridge upcasts.
+_BF16_UPCAST = False
+
+# Dtype mapping: torch dtype -> ext dtype code. Only these route.
+_DT_CODE = None  # populated lazily once torch is imported (see _dt_code)
+
+
+def _dt_code(dtype):
+    """Return the ext dtype code for a torch dtype, or None if unsupported."""
+    if dtype == torch.float32:
+        return _ext.DTYPE_FLOAT32
+    if dtype == torch.float16:
+        return _ext.DTYPE_FLOAT16
+    return None
+
+
+def _np_dtype(dtype):
+    import numpy as np
+    return np.float32 if dtype == torch.float32 else np.float16
+
+
+# ---------------------------------------------------------------------------
+# State
+# ---------------------------------------------------------------------------
+
+_ENABLED = False
+_CFG = dict(_DEFAULTS)
+
+# Saved originals (filled in enable, restored in disable).
+_ORIG = {}
+
+
+def is_enabled() -> bool:
+    return _ENABLED
+
+
+def available() -> bool:
+    """True if the extension imported AND a Metal device is usable."""
+    return _ext is not None and bool(_ext.metal_available())
+
+
+# ---------------------------------------------------------------------------
+# Shared gating helpers
+# ---------------------------------------------------------------------------
+
+def _grad_off(*tensors) -> bool:
+    """True if it is safe to route (no autograd needed): grad globally off OR
+    none of the tensors require grad. We implement no backward."""
+    if not torch.is_grad_enabled():
+        return True
+    for t in tensors:
+        if isinstance(t, torch.Tensor) and t.requires_grad:
+            return False
+    return True
+
+
+def _routable_tensor(t) -> bool:
+    """A tensor is routable if it is a CPU float32/float16 tensor."""
+    return (isinstance(t, torch.Tensor)
+            and t.device.type == "cpu"
+            and t.dtype in (torch.float32, torch.float16))
+
+
+def _as_contig_np(t):
+    """Detach + make contiguous + numpy view (zero-copy when already contiguous
+    fp32/fp16 CPU). Caller has already checked dtype/device."""
+    return t.detach().contiguous().numpy()
+
+
+# ---------------------------------------------------------------------------
+# matmul / mm / bmm  -> tm.matmul
+# ---------------------------------------------------------------------------
+
+def _route_matmul_2d(a, b):
+    """a:[M,K] @ b:[K,N] -> [M,N], fp32/fp16, via the ext. Returns a torch
+    tensor or None to signal fallback."""
+    import numpy as np
+    M, K = a.shape
+    K2, N = b.shape
+    if K != K2:
+        return None
+    if M * N * K < _CFG["min_matmul_flops"]:
+        return None
+    an = _as_contig_np(a)
+    bn = _as_contig_np(b)
+    out = np.empty((M, N), an.dtype)
+    rc = _ext.matmul(an, 1, M, K, bn, K, N, out, 0, 0, 1.0, 0.0)
+    if rc != 0:
+        return None
+    return torch.from_numpy(out)
+
+
+def _route_bmm(a, b):
+    """a:[*,M,K] @ b:[*,K,N] with matching leading batch dims (already equal
+    rank>=3). Flattens the batch and routes batched. None => fallback."""
+    import numpy as np
+    if a.shape[:-2] != b.shape[:-2]:
+        return None
+    *batch_dims, M, K = a.shape
+    K2, N = b.shape[-2], b.shape[-1]
+    if K != K2:
+        return None
+    batch = 1
+    for d in batch_dims:
+        batch *= d
+    if batch * M * N * K < _CFG["min_matmul_flops"]:
+        return None
+    an = a.detach().contiguous().reshape(batch, M, K).numpy()
+    bn = b.detach().contiguous().reshape(batch, K, N).numpy()
+    out = np.empty((batch, M, N), an.dtype)
+    rc = _ext.matmul(an, batch, M, K, bn, K, N, out, 0, 0, 1.0, 0.0)
+    if rc != 0:
+        return None
+    res = torch.from_numpy(out).reshape(*batch_dims, M, N)
+    return res
+
+
+def _matmul_impl(a, b):
+    """Core router shared by torch.matmul / Tensor.__matmul__. Handles 2-D,
+    batched N-D (equal rank >= 3), and the common N-D x 2-D mixed case. Returns
+    a tensor or None (fallback). 1-D operands -> None."""
+    if not (_routable_tensor(a) and _routable_tensor(b)):
+        return None
+    if a.dtype != b.dtype:
+        return None
+    if not _grad_off(a, b):
+        return None
+
+    na, nb = a.dim(), b.dim()
+    if na == 2 and nb == 2:
+        return _route_matmul_2d(a, b)
+
+    # N-D x 2-D: fold a's leading dims into rows. (e.g. [B,S,K] @ [K,N])
+    if na >= 3 and nb == 2:
+        *lead, M, K = a.shape
+        if b.shape[0] != K:
+            return None
+        rows = 1
+        for d in lead:
+            rows *= d
+        a2 = a.reshape(rows, K)
+        res = _route_matmul_2d(a2, b)
+        if res is None:
+            return None
+        return res.reshape(*lead, b.shape[1])
+
+    # Equal-rank batched (>=3) with matching batch dims.
+    if na >= 3 and nb >= 3 and na == nb:
+        return _route_bmm(a, b)
+
+    # Anything else (1-D operands, broadcasting mixed ranks we don't cover) ->
+    # let torch handle it.
+    return None
+
+
+def _make_matmul_wrapper():
+    orig = torch.matmul
+
+    def matmul(input, other, *, out=None):
+        if out is None:
+            try:
+                res = _matmul_impl(input, other)
+                if res is not None:
+                    return res
+            except Exception:
+                pass
+        return orig(input, other, out=out) if out is not None else orig(input, other)
+
+    return matmul
+
+
+def _make_mm_wrapper():
+    orig = torch.mm
+
+    def mm(input, mat2, *, out=None):
+        if out is None and _routable_tensor(input) and _routable_tensor(mat2) \
+                and input.dim() == 2 and mat2.dim() == 2 and input.dtype == mat2.dtype \
+                and _grad_off(input, mat2):
+            try:
+                res = _route_matmul_2d(input, mat2)
+                if res is not None:
+                    return res
+            except Exception:
+                pass
+        return orig(input, mat2, out=out) if out is not None else orig(input, mat2)
+
+    return mm
+
+
+def _make_bmm_wrapper():
+    orig = torch.bmm
+
+    def bmm(input, mat2, *, out=None):
+        if out is None and _routable_tensor(input) and _routable_tensor(mat2) \
+                and input.dim() == 3 and mat2.dim() == 3 and input.dtype == mat2.dtype \
+                and _grad_off(input, mat2):
+            try:
+                res = _route_bmm(input, mat2)
+                if res is not None:
+                    return res
+            except Exception:
+                pass
+        return orig(input, mat2, out=out) if out is not None else orig(input, mat2)
+
+    return bmm
+
+
+def _make_tensor_matmul_wrapper():
+    orig = torch.Tensor.__matmul__
+
+    def __matmul__(self, other):
+        try:
+            res = _matmul_impl(self, other)
+            if res is not None:
+                return res
+        except Exception:
+            pass
+        return orig(self, other)
+
+    return __matmul__
+
+
+# ---------------------------------------------------------------------------
+# addmm / F.linear  -> tm.linear
+# ---------------------------------------------------------------------------
+
+def _route_linear(x, weight, bias):
+    """x:[*,K] @ weight:[N,K]^T + bias:[N] -> [*,N]. None => fallback."""
+    import numpy as np
+    if not (_routable_tensor(x) and _routable_tensor(weight)):
+        return None
+    if weight.dim() != 2:
+        return None
+    if x.shape[-1] != weight.shape[1]:
+        return None
+    if bias is not None:
+        if not _routable_tensor(bias) or bias.dim() != 1 or bias.shape[0] != weight.shape[0]:
+            return None
+        if bias.dtype != x.dtype:
+            return None
+    if x.dtype != weight.dtype:
+        return None
+    if not _grad_off(x, weight, bias):
+        return None
+
+    *lead, K = x.shape
+    N = weight.shape[0]
+    M = 1
+    for d in lead:
+        M *= d
+    if M * N * K < _CFG["min_matmul_flops"]:
+        return None
+
+    xn = x.detach().contiguous().reshape(M, K).numpy()
+    wn = _as_contig_np(weight)
+    bn = _as_contig_np(bias) if bias is not None else None
+    out = np.empty((M, N), xn.dtype)
+    rc = _ext.linear(xn, M, K, wn, N, bn, out)
+    if rc != 0:
+        return None
+    return torch.from_numpy(out).reshape(*lead, N)
+
+
+def _make_linear_wrapper():
+    orig = F.linear  # C-builtin, no signature -> *args/**kwargs passthrough
+
+    def linear(*args, **kwargs):
+        try:
+            # F.linear(input, weight, bias=None)
+            if len(args) >= 2:
+                x = args[0]
+                weight = args[1]
+                bias = args[2] if len(args) >= 3 else kwargs.get("bias", None)
+            else:
+                x = kwargs.get("input")
+                weight = kwargs.get("weight")
+                bias = kwargs.get("bias", None)
+            if x is not None and weight is not None:
+                res = _route_linear(x, weight, bias)
+                if res is not None:
+                    return res
+        except Exception:
+            pass
+        return orig(*args, **kwargs)
+
+    return linear
+
+
+def _make_addmm_wrapper():
+    orig = torch.addmm
+
+    def addmm(input, mat1, mat2, *, beta=1, alpha=1, out=None):
+        # addmm: out = beta*input + alpha*(mat1 @ mat2). Route the common
+        # beta=alpha=1 case as linear-style (input broadcast over rows).
+        if out is None and beta == 1 and alpha == 1 \
+                and _routable_tensor(mat1) and _routable_tensor(mat2) \
+                and mat1.dim() == 2 and mat2.dim() == 2 \
+                and mat1.dtype == mat2.dtype and _grad_off(input, mat1, mat2):
+            try:
+                import numpy as np
+                M, K = mat1.shape
+                K2, N = mat2.shape
+                if K == K2 and M * N * K >= _CFG["min_matmul_flops"]:
+                    an = _as_contig_np(mat1)
+                    bn = _as_contig_np(mat2)
+                    out_np = np.empty((M, N), an.dtype)
+                    rc = _ext.matmul(an, 1, M, K, bn, K, N, out_np, 0, 0, 1.0, 0.0)
+                    if rc == 0:
+                        res = torch.from_numpy(out_np)
+                        # add bias term `input` (broadcast) on the torch side to
+                        # honor full broadcasting semantics.
+                        return res + input
+            except Exception:
+                pass
+        return orig(input, mat1, mat2, beta=beta, alpha=alpha, out=out) if out is not None \
+            else orig(input, mat1, mat2, beta=beta, alpha=alpha)
+
+    return addmm
+
+
+# ---------------------------------------------------------------------------
+# softmax  -> tm.softmax
+# ---------------------------------------------------------------------------
+
+def _route_softmax(x, dim):
+    """Row-softmax over the last axis. If `dim` is not the last axis we move it
+    there, route, then move back. None => fallback."""
+    import numpy as np
+    if not _routable_tensor(x):
+        return None
+    if not _grad_off(x):
+        return None
+    if x.numel() < _CFG["min_elementwise"]:
+        return None
+    nd = x.dim()
+    if nd == 0:
+        return None
+    dim = dim % nd
+    moved = False
+    xt = x
+    if dim != nd - 1:
+        xt = x.transpose(dim, nd - 1)
+        moved = True
+    cols = xt.shape[-1]
+    rows = xt.numel() // cols if cols else 0
+    if rows == 0 or cols == 0:
+        return None
+    xn = xt.detach().contiguous().reshape(rows, cols).numpy()
+    out = np.empty((rows, cols), xn.dtype)
+    rc = _ext.softmax(xn, rows, cols, out)
+    if rc != 0:
+        return None
+    res = torch.from_numpy(out).reshape(xt.shape)
+    if moved:
+        res = res.transpose(dim, nd - 1).contiguous()
+    return res
+
+
+def _make_softmax_wrapper():
+    orig = F.softmax  # has a signature, but keep passthrough for robustness
+
+    def softmax(*args, **kwargs):
+        try:
+            # F.softmax(input, dim=None, _stacklevel=3, dtype=None)
+            x = args[0] if args else kwargs.get("input")
+            dim = args[1] if len(args) >= 2 else kwargs.get("dim", None)
+            dtype = kwargs.get("dtype", None)
+            if dtype is not None:
+                # an explicit output dtype change -> let torch handle the cast.
+                raise _Fallback
+            if x is not None and dim is not None:
+                res = _route_softmax(x, dim)
+                if res is not None:
+                    return res
+        except Exception:
+            pass
+        return orig(*args, **kwargs)
+
+    return softmax
+
+
+def _make_tensor_softmax_wrapper():
+    orig = torch.Tensor.softmax
+
+    def softmax(self, dim, *args, **kwargs):
+        if not kwargs.get("dtype"):
+            try:
+                res = _route_softmax(self, dim)
+                if res is not None:
+                    return res
+            except Exception:
+                pass
+        return orig(self, dim, *args, **kwargs)
+
+    return softmax
+
+
+# ---------------------------------------------------------------------------
+# layer_norm  -> tm.layer_norm
+# ---------------------------------------------------------------------------
+
+def _route_layer_norm(x, normalized_shape, weight, bias, eps):
+    """layer_norm over the trailing `normalized_shape` block. None => fallback."""
+    import numpy as np
+    if not _routable_tensor(x):
+        return None
+    if not _grad_off(x, weight, bias):
+        return None
+    ns = tuple(normalized_shape) if not isinstance(normalized_shape, int) else (normalized_shape,)
+    # We only handle normalizing the trailing contiguous block (the standard
+    # transformer case). Verify the trailing dims match.
+    if len(ns) == 0 or tuple(x.shape[-len(ns):]) != ns:
+        return None
+    cols = 1
+    for d in ns:
+        cols *= d
+    rows = x.numel() // cols if cols else 0
+    if rows == 0 or cols == 0:
+        return None
+    if x.numel() < _CFG["min_elementwise"]:
+        return None
+    if weight is not None:
+        if not _routable_tensor(weight) or weight.numel() != cols or weight.dtype != x.dtype:
+            return None
+    if bias is not None:
+        if not _routable_tensor(bias) or bias.numel() != cols or bias.dtype != x.dtype:
+            return None
+
+    xn = x.detach().contiguous().reshape(rows, cols).numpy()
+    wn = weight.detach().contiguous().reshape(cols).numpy() if weight is not None else None
+    bn = bias.detach().contiguous().reshape(cols).numpy() if bias is not None else None
+    out = np.empty((rows, cols), xn.dtype)
+    rc = _ext.layer_norm(xn, rows, cols, wn, bn, float(eps), out)
+    if rc != 0:
+        return None
+    return torch.from_numpy(out).reshape(x.shape)
+
+
+def _make_layer_norm_wrapper():
+    orig = F.layer_norm  # C-builtin, no signature
+
+    def layer_norm(*args, **kwargs):
+        try:
+            # F.layer_norm(input, normalized_shape, weight=None, bias=None, eps=1e-5)
+            x = args[0] if args else kwargs.get("input")
+            normalized_shape = args[1] if len(args) >= 2 else kwargs.get("normalized_shape")
+            weight = args[2] if len(args) >= 3 else kwargs.get("weight", None)
+            bias = args[3] if len(args) >= 4 else kwargs.get("bias", None)
+            eps = args[4] if len(args) >= 5 else kwargs.get("eps", 1e-5)
+            if x is not None and normalized_shape is not None:
+                res = _route_layer_norm(x, normalized_shape, weight, bias, eps)
+                if res is not None:
+                    return res
+        except Exception:
+            pass
+        return orig(*args, **kwargs)
+
+    return layer_norm
+
+
+# ---------------------------------------------------------------------------
+# gelu  -> tm.gelu
+# ---------------------------------------------------------------------------
+
+def _route_gelu(x, approximate):
+    import numpy as np
+    if not _routable_tensor(x):
+        return None
+    if not _grad_off(x):
+        return None
+    if x.numel() < _CFG["min_elementwise"]:
+        return None
+    code = _ext.GELU_TANH if approximate == "tanh" else _ext.GELU_EXACT
+    xn = _as_contig_np(x)
+    flat = xn.reshape(-1)
+    out = np.empty_like(flat)
+    rc = _ext.gelu(flat, flat.shape[0], code, out)
+    if rc != 0:
+        return None
+    return torch.from_numpy(out.reshape(xn.shape))
+
+
+def _make_gelu_wrapper():
+    orig = F.gelu  # C-builtin, no signature
+
+    def gelu(*args, **kwargs):
+        try:
+            x = args[0] if args else kwargs.get("input")
+            approximate = args[1] if len(args) >= 2 else kwargs.get("approximate", "none")
+            if approximate not in ("none", "tanh"):
+                raise _Fallback
+            if x is not None:
+                res = _route_gelu(x, approximate)
+                if res is not None:
+                    return res
+        except Exception:
+            pass
+        return orig(*args, **kwargs)
+
+    return gelu
+
+
+# ---------------------------------------------------------------------------
+# scaled_dot_product_attention  -> tm.attention
+# ---------------------------------------------------------------------------
+
+def _route_sdpa(q, k, v, attn_mask, dropout_p, is_causal, scale):
+    """SDPA via the composed MPS path. Flattens [*, S, E] -> [B, S, E]. Returns
+    a tensor or None (fallback)."""
+    import numpy as np
+    if not (_routable_tensor(q) and _routable_tensor(k) and _routable_tensor(v)):
+        return None
+    if not _grad_off(q, k, v):
+        return None
+    if dropout_p and dropout_p != 0.0:
+        return None
+    if q.dtype != k.dtype or q.dtype != v.dtype:
+        return None
+    if q.dim() < 2 or k.dim() < 2 or v.dim() < 2:
+        return None
+
+    # Shapes: q:[*, Sq, E], k:[*, Sk, E], v:[*, Sk, Ev]. We require Ev == E for
+    # the simple path (the common case). Leading dims must match across q/k/v.
+    *qlead, Sq, E = q.shape
+    *klead, Sk, Ek = k.shape
+    *vlead, Skv, Ev = v.shape
+    if E != Ek or Sk != Skv or Ev != E:
+        return None
+    if qlead != klead or qlead != vlead:
+        return None
+
+    B = 1
+    for d in qlead:
+        B *= d
+    # Threshold on the dominant GEMM volume B*Sq*Sk*E.
+    if B * Sq * Sk * E < _CFG["min_matmul_flops"]:
+        return None
+
+    if scale is None:
+        scale = 1.0 / math.sqrt(E)
+
+    # Build the additive mask (if any) as a [B, Sq, Sk] float buffer of x.dtype.
+    mask_np = None
+    if attn_mask is not None:
+        if not isinstance(attn_mask, torch.Tensor):
+            return None
+        if attn_mask.dtype == torch.bool:
+            # bool mask: True = keep. Convert to additive 0 / -inf.
+            am = torch.zeros(attn_mask.shape, dtype=q.dtype)
+            am = am.masked_fill(~attn_mask, float("-inf"))
+        elif attn_mask.dtype in (torch.float32, torch.float16):
+            am = attn_mask.to(q.dtype)
+        else:
+            return None
+        # Broadcast the mask to [B, Sq, Sk].
+        try:
+            am = am.expand(*qlead, Sq, Sk).contiguous().reshape(B, Sq, Sk)
+        except Exception:
+            return None
+        mask_np = am.numpy()
+
+    qn = q.detach().contiguous().reshape(B, Sq, E).numpy()
+    kn = k.detach().contiguous().reshape(B, Sk, E).numpy()
+    vn = v.detach().contiguous().reshape(B, Sk, E).numpy()
+    out = np.empty((B, Sq, E), qn.dtype)
+    rc = _ext.attention(qn, kn, vn, B, Sq, Sk, E, float(scale),
+                        1 if is_causal else 0, mask_np, out)
+    if rc != 0:
+        return None
+    return torch.from_numpy(out).reshape(*qlead, Sq, E)
+
+
+def _make_sdpa_wrapper():
+    orig = F.scaled_dot_product_attention  # C-builtin, no signature
+
+    def scaled_dot_product_attention(*args, **kwargs):
+        try:
+            # (query, key, value, attn_mask=None, dropout_p=0.0,
+            #  is_causal=False, scale=None, enable_gqa=False)
+            q = args[0] if len(args) >= 1 else kwargs.get("query")
+            k = args[1] if len(args) >= 2 else kwargs.get("key")
+            v = args[2] if len(args) >= 3 else kwargs.get("value")
+            attn_mask = args[3] if len(args) >= 4 else kwargs.get("attn_mask", None)
+            dropout_p = args[4] if len(args) >= 5 else kwargs.get("dropout_p", 0.0)
+            is_causal = args[5] if len(args) >= 6 else kwargs.get("is_causal", False)
+            scale = args[6] if len(args) >= 7 else kwargs.get("scale", None)
+            enable_gqa = args[7] if len(args) >= 8 else kwargs.get("enable_gqa", False)
+            # We do not implement grouped-query attention or a non-None mask
+            # combined with is_causal; fall back for those.
+            if enable_gqa:
+                raise _Fallback
+            if is_causal and attn_mask is not None:
+                raise _Fallback
+            if q is not None and k is not None and v is not None:
+                res = _route_sdpa(q, k, v, attn_mask, dropout_p, is_causal, scale)
+                if res is not None:
+                    return res
+        except Exception:
+            pass
+        return orig(*args, **kwargs)
+
+    return scaled_dot_product_attention
+
+
+# A sentinel exception used to bail out of a wrapper's try-block straight to the
+# fallback (caught by the bare `except Exception`).
+class _Fallback(Exception):
+    pass
+
+
+# ---------------------------------------------------------------------------
+# enable / disable
+# ---------------------------------------------------------------------------
+
+# (attribute-holder, attribute-name, wrapper-factory)
+_PATCHES = [
+    (torch, "matmul", _make_matmul_wrapper),
+    (torch, "mm", _make_mm_wrapper),
+    (torch, "bmm", _make_bmm_wrapper),
+    (torch, "addmm", _make_addmm_wrapper),
+    (torch.Tensor, "__matmul__", _make_tensor_matmul_wrapper),
+    (F, "linear", _make_linear_wrapper),
+    (F, "softmax", _make_softmax_wrapper),
+    (torch.Tensor, "softmax", _make_tensor_softmax_wrapper),
+    (F, "layer_norm", _make_layer_norm_wrapper),
+    (F, "gelu", _make_gelu_wrapper),
+    (F, "scaled_dot_product_attention", _make_sdpa_wrapper),
+]
+
+
+def enable(min_matmul_flops: int | None = None,
+           min_elementwise: int | None = None,
+           bf16_upcast: bool | None = None) -> bool:
+    """Install the Metal routing monkeypatches. Idempotent: calling twice is a
+    no-op (returns True if already enabled). Returns True if routing is active
+    (extension present + Metal available), False if it stayed disabled.
+
+    Args let you tune the size thresholds and the bf16 policy at runtime.
+    """
+    global _ENABLED, _BF16_UPCAST
+    if min_matmul_flops is not None:
+        _CFG["min_matmul_flops"] = int(min_matmul_flops)
+    if min_elementwise is not None:
+        _CFG["min_elementwise"] = int(min_elementwise)
+    if bf16_upcast is not None:
+        _BF16_UPCAST = bool(bf16_upcast)
+
+    if _ENABLED:
+        return True
+    if not available():
+        return False
+
+    for holder, name, factory in _PATCHES:
+        if (holder, name) not in _ORIG:
+            _ORIG[(holder, name)] = getattr(holder, name)
+        setattr(holder, name, factory())
+
+    _ENABLED = True
+    return True
+
+
+def disable() -> None:
+    """Restore every original op AND reset the tuning knobs to their defaults, so
+    a subsequent bare enable() always starts from a known state. Idempotent."""
+    global _ENABLED, _BF16_UPCAST
+    if not _ENABLED:
+        return
+    for (holder, name), original in list(_ORIG.items()):
+        setattr(holder, name, original)
+    _ORIG.clear()
+    _ENABLED = False
+    # Reset knobs to defaults (an explicit re-enable(...) can override again).
+    _CFG.clear()
+    _CFG.update(_DEFAULTS)
+    _BF16_UPCAST = False
+
+
+# Convenience context manager: `with torch_metal.routing(): ...`
+class routing:
+    def __init__(self, **kwargs):
+        self._kwargs = kwargs
+
+    def __enter__(self):
+        self._was = _ENABLED
+        enable(**self._kwargs)
+        return self
+
+    def __exit__(self, *exc):
+        if not self._was:
+            disable()
+        return False
+
+
+__all__ = [
+    "enable", "disable", "is_enabled", "available", "routing",
+]

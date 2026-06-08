@@ -4,6 +4,8 @@ Full Python 3.14 runtime for iOS/iPadOS with **30+ offline libraries including r
 
 > **New:** Full `import torch` (v2.1), `import transformers` (v4.41), and `import tokenizers` (v0.19, real Rust cross-compile) all work on-device. Train and fine-tune transformer models on an iPad with zero network. [Full integration test: 24/24 passing.](docs/libs/transformers.md#test-coverage)
 
+> **GPU (Metal):** Two of the Metal-accelerated pieces are also published as standalone repos — **[cairometal](https://github.com/yu314-coder/cairometal)** (a pycairo-compatible GPU cairo on Metal) and **[torchmetal](https://github.com/yu314-coder/torchmetal)** (routes PyTorch's hot inference ops to Metal/MPS, designed for iOS). Both are wired into this package's `Package.swift` as the **`CairoMetal`** and **`TorchMetal`** products. The full `cairo(metal)` engine used by manim's GPU path stays bundled in this repo (`app_packages`), unchanged.
+
 ### Recent app-side changes
 
 - **Monaco code editor with IntelliSense** running in a WKWebView — Python keyword snippets, signature help (~70-entry SIG_DB), hover docs, and resolve-from-Python for numpy / scipy / sklearn / matplotlib / sympy completions. See `CodeBench/MonacoEditorView.swift`.
