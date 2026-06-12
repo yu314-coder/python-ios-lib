@@ -1,6 +1,6 @@
 # scipy - iOS Compatibility Patches
 
-> **Version:** 1.15.2 (stock scipy + iOS patches) | **Submodules:** 18+ | **Location:** `scipy/`
+> **Version:** 1.15.0 (stock scipy + iOS patches) | **Submodules:** 18+ | **Location:** `scipy/`
 
 scipy is cross-compiled for iOS arm64 using flang (Fortran) + Accelerate (BLAS/LAPACK). These patches make it load and run on iOS where some native modules fail.
 

@@ -1,8 +1,8 @@
 # NumPy
 
-> **Version:** 2.3.5.post1 | **Type:** Stock (pre-built iOS arm64 wheel) | **Status:** Fully working
+> **Version:** 2.3.5.post1 | **Type:** Custom iOS arm64 cross-build against Apple Accelerate | **Status:** Fully working | **Min iOS:** 16.4
 
-Standard NumPy compiled for iOS arm64 via cibuildwheel. All features work including linear algebra (via Accelerate), FFT, random, and broadcasting.
+NumPy 2.3.5 cross-compiled for iOS arm64 **against Apple's Accelerate framework** — hardware BLAS + LAPACK on the AMX matrix coprocessor. All features work: linear algebra, FFT, random, broadcasting. See [Acceleration](#acceleration-blas--lapack) for how it runs and why no extra library is needed for the speedup.
 
 ---
 
@@ -10,7 +10,37 @@ Standard NumPy compiled for iOS arm64 via cibuildwheel. All features work includ
 
 - `.so` files are converted to signed `.framework` bundles by the Install Python build phase
 - `SafeArray` subclass patches numpy array creation to fix `__bool__` for iOS (ndarray is a C type and can't be monkey-patched)
+- `.resize()` / `OWNDATA` patch (`shape.c` v5): on iOS arm64 `np.empty()`/`.copy()` produce `OWNDATA=False` arrays, so `.resize()` allocates-and-copies instead of `realloc`-ing memory it doesn't own. Lives in the source, preserved across rebuilds.
 - Code signing requires `alwaysOutOfDate = 1` on the Install Python build phase
+
+---
+
+## Acceleration (BLAS / LAPACK)
+
+**NumPy runs in CPU mode, hardware-accelerated by Apple Accelerate.** It is cross-built with `-Dblas=accelerate -Dlapack=accelerate`, so:
+
+| NumPy operation | Backed by |
+|---|---|
+| `np.dot`, `@`, `np.matmul`, `np.tensordot`, `np.inner` | Accelerate **cblas** (`cblas_dgemm$NEWLAPACK`, …) |
+| `np.linalg.*` — `solve`, `inv`, `svd`, `eig`, `qr`, `cholesky`, `lstsq`, `det`, `pinv` | Accelerate **LAPACK** (`dgesdd$NEWLAPACK`, …) |
+| elementwise / ufuncs / reductions / FFT | NumPy's own NEON-vectorized C loops + pocketfft |
+
+Accelerate dispatches matrix math to the **AMX coprocessor** (Apple's on-die matrix unit, A13 / M1 and later) plus NEON SIMD — the same backend SciPy uses. This replaces NumPy's slow built-in fallback kernels: matrix-heavy code (large `@`, `solve`, `svd`) is dramatically faster, while tiny arrays are unchanged (dispatch overhead dominates them regardless).
+
+### Do I need any other library for this? — No.
+
+**Accelerate is part of iOS itself** — a system framework present on every device, *not* a Python package. So `import numpy` **alone** is fully accelerated; you do **not** need SciPy, PyTorch, `torch_metal`, or anything else installed. Specifically:
+
+- **It's CPU, not GPU.** NumPy never touches Metal. The AMX / NEON path is entirely CPU-side. (GPU compute on iOS is a separate thing — `torch_metal` / MPS for PyTorch, see [torch.md](torch.md#gpu-acceleration-on-metal) — and it does **not** apply to NumPy.)
+- **Self-contained.** NumPy's core (`_multiarray_umath.so`) links Accelerate directly; the LAPACK module (`_umath_linalg.so`) resolves its `$NEWLAPACK` symbols from that same in-process Accelerate the instant `import numpy` runs — no import ordering, no extra step.
+
+If NumPy were built *without* Accelerate (the old `-Dblas=none` config), it would fall back to reference C kernels ~10–100× slower for linear algebra. The bundled build is always Accelerate-backed, so that mode never occurs on device.
+
+### Build & cross-compile notes
+
+- **Recipe:** `numpy_ios/build_numpy_accel.sh` + `ios-arm64-cross-accel.ini`. Build emits `*-darwin.so` (host suffix); rename to `*-iphoneos.so` when swapping into `app_packages/site-packages/numpy/`.
+- **Min iOS 16.4** — Accelerate's new `$NEWLAPACK` LAPACK ABI requires it (the app targets 17.0).
+- **Gotcha (cost a wrong first build):** numpy's `npy_cblas.h` only drops the Fortran trailing-underscore for Accelerate when `__MAC_OS_X_VERSION_MAX_ALLOWED >= 130300` — a **macOS** macro that's undefined on iOS, so without help the LAPACK symbols come out as `dgesdd$NEWLAPACK_` (trailing `_`) while Accelerate exports `dgesdd$NEWLAPACK`. Result: `np.dot` works but every `np.linalg.*` call fails with an unresolved symbol. The fix is `-DNO_APPEND_FORTRAN` in the cross-file. After any rebuild, verify both the cblas (matmul) **and** LAPACK symbol sets with `nm -u` against `Accelerate.tbd` — they must show 0 unresolved.
 
 ---
 

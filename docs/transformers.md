@@ -6,7 +6,7 @@
 **Auto-includes:** Torch, Tokenizers, Huggingface-Hub, Safetensors, Accelerate, PEFT
 **Total Python modules:** 1500+ (top-level + 250+ model packages)
 
-HuggingFace's transformers library: pre-trained model architectures (BERT, GPT-2, T5, Llama, Qwen, Mistral, Phi, Whisper, …), training utilities (`Trainer`, `TrainingArguments`), the `pipeline()` shortcuts, the `Auto*` classes for one-line model loads. Train, fine-tune, and `.generate()` on-device. A more category-organised reference is at [docs/libs/transformers.md](libs/transformers.md).
+HuggingFace's transformers library: pre-trained model architectures (BERT, GPT-2, T5, Llama, Qwen, Mistral, Phi, Whisper, …), training utilities (`Trainer`, `TrainingArguments`), the `pipeline()` shortcuts, the `Auto*` classes for one-line model loads. Train, fine-tune, and `.generate()` on-device.
 
 ## Modules
 
@@ -241,9 +241,25 @@ for batch_text, batch_label in your_dataset:
 | `whisper-tiny` | 75 MB | Speech recognition |
 | `bart-large-cnn` | 1.6 GB | Summarization |
 
+## Test coverage
+
+`Workspace/full_integration_test.py` — **24 asserts** across 8 sections covering train BPE → fast tokenizer → batch encode → BERT embeddings → GPT-2 generate → train loop → save/load → pipeline. The whole thing runs in ~7 s on an iPad Air M3.
+
+```
+section 1: versions                ✓
+section 2: BPE trainer             ✓ (157 tokens in 3 ms)
+section 3: PreTrainedTokenizerFast ✓ (is_fast=True)
+section 4: BERT → embeddings       ✓
+section 5: GPT-2 generate          ✓
+section 6: GPT-2 train             ✓ (loss 5.07 → 0.48 in 0.3 s)
+section 7: save+reload             ✓ (max |Δ logits| = 0.00e+00)
+section 8: pipeline()              ✓ text-generation + feature-extraction
+
+  ✅ FULL INTEGRATION (24/24)
+```
+
 ## See also
 
-- [docs/libs/transformers.md](libs/transformers.md) — category-organised reference
 - [docs/torch.md](torch.md) — PyTorch backend
 - [docs/tokenizers.md](tokenizers.md) — Rust tokenizer details
 - [docs/safetensors.md](safetensors.md) — weight I/O

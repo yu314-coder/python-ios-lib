@@ -32,14 +32,29 @@ Builds `.whl` files from a source tree, or repacks existing wheels. Bundled so p
 | `_commands.convert` | `wheel convert` | Convert an `.egg` to a `.whl` |
 | `_commands.pack` | `wheel pack` | Repack an unpacked wheel directory back into a `.whl` |
 | `_commands.unpack` | `wheel unpack` | Extract a `.whl` into a directory tree |
-| `_commands.tags` | `wheel tags` | Inspect / retag a wheel's compatibility tags (`cp314-cp314-iphoneos_15_0_arm64`) |
+| `_commands.tags` | `wheel tags` | Inspect / retag a wheel's compatibility tags (`cp314-cp314-ios_13_0_arm64_iphoneos`) |
 
 ## iOS-specific notes
 
 - **No iOS patches** to wheel itself.
-- **`macosx_libfile` not exercised on iOS.** It reads macOS-only Mach-O metadata to pick a `macosx_*` platform tag. iOS wheels use `iphoneos_*` tags emitted by pip + setuptools directly.
+- **`macosx_libfile` not exercised on iOS.** It reads macOS-only Mach-O metadata to pick a `macosx_*` platform tag. iOS wheels use **PEP 730** tags.
+- **The iOS platform tag is `ios_13_0_arm64_iphoneos`** (full wheel tag `cp314-cp314-ios_13_0_arm64_iphoneos`). The bundled CPython 3.14 reports `sys.implementation._multiarch = "arm64-iphoneos"`, and pip's vendored `packaging.tags.ios_platforms()` builds the tag as `ios_{major}_{minor}_{multiarch}`. A wheel tagged for `ios_13_0` installs on any device ≥ iOS 13.0. *(The older `iphoneos_15_0_arm64` form is pre-PEP-730 and is **not** what 3.14 generates.)*
 - **Pure Python — works anywhere.** No C, no native deps. Unpacking and packing wheels on device is fine.
 - **Wheels with C extensions can be REPACKED** on iOS but not BUILT — there's no on-device compiler. The `pack` / `unpack` / `tags` commands operate only on the zip + metadata and don't touch the binaries inside.
+
+## Installing C/C++ extension packages on iOS
+
+iOS forbids spawning a compiler (`[Errno 45] ios does not support processes`), so the in-app `pip` forces `--only-binary :all:` — you can never build a C/C++ sdist on device, and PyPI ships **no** iOS wheels. C/C++ packages therefore have to be **cross-compiled on a Mac into an `ios_*_arm64_iphoneos` wheel**, then `pip install ./pkg.whl` locally. See [pip.md](pip.md) for the install side.
+
+The native libs cross-built for this project (`cv2`/`faiss`/`sentencepiece`) are packaged exactly this way by **`wheels_ios/build_ios_wheels.py`**, which constructs the `.whl` by hand (a zip of the payload `.so` + a `<name>-<ver>.dist-info/` with `METADATA`/`WHEEL`/`RECORD`/`top_level.txt`) — no compiler or pip needed:
+
+| wheel | tag |
+|---|---|
+| `opencv_python-4.10.0-…` | `cp314-cp314-ios_13_0_arm64_iphoneos` |
+| `faiss_cpu-1.9.0-…` | `cp314-cp314-ios_13_0_arm64_iphoneos` |
+| `sentencepiece-0.2.0-…` | `cp314-cp314-ios_13_0_arm64_iphoneos` |
+
+The same script also installs each wheel's `.dist-info` into the bundled `site-packages`, so the hand-placed native libs become pip-/`importlib.metadata`-visible (`pip show opencv-python`, `importlib.metadata.version("faiss-cpu")`) instead of invisible-but-importable.
 
 ## Standalone example
 
@@ -73,7 +88,7 @@ python -m wheel unpack mypkg-1.0-py3-none-any.whl -d /tmp/unpacked
 # edit files under /tmp/unpacked/mypkg-1.0/
 python -m wheel pack /tmp/unpacked/mypkg-1.0
 # re-tag for a different platform
-python -m wheel tags --platform-tag iphoneos_15_0_arm64 mypkg-1.0-py3-none-any.whl
+python -m wheel tags --platform-tag ios_13_0_arm64_iphoneos mypkg-1.0-py3-none-any.whl
 ```
 
 ## See also

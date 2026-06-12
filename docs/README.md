@@ -24,7 +24,7 @@ All four share the same Monaco-based code editor (WKWebView) with IntelliSense (
 | Library | Version | Type | Description |
 |---------|---------|------|-------------|
 | **NumPy** | 2.3.5 | Native iOS | N-dimensional arrays, linear algebra, FFT, random |
-| **SciPy** | 1.15.0 | Pure Python shim | Optimization, interpolation, integration, signal, stats, spatial |
+| **SciPy** | 1.15.0 | Native iOS | Optimization, interpolation, integration, signal, stats, spatial |
 | **SymPy** | 1.14.0 | Pure Python | Symbolic math: algebra, calculus, solving, matrices |
 | **mpmath** | 1.4.1 | Pure Python | Arbitrary-precision arithmetic, special functions |
 
@@ -55,7 +55,7 @@ All four share the same Monaco-based code editor (WKWebView) with IntelliSense (
 | **Pillow** | 12.2.0, Native iOS | Image processing: resize, crop, filter, draw, 15 formats |
 | **ManimPango** | Cairo-based fallback | Text → SVG vector outlines (11 font weights) |
 | **CairoSVG** | Pure Python + cairocffi | SVG → PNG/PDF/PS. Works in CodeBench; needs manual `libcairo.dylib` + `find_library` shim in other apps — see [cairosvg.md](cairosvg.md) |
-| **Local LaTeX** (`offlinai_latex` module) | SwiftMath + 33 MB texmf | Math-mode LaTeX via SwiftMath (unlimited). `\documentclass`-level `pdflatex` gated off — bundled lib-tex v1.40.20 crashes; see [Media docs](libs/media.md#local-latex-engine-offlinai_latex) |
+| **Local LaTeX** (`offlinai_latex` module) | SwiftMath + 33 MB texmf | Math-mode LaTeX via SwiftMath (unlimited). `\documentclass`-level `pdflatex` gated off — bundled lib-tex v1.40.20 crashes; see [LaTeX docs](offlinai-latex.md) |
 
 ### Data & Web
 
@@ -103,23 +103,23 @@ for the cross-library iOS patches and feature tests.
 ## Detailed Documentation
 
 ### Machine Learning
-- [**PyTorch**](libs/pytorch.md) — Full `import torch` on iPad. 95/95 numerical + training asserts
-- [**transformers**](libs/transformers.md) — HuggingFace models: BERT, GPT-2, train + generate on-device
-- [**tokenizers**](libs/tokenizers.md) — First public iOS build of HuggingFace's Rust tokenizers
-- [scikit-learn](libs/sklearn.md) — 40 modules, 85%+ of common ML workflows
+- [**PyTorch**](torch.md) — Full `import torch` on iPad. 95/95 numerical + training asserts
+- [**transformers**](transformers.md) — HuggingFace models: BERT, GPT-2, train + generate on-device
+- [**tokenizers**](tokenizers.md) — First public iOS build of HuggingFace's Rust tokenizers
+- [scikit-learn](sklearn.md) — 40 modules, 85%+ of common ML workflows
 
 ### Scientific
-- [NumPy](libs/numpy.md) — Arrays, linear algebra, FFT, random
-- [SciPy](libs/scipy.md) — 13 submodules: optimize, integrate, signal, stats, ...
-- [SymPy](libs/sympy.md) — Computer algebra system
+- [NumPy](numpy.md) — Arrays, linear algebra, FFT, random
+- [SciPy](scipy-ios.md) — 18+ submodules: optimize, integrate, signal, stats, ...
+- [SymPy](sympy.md) — Computer algebra system
 
 ### Visualization & Media
-- [matplotlib](libs/matplotlib.md) — 64 modules, Plotly backend
-- [**manim**](libs/manim.md) — 145+ mobjects, 73 animations, full rendering pipeline
-- [**Media & Rendering**](libs/media.md) — PyAV, FFmpeg (7 libs), Cairo, Pillow, ManimPango, LaTeX
+- [matplotlib](matplotlib.md) — 64 modules, Plotly backend
+- [**manim**](manim.md) — 145+ mobjects, 73 animations, full rendering pipeline
+- **Media & Rendering** — [PyAV](av-pyav.md) · [FFmpeg](ffmpeg-pyav.md) · [Cairo](cairographics.md) · [Pillow](pillow.md) · [ManimPango](manimpango.md) · [LaTeX](offlinai-latex.md)
 
 ### Interpreters
-- [C/C++/Fortran Interpreters](libs/interpreters.md) — 11,800 lines, full language support
+- **C / C++ / Fortran** — [C](c-interpreter.md) · [C++](cpp-interpreter.md) · [Fortran](fortran-interpreter.md)
 
 ---
 

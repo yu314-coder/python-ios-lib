@@ -6,7 +6,7 @@
 **Auto-includes:** (none)
 **Total Python modules:** 8 packages (top-level + 7 sub) wrapping the Rust extension
 
-HuggingFace's fast tokenization library — Rust-implemented BPE, WordPiece, Unigram, WordLevel tokenizers plus their pre-tokenizers, normalizers, post-processors, and decoders. Used by every HF model loaded via `transformers.AutoTokenizer`. First public iOS arm64 build. A more category-organised reference is at [docs/libs/tokenizers.md](libs/tokenizers.md).
+HuggingFace's fast tokenization library — Rust-implemented BPE, WordPiece, Unigram, WordLevel tokenizers plus their pre-tokenizers, normalizers, post-processors, and decoders. Used by every HF model loaded via `transformers.AutoTokenizer`. First public iOS arm64 build.
 
 ## Modules
 
@@ -66,6 +66,33 @@ Pre-wired bundles of model + pre-tok + decoder for common recipes:
 - **No Python-defined custom pre-tokenizers / decoders** — those plug-in points expect a Rust trait. The bundled set covers every standard tokenizer recipe; custom recipes require a rebuild of the Rust crate.
 - **No interactive Rust tracing** — debugging is via Rust stack traces returned through PyO3, compile-time only.
 - **Cross-compilation provenance** — this `.so` is unique to this distribution; not available on PyPI for iOS.
+
+## iOS cross-compile build
+
+Source: `github.com/huggingface/tokenizers` at tag `v0.19.1` (matches transformers 4.41.2). Built from source for `aarch64-apple-ios` against BeeWare's Python.xcframework — as far as we can tell, the **first public iOS build** of HF tokenizers.
+
+**Prerequisites:** Rust with the iOS target (`rustup target add aarch64-apple-ios`) + Xcode command-line tools. Build via `tokenizers_ios/build_tokenizers_ios.sh`, which sets the cross-compile env and runs `cargo build --release --target aarch64-apple-ios` → `…/release/libtokenizers.dylib` (5.0 MB stripped).
+
+**Cross-compile environment** (the load-bearing part — PyO3 + C deps):
+
+```bash
+export PYO3_CROSS=1
+export PYO3_CROSS_LIB_DIR="$PY_XCF/platform-config/arm64-iphoneos"
+export PYO3_CROSS_PYTHON_VERSION="3.14"
+export _PYTHON_SYSCONFIGDATA_NAME="_sysconfigdata__ios_arm64-iphoneos"
+export PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1   # PyO3 0.21 caps at Py 3.12 → force abi3
+export CC_aarch64_apple_ios="$(xcrun --sdk iphoneos --find clang)"
+export AR_aarch64_apple_ios="$(xcrun --sdk iphoneos --find ar)"
+export CFLAGS_aarch64_apple_ios="-arch arm64 -isysroot $(xcrun --sdk iphoneos --show-sdk-path) -miphoneos-version-min=13.0"
+export CARGO_TARGET_AARCH64_APPLE_IOS_LINKER="$CC_aarch64_apple_ios"
+export CARGO_TARGET_AARCH64_APPLE_IOS_RUSTFLAGS="-C link-arg=-F$PY_XCF -C link-arg=-framework -C link-arg=Python -C link-arg=-undefined -C link-arg=dynamic_lookup"
+```
+
+**One source patch** — `bindings/python/src/tokenizer.rs` uses `PyUnicode_FromKindAndData` / `PyUnicode_4BYTE_KIND`, which aren't in the stable ABI; replaced with a manual UCS-4 LE decode loop. Only hit when encoding `numpy.array(strings, dtype='U')` (rare; possibly ~2× slower on that exact path — no impact on normal transformers use).
+
+**Installed layout:** `site-packages/tokenizers/` (`tokenizers.cpython-314-iphoneos.so` ~5 MB + the `tokenizers.abi3.so` alias + the py wrapper subpackages) plus `tokenizers-0.19.1.dist-info/` (WHEEL tag `cp314-abi3-ios_13_0_arm64_iphoneos`). At Xcode build time BeeWare's `utils.sh` wraps the `.so` into a `.framework` + a `.fwork` stub.
+
+**Performance (iPad Air M3):** train BPE on a 32-sentence corpus → 157 tokens in **3 ms**; `encode("the quick brown fox")` < 0.1 ms; batch-encode 3 strings → padded `torch.Tensor` < 1 ms. Same speed as on a Mac (Rust + Rayon threads).
 
 ## Standalone example
 
@@ -128,7 +155,6 @@ enc = hf_tok("Hello", return_tensors="pt", padding=True, truncation=True)
 
 ## See also
 
-- [docs/libs/tokenizers.md](libs/tokenizers.md) — category-organised reference
 - [docs/transformers.md](transformers.md) — uses `tokenizers` under the hood
 - [docs/torch.md](torch.md) — PyTorch backend
 - [docs/huggingface-hub.md](huggingface-hub.md) — download tokenizer files

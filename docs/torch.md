@@ -6,7 +6,7 @@
 **Auto-includes:** (none — `torch` is the base)
 **Total Python modules:** 200+ (top-level + 40+ subpackages)
 
-First public native PyTorch build for iOS. Tensors, autograd, `nn`, `optim`, JIT scripting, FFT, LAPACK via Apple's Accelerate framework, plus a Metal-Performance-Shaders bridge for GPU-accelerated matmul. Train and fine-tune transformer models on an iPad with zero network. A more category-organised reference is at [docs/libs/pytorch.md](libs/pytorch.md).
+First public native PyTorch build for iOS. Tensors, autograd, `nn`, `optim`, JIT scripting, FFT, LAPACK via Apple's Accelerate framework, plus a Metal-Performance-Shaders bridge for GPU-accelerated matmul. Train and fine-tune transformer models on an iPad with zero network.
 
 ## Modules
 
@@ -183,6 +183,8 @@ The Metal bridge implementation lives in `app_packages/site-packages/_torch_meta
 
 ## GPU acceleration on Metal
 
+**How this differs from "native MPS":** there is no working `torch.device("mps")` here, and you never call `.to("mps")`. Both paths below keep your tensors as ordinary **CPU tensors** and *transparently* offload only the hot ops (matmul / linear / attention) to the GPU via Metal Performance Shaders, copying to/from the GPU per call. That's why it carries the FLOPS threshold (small ops stay on CPU — the ~200 µs GPU dispatch would dominate them) and why ops outside the routed set run on CPU+Accelerate. A *native* MPS backend (the larger future lift) would instead run the whole graph + autograd on the GPU with no per-op copies — see [README GPU notes](../README.md). NumPy's separate Accelerate speedup ([numpy.md](numpy.md#acceleration-blas--lapack)) is CPU-only and unrelated to these Metal paths.
+
 Two paths route torch ops to the Apple GPU in this build — both **App-Store-safe** (public MPS only):
 
 1. **`_torch_metal_bridge`** *(always-on, transparent)* — auto-installs at import and wraps `torch.matmul` / `F.linear` / `F.scaled_dot_product_attention`, routing large matmuls through MPS (fp32/fp16/bf16), threshold-gated by `CODEBENCH_GPU_MATMUL_MIN_FLOPS`. Lives in `app_packages/site-packages/_torch_metal_bridge.py`.
@@ -273,7 +275,6 @@ For weight I/O the pure-Python `safetensors` shim handles both read and write �
 
 ## See also
 
-- [docs/libs/pytorch.md](libs/pytorch.md) — category-organised reference
 - [docs/transformers.md](transformers.md) / [docs/tokenizers.md](tokenizers.md)
 - [docs/safetensors.md](safetensors.md) — weight I/O
 - [docs/huggingface-hub.md](huggingface-hub.md) — model download

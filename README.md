@@ -2,7 +2,7 @@
 
 Full Python 3.14 runtime for iOS/iPadOS with **30+ offline libraries including real PyTorch + HuggingFace transformers + Rust tokenizers**. No JIT, App Store safe.
 
-> **New:** Full `import torch` (v2.1), `import transformers` (v4.41), and `import tokenizers` (v0.19, real Rust cross-compile) all work on-device. Train and fine-tune transformer models on an iPad with zero network. [Full integration test: 24/24 passing.](docs/libs/transformers.md#test-coverage)
+> **New:** Full `import torch` (v2.1), `import transformers` (v4.41), and `import tokenizers` (v0.19, real Rust cross-compile) all work on-device. Train and fine-tune transformer models on an iPad with zero network. [Full integration test: 24/24 passing.](docs/transformers.md#test-coverage)
 
 > **GPU (Metal):** Two of the Metal-accelerated pieces are also published as standalone repos — **[cairometal](https://github.com/yu314-coder/cairometal)** (a pycairo-compatible GPU cairo on Metal) and **[torchmetal](https://github.com/yu314-coder/torchmetal)** (routes PyTorch's hot inference ops to Metal/MPS, designed for iOS). Both are wired into this package's `Package.swift` as the **`CairoMetal`** and **`TorchMetal`** products. The full `cairo(metal)` engine used by manim's GPU path stays bundled in this repo (`app_packages`), unchanged.
 
@@ -11,7 +11,7 @@ Full Python 3.14 runtime for iOS/iPadOS with **30+ offline libraries including r
 - **Monaco code editor with IntelliSense** running in a WKWebView — Python keyword snippets, signature help (~70-entry SIG_DB), hover docs, and resolve-from-Python for numpy / scipy / sklearn / matplotlib / sympy completions. See `CodeBench/MonacoEditorView.swift`.
 - **Auto-save**: edits persist to disk on every keystroke (debounced ~600 ms) plus on run, tab-switch, view-disappear, and app-backgrounding. Fixes the "edit `a.tex`, reopen, 0 B" bug.
 - **Tombstone system** — files deleted via the file browser trash icon, `rm` / `rmdir` in the shell, or ncdu's `d` key are recorded in `<Workspace>/.offlinai_deleted` so the starter-script seeder (`pip_demo.py`, `torch_test_all.py`, etc.) no longer re-creates them on next launch.
-- **LaTeX bundle expanded** — 33 MB texmf tree now ships with full Latin Modern Type 1 fonts, expl3 code (1.3 MB), firstaid, graphics-def, hyphenation, stringenc, unicode-data, and pdftex.map. Math-mode rendering via SwiftMath is unlimited and reliable; the native `pdflatex` builtin is gated off pending replacement of the 2019-era `pdftex.xcframework` (see [Media docs](docs/libs/media.md#local-latex-engine-offlinai_latex)).
+- **LaTeX bundle expanded** — 33 MB texmf tree now ships with full Latin Modern Type 1 fonts, expl3 code (1.3 MB), firstaid, graphics-def, hyphenation, stringenc, unicode-data, and pdftex.map. Math-mode rendering via SwiftMath is unlimited and reliable; the native `pdflatex` builtin is gated off pending replacement of the 2019-era `pdftex.xcframework` (see [LaTeX docs](docs/offlinai-latex.md)).
 - **Shell builtins**: `pdflatex` / `latex` / `tex` / `pdftex` / `xelatex` / `latex-diagnose`, `ncdu` with raw arrow-key navigation and real-ncdu styling, `top` with Apple-chip detection, `git clone` via zipball fetch, and universal `--help` / `-h` interception.
 - **matplotlib shim hardening** — user scripts no longer crash on chained attribute access like `ax.xaxis.line.set_color(...)` or `ax.title.set_text(...)`. The plotly-backed matplotlib compatibility shim now uses a chainable `_NoopChainable` singleton for unshimmed attributes (across both `pyplot.py` and the five module stubs in `mpl_toolkits/mplot3d/__init__.py` — `_Art3DModule`, `_Proj3DModule`, `_Axis3DModule`, `_ProjectionModule`, plus the `_art3d_getattr_fallback`), so any chain into a missing attribute degrades silently to `None` instead of raising `'function' object has no attribute X` mid-chain. Plus a swathe of type-mismatch fixes: `get_xticks` / `get_yticks` newly added (were missing on `_Axes` and crashing via the fallback), `get_legend_handles_labels` actually discovers labelled artists from `lines` / `patches` / `collections` / `containers`, `get_array` returns `np.array([])` not `None`, an `_AxisLine` stub for the axis-baseline styling pattern, `set_title(loc=, pad=, y=)` and `set_xticks(minor=)` no longer silently swallow upstream kwargs, and the `__figure__` sentinel that was leaking into `fig.update_layout` (raising `Invalid property '__figure__'` and aborting the whole layout) is now unpacked into the top level. Result: full styling — titles, axis ranges, background colors — actually applies to plotly-rendered charts.
 - **Manim 4K/8K rendering is now memory-safe** — the animated-GIF assembly buffer is bounded (capped + downsampled at capture) and full-resolution frames stream to the mp4 instead of being accumulated, so memory no longer scales with `resolution × frame_count`. With a resolution-tiered RAM pre-flight and `malloc` pressure relief on top, manim renders up to **8K** (7680×4320) without tripping iOS's jetsam limit; quality is selectable 480p→8K. Encode uses `h264_videotoolbox`; manim's rasterization stays on cairo's CPU backend — a GPU cairo ([CairoMetal](https://github.com/yu314-coder/cairometal)) exists but doesn't accelerate manim (its bottleneck is Python interpolation, not cairo). See [docs/manim.md](docs/manim.md#high-resolution-4k--8k-rendering) and python-ios-lib issue #1.
@@ -580,7 +580,7 @@ First public iOS builds of each. Once added, `import torch`, `import transformer
 
 | Package | What you get | Auto-includes | Doc |
 |---|---|---|---|
-| **PyTorch** | PyTorch 2.1.2 native iOS — tensors, autograd, nn, optim, JIT, FFT, LAPACK via Accelerate. **95/95 correctness asserts.** Ships `libtorch_python.dylib` as a ~14 MB LZMA blob (`Sources/PyTorch/torch_dylib/libtorch_python.dylib.applzma`); the `PyTorch` Swift package decompresses it to ~99 MB at first launch via `Compression.framework`. No Git LFS needed. | regex shim | [doc](docs/torch.md) |
+| **PyTorch** | PyTorch 2.1.0 native iOS — tensors, autograd, nn, optim, JIT, FFT, LAPACK via Accelerate, plus a transparent Metal/MPS bridge for large matmul / attention. **95/95 correctness asserts.** Ships `libtorch_python.dylib` as a ~14 MB LZMA blob (`Sources/PyTorch/torch_dylib/libtorch_python.dylib.applzma`); the `PyTorch` Swift package decompresses it to ~99 MB at first launch via `Compression.framework`. No Git LFS needed. | regex shim | [doc](docs/torch.md) |
 | **Tokenizers** | HuggingFace tokenizers 0.19.1 — real Rust BPE/WordPiece/Unigram trainers cross-compiled for iOS arm64 (PyO3). First public iOS build. | (none) | [doc](docs/tokenizers.md) |
 | **Transformers** | HuggingFace transformers 4.41.2 — BERT, GPT-2, T5, BART, Llama, Qwen. Construct + train + `.generate()` + save/load on-device. | + PyTorch, Tokenizers, `huggingface_hub`, `filelock`, `safetensors`, `accelerate`, `peft` | [doc](docs/transformers.md) |
 | **Accelerate** | HuggingFace Accelerate 0.30.1 — `Trainer` hard-imports it for device placement, gradient accumulation, mixed precision. Pure Python. | (none extra) | upstream [docs](https://huggingface.co/docs/accelerate) |
@@ -1083,7 +1083,6 @@ notes, limitations, troubleshooting, and build provenance.
 | **C** | [docs/c-interpreter.md](docs/c-interpreter.md) |
 | **C++** | [docs/cpp-interpreter.md](docs/cpp-interpreter.md) |
 | **Fortran** | [docs/fortran-interpreter.md](docs/fortran-interpreter.md) + [docs/fortran-runtime.md](docs/fortran-runtime.md) |
-| All three (overview) | [docs/libs/interpreters.md](docs/libs/interpreters.md) |
 
 ### Native engines (C/C++ libs)
 
@@ -1097,20 +1096,20 @@ notes, limitations, troubleshooting, and build provenance.
 
 | Library | Doc |
 |---|---|
-| **NumPy** | [docs/numpy.md](docs/numpy.md) — also [docs/libs/numpy.md](docs/libs/numpy.md) |
-| **SciPy** | [docs/scipy-ios.md](docs/scipy-ios.md) — also [docs/libs/scipy.md](docs/libs/scipy.md) |
-| **SymPy** | [docs/sympy.md](docs/sympy.md) — also [docs/libs/sympy.md](docs/libs/sympy.md) |
+| **NumPy** | [docs/numpy.md](docs/numpy.md) |
+| **SciPy** | [docs/scipy-ios.md](docs/scipy-ios.md) |
+| **SymPy** | [docs/sympy.md](docs/sympy.md) |
 | **mpmath** | [docs/mpmath.md](docs/mpmath.md) |
 | **NetworkX** | [docs/networkx.md](docs/networkx.md) |
-| **scikit-learn** | [docs/sklearn.md](docs/sklearn.md) — also [docs/libs/sklearn.md](docs/libs/sklearn.md) |
+| **scikit-learn** | [docs/sklearn.md](docs/sklearn.md) |
 
 ### Machine learning
 
 | Library | Doc |
 |---|---|
-| **PyTorch** (14 MB LZMA blob → 99 MB dylib at runtime) | [docs/torch.md](docs/torch.md) — also [docs/libs/pytorch.md](docs/libs/pytorch.md) |
-| **transformers** | [docs/transformers.md](docs/transformers.md) — also [docs/libs/transformers.md](docs/libs/transformers.md) |
-| **tokenizers** (Rust via PyO3) | [docs/tokenizers.md](docs/tokenizers.md) — also [docs/libs/tokenizers.md](docs/libs/tokenizers.md) |
+| **PyTorch** (14 MB LZMA blob → 99 MB dylib at runtime) | [docs/torch.md](docs/torch.md) |
+| **transformers** | [docs/transformers.md](docs/transformers.md) |
+| **tokenizers** (Rust via PyO3) | [docs/tokenizers.md](docs/tokenizers.md) |
 | **safetensors** | [docs/safetensors.md](docs/safetensors.md) |
 | **huggingface_hub** | [docs/huggingface-hub.md](docs/huggingface-hub.md) |
 
@@ -1118,9 +1117,9 @@ notes, limitations, troubleshooting, and build provenance.
 
 | Library | Doc |
 |---|---|
-| **matplotlib** (Plotly-backend shim) | [docs/matplotlib.md](docs/matplotlib.md) — also [docs/libs/matplotlib.md](docs/libs/matplotlib.md) |
+| **matplotlib** (Plotly-backend shim) | [docs/matplotlib.md](docs/matplotlib.md) |
 | **Plotly** | [docs/plotly.md](docs/plotly.md) |
-| **manim** | [docs/manim.md](docs/manim.md) — also [docs/libs/manim.md](docs/libs/manim.md) |
+| **manim** | [docs/manim.md](docs/manim.md) |
 | **manim deps** (pathops + mapbox_earcut + isosurfaces) | [docs/manim-deps.md](docs/manim-deps.md) |
 | **manimpango** | [docs/manimpango.md](docs/manimpango.md) |
 
@@ -1133,7 +1132,6 @@ notes, limitations, troubleshooting, and build provenance.
 | **pydub** (audio, uses audioop) | [docs/pydub.md](docs/pydub.md) |
 | **audioop** (LTS backport — removed from Python 3.13 stdlib) | [docs/audioop.md](docs/audioop.md) |
 | **svgelements** | [docs/svgelements.md](docs/svgelements.md) |
-| **Media overview** | [docs/libs/media.md](docs/libs/media.md) |
 
 ### Web & network
 
