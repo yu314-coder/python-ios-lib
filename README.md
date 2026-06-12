@@ -6,6 +6,242 @@ Full Python 3.14 runtime for iOS/iPadOS with **30+ offline libraries including r
 
 > **GPU (Metal):** Two of the Metal-accelerated pieces are also published as standalone repos — **[cairometal](https://github.com/yu314-coder/cairometal)** (a pycairo-compatible GPU cairo on Metal) and **[torchmetal](https://github.com/yu314-coder/torchmetal)** (routes PyTorch's hot inference ops to Metal/MPS, designed for iOS). Both are wired into this package's `Package.swift` as the **`CairoMetal`** and **`TorchMetal`** products. The full `cairo(metal)` engine used by manim's GPU path stays bundled in this repo (`app_packages`), unchanged.
 
+## All Libraries
+
+The `app_packages/site-packages/` bundle ships **~180 Python packages** — every entry below is importable on-device with **no `pip install` needed**. Anything you'd typically `pip install` for an HF training script is already here, except for a short list at the end that depends on un-cross-compileable C/Rust extensions.
+
+### Machine Learning stack (bundled)
+
+| Library | Version | Notes |
+|---|---|---|
+| **torch** | 2.1.0 (patched iOS) | Native arm64 + Metal GPU bridge. See [What works / what doesn't](#what-works--doesnt--ios-torch) below. |
+| **transformers** | 4.41.2 | HF — train + generate + save. See [What works / what doesn't](#what-works--doesnt--transformers) below. |
+| **accelerate** | 0.30.1 | Required by HF `Trainer` (hard import at module load). Pure Python. |
+| **peft** | 0.12.0 | LoRA / IA3 / prefix tuning. `get_peft_model()` + `LoraConfig` work as-is. |
+| **tokenizers** | 0.19.1 | Real Rust BPE/WordPiece/Unigram cross-compiled for iOS arm64 via PyO3. First public iOS build. |
+| **safetensors** | 0.4.5 (pure-Python shim) | Bidirectional (read + write). `model.save_pretrained()` writes valid files. |
+| **huggingface_hub** | 0.24.7 | HF Hub client — `from_pretrained` works over network. |
+| **scikit-learn** | 1.9.0 | **Real native Cython** cross-compile — 69 `.so`, full API (all 39 submodules). First public iOS build, replaces the old pure-NumPy reimpl. [doc](docs/sklearn.md) |
+| **faiss** | 1.9.0 (CPU) | Vector similarity search — native cross-compile (serial). On-device RAG retrieval. |
+| **sentencepiece** | 0.2.0 | Google BPE / unigram tokenizer — native cross-compile (behind Llama / T5 / Gemma). |
+
+#### What works / doesn't — iOS torch
+
+✅ **Works on iPad:**
+- `torch.Tensor`, `nn.Module`, `nn.Linear/Conv/...`, full `autograd`
+- `torch.optim` (SGD, AdamW, Adam, RMSprop, Adagrad, …)
+- `torch.jit.script` + `trace` (eager-mode tracing, no JIT codegen)
+- LAPACK via Apple's Accelerate framework: `solve` / `eigh` / `svd` / `qr` / `lu` / `cholesky`
+- FFT via Accelerate: `torch.fft.*`
+- **GPU-accelerated** via the Metal bridge: `torch.matmul`, `torch.mm`, `torch.bmm`, `torch.addmm`, `F.linear`, `F.scaled_dot_product_attention` (fp32 / fp16 / bf16)
+- Mixed precision: `bf16` and `fp16` dtypes (cast paths through the GPU bridge)
+- `torch.save` / `torch.load` (pickle-based)
+- `torch.frombuffer` for byte-buffer→tensor (used by the safetensors / numpy shims)
+
+❌ **Doesn't work (with workarounds where they exist):**
+
+| Op / feature | Why broken | Workaround |
+|---|---|---|
+| `torch.cuda.*` | No CUDA on iOS | None — use the Metal bridge for matmul-heavy ops |
+| `torch.backends.mps` | MPS backend not in this build | Metal bridge replaces it |
+| `torch.distributed`, `torch.multiprocessing` | iOS forbids `fork()` | Single-process training only |
+| `torch.compile` | Needs Triton JIT, iOS forbids JIT | Eager mode + GPU bridge |
+| `torch.from_numpy()`, `tensor.numpy()` | Built with `USE_NUMPY=0` | **Auto-patched** in sitecustomize — drop-in pure-Python equivalents using `torch.frombuffer` |
+| `DataLoader(num_workers > 0)` | Worker processes use `fork()` | Set `num_workers=0` (only iPad limitation that needs code awareness) |
+| TensorBoard writer | No background server | Use `_cb_training.TrainingMonitor` for terminal output |
+| `bitsandbytes`, `flash-attn`, `xformers` | CUDA-only / Triton-only | Skip; GPU bridge handles attention |
+
+#### What works / doesn't — transformers
+
+✅ **Works on iPad:**
+- `AutoModel`, `AutoTokenizer`, `AutoModelForCausalLM`, `AutoModelForSeq2SeqLM`, etc.
+- `from_pretrained(...)` — local files or HF Hub URLs (latter needs network access)
+- `model.generate()` — full autoregressive generation, beam search, sampling
+- `Trainer.train()` — auto-checkpoint + auto-resume via sitecustomize patches
+- `model.save_pretrained(...)` — writes `pytorch_model.bin` + `.safetensors` (both work)
+- `peft.get_peft_model()` + LoRA / IA3 training
+- Mixed precision: `bf16=True` or `fp16=True` in `TrainingArguments`
+- **Model families verified:** BERT, GPT-2, T5, BART, Llama, Qwen, Mistral, Phi
+
+❌ **Doesn't work:**
+
+| Op / feature | Why | Workaround |
+|---|---|---|
+| `datasets.load_dataset(...)` | `datasets` not bundled (needs `pyarrow` + `pandas`) | Subclass `torch.utils.data.Dataset` — 5-10 lines |
+| Sentencepiece-only tokenizers | `sentencepiece` C++ not cross-compiled | GPT-2 / Qwen / Mistral / Phi tokenizers use **BPE** and work without it. Llama / T5 / BART tokenizer formats blocked. |
+| `FlashAttention2` | No `flash_attn` package; no Triton | Falls back to SDPA, which IS GPU-accelerated via the bridge |
+| `DeepSpeed`, `FSDP` | Multi-device / multi-process | Single-device; not applicable to iPad |
+| `BitsAndBytes` quantization | CUDA-only | Use llama.cpp's GGUF quantization for inference instead |
+| `evaluate.load(...)` | `evaluate` package not bundled | Compute metrics inline; or pip install if pure-Python wheel exists |
+| Multi-GPU training | iOS = one device | N/A |
+
+### Scientific Computing
+
+| Library | Version | Type |
+|---|---|---|
+| **numpy** | 2.3.5 | Native arm64 — **Accelerate** BLAS/LAPACK on the AMX coprocessor |
+| **scipy** | 1.15.0 | Native arm64 (flang Fortran + Accelerate BLAS/LAPACK) |
+| **pandas** | 2.2.3 | Native arm64 (cross-compiled) — DataFrames |
+| **statsmodels** | 0.14.4 | Native arm64 — statistical models / tests |
+| **sympy** | 1.14.0 | Pure Python |
+| **mpmath** | 1.4.1 | Pure Python |
+| **networkx** | 3.6.1 | Pure Python |
+| **pint** | 0.25.3 | Pure Python — physical units & dimensional analysis |
+| **uncertainties** | 3.2.3 | Pure Python — error propagation (numpy-aware) |
+| **periodictable** | 2.1.0 | Pure Python — chemistry element / isotope data (masses, densities) |
+
+### Visualization
+
+| Library | Version | Notes |
+|---|---|---|
+| **matplotlib** | 3.9.0 | Plotly-backend shim (no native renderer on iOS) |
+| **plotly** | 6.6.0 | Renders in WKWebView preview pane |
+| **seaborn** | bundled | Statistical plotting on matplotlib |
+| **fonttools** | bundled | Font subsetting + metadata |
+| **mpl_toolkits** | bundled | matplotlib 3-D / axes_grid |
+| **narwhals** | 1.16.0 | DataFrame-agnostic helpers (matplotlib internal) |
+
+### Animation / Math Visualization
+
+| Library | Version |
+|---|---|
+| **manim** | 0.19.0 |
+| **manimpango** | 0.6.1 (iOS shim) |
+| **mapbox_earcut** | 1.0.3 |
+| **isosurfaces** | 0.1.2 |
+| **moderngl** | 5.12.0 |
+| **moderngl_window** | 2.4.6 |
+| **screeninfo** | 0.8.1 |
+| **svgelements** | 1.9.6 |
+| **pathops** | bundled |
+
+### Media — image / video / audio / documents
+
+| Library | Notes |
+|---|---|
+| **PIL** (Pillow) | Image processing — native iOS build |
+| **cv2** (OpenCV) | 4.10.0 — computer vision, curated native build (core / imgproc / photo / features2d / calib3d / objdetect / ml / flann) |
+| **av** (PyAV) | FFmpeg bindings; 7 native dylibs (libav*) |
+| **cairo** + **cairocffi** + **cairosvg** | 2D vector graphics + SVG |
+| **pydub** | Audio manipulation (uses audioop) |
+| **audioop** | LTS backport — removed from Python 3.13 stdlib |
+| **pypdf** | PDF read |
+| **fpdf** | PDF write |
+| **reportlab** | PDF generation (full vector + text) |
+| **openpyxl** + **xlsxwriter** + **et_xmlfile** | Excel `.xlsx` read / write |
+| **qrcode** | QR-code generation (PNG via the bundled PIL, or pure-Python SVG) |
+
+### LaTeX
+
+| Library | Notes |
+|---|---|
+| **offlinai_latex** | Math-mode renderer (SwiftMath) + 33 MB bundled texmf tree |
+
+### Web / Network / HTTP
+
+| Library | Notes |
+|---|---|
+| **requests** | 2.33.1 — HTTP client |
+| **urllib3** | 2.6.3 — HTTP transport |
+| **httpx** | Async HTTP |
+| **anyio** + **sniffio** | Async runtime backends |
+| **charset_normalizer** | 3.4.7 — encoding detection |
+| **certifi** | 2026.2.25 — CA bundle |
+| **idna** | 3.11 — IDN |
+| **bs4** (BeautifulSoup4) + **soupsieve** | HTML / XML parsing |
+| **defusedxml** | Safe XML parsing |
+| **jwt** (PyJWT) | JSON Web Tokens |
+| **webview** (PyWebView shim) | Embed HTML in host preview pane |
+
+### Web frameworks — host real dashboards on-device
+
+All five are iOS-patched (`multiprocessing.Value` fallback, signal-handler
+skip on worker thread, preview-panel auto-load, clean Ctrl+C shutdown).
+Tick any of these in Xcode → SPM pulls every transitive dependency.
+
+| Library | Version | Use case |
+|---|---|---|
+| **Werkzeug** | 3.1.x | WSGI utilities + dev server. Standalone, or the foundation Flask is built on |
+| **Flask** | 3.x | Classic web framework — routes, sessions, templates, blueprints |
+| **Dash** | 3.x | Plotly-based reactive dashboards — `dcc`, `html`, `dash_table`, pattern-matching callbacks |
+| **Streamlit** | 1.50.x | Script-style dashboards — declarative widgets, `@st.cache_data`, fragments |
+| **Tornado** | 6.5.x | Async HTTP/WebSocket framework. Streamlit's transport, usable standalone |
+
+Per-lib docs: [werkzeug.md](docs/werkzeug.md) · [flask.md](docs/flask.md) · [dash.md](docs/dash.md) · [streamlit.md](docs/streamlit.md) · [tornado.md](docs/tornado.md). Cross-stack iOS-patch story: [web-stack.md](docs/web-stack.md).
+
+### Data Formats
+
+| Library | Notes |
+|---|---|
+| **yaml** (PyYAML) | YAML — native build |
+| **jsonschema** 4.26.0 + **jsonschema_specifications** + **referencing** + **rpds** | JSON Schema validation |
+| **fsspec** | Filesystem abstraction (HF transformers / hub dep) |
+| **filelock** 3.28.0 | Cross-process file locking |
+| **tinydb** 4.8.2 | Zero-dependency JSON document database (offline) |
+
+### CLI / Terminal UI
+
+| Library | Notes |
+|---|---|
+| **rich** 13.7.0 | Tables / progress / coloured output |
+| **click** 8.1.7 + **typer** + **cloup** 3.0.5 + **shellingham** | CLI frameworks |
+| **textual** | TUI framework |
+| **tqdm** 4.67.3 | Progress bars |
+| **colorama** | ANSI on every platform |
+| **markdown_it** + **mdurl** | Markdown parser |
+| **pygments** 2.18.0 | Syntax highlighting (500+ languages) |
+| **plotext** 5.3.2 | Plot charts directly in the terminal (no matplotlib) |
+| **ftfy** 6.3.1 | Fix mojibake / broken unicode text |
+
+### Testing / Linting / Dev Tools
+
+| Library | Notes |
+|---|---|
+| **pytest** + **_pytest** + **pluggy** + **iniconfig** | Test framework |
+| **hypothesis** + **sortedcontainers** | Property-based testing |
+| **black** + **blib2to3** + **isort** + **mypy** + **pyflakes** | Formatters / linters / type checker |
+| **tomli** + **tomli_w** + **pytokens** + **pathspec** + **annotated_doc** | Common dev-tool deps |
+
+### Templating / Utility
+
+| Library | Notes |
+|---|---|
+| **jinja2** 3.1.6 + **markupsafe** 3.0.3 | Templating (HF Trainer chat templates use this) |
+| **regex** 2024.11.6 | Extended regex (tokenizers use this) |
+| **packaging** 26.0 | Version / requirement parsing |
+| **more_itertools** + **lark** | Iteration + grammar parsing |
+| **dill** 0.4.1 | Extended pickling — closures, lambdas, whole sessions |
+| **pyparsing** 3.3.2 | PEG-style grammar parsing |
+| **wcwidth** 0.7.0 | Terminal display width of unicode characters |
+| **dateutil** + **pytz** + **pendulum** | Date / time |
+| **attr** / **attrs** 24.2.0 + **cattrs** | Attribute classes / converters |
+| **platformdirs** | OS-specific paths |
+| **humanize** + **tabulate** | Output formatting |
+| **watchdog** 4.0.0 | File system watcher |
+| **psutil** 5.9.8 (iOS shim) | Process / system info |
+| **pycparser** 2.22 | C parser (cffi dep) |
+| **pip** 26.0.1 + **wheel** + **setuptools** + **pkg_resources** + **_distutils_hack** | Package management — `pip` patched to install pure-Python pkgs on-device |
+
+### CodeBench-specific runtime helpers
+
+| Module | Purpose |
+|---|---|
+| **offlinai_ai** | RAG + embedding utilities |
+| **_torch_metal_bridge** | PyTorch → Metal GPU dispatch (auto-installed) |
+| **_cb_training** | OOMGuard, MemoryProfiler, KVCache, TrainingMonitor, AutoCheckpointer (opt-in, for manual loops) |
+| **_cb_background** | iOS background-time extension (auto-enabled) |
+| **_cb_gguf_export** | PyTorch LoRA → GGUF converter for llama.cpp inference |
+
+### Interpreters (no Python runtime — pure-Swift)
+
+| Language | Lines | Description |
+|---|---|---|
+| **C** | ~3,450 | C89/C99/C23, 48 operators, structs, pointers, preprocessor |
+| **C++** | ~4,200 | Classes, STL, templates, inheritance |
+| **Fortran** | ~4,100 | Modules, allocatable arrays, 45+ intrinsics |
+
+---
+
 ### Recent app-side changes
 
 - **Monaco code editor with IntelliSense** running in a WKWebView — Python keyword snippets, signature help (~70-entry SIG_DB), hover docs, and resolve-from-Python for numpy / scipy / sklearn / matplotlib / sympy completions. See `CodeBench/MonacoEditorView.swift`.
@@ -805,239 +1041,6 @@ Transformers
   └── Tokenizers (5 MB Rust .so)
 Transformers also bundles huggingface_hub, filelock, safetensors
 ```
-
----
-
-## All Libraries
-
-The `app_packages/site-packages/` bundle ships **~180 Python packages** — every entry below is importable on-device with **no `pip install` needed**. Anything you'd typically `pip install` for an HF training script is already here, except for a short list at the end that depends on un-cross-compileable C/Rust extensions.
-
-### Machine Learning stack (bundled)
-
-| Library | Version | Notes |
-|---|---|---|
-| **torch** | 2.1.2 (patched iOS) | Native arm64 + Metal GPU bridge. See [What works / what doesn't](#what-works--doesnt--ios-torch) below. |
-| **transformers** | 4.41.2 | HF — train + generate + save. See [What works / what doesn't](#what-works--doesnt--transformers) below. |
-| **accelerate** | 0.30.1 | Required by HF `Trainer` (hard import at module load). Pure Python. |
-| **peft** | 0.12.0 | LoRA / IA3 / prefix tuning. `get_peft_model()` + `LoraConfig` work as-is. |
-| **tokenizers** | 0.19.1 | Real Rust BPE/WordPiece/Unigram cross-compiled for iOS arm64 via PyO3. First public iOS build. |
-| **safetensors** | 0.4.5 (pure-Python shim) | Bidirectional (read + write). `model.save_pretrained()` writes valid files. |
-| **huggingface_hub** | 0.24.7 | HF Hub client — `from_pretrained` works over network. |
-| **sklearn** | shim | 40 pure-NumPy modules: classification, regression, clustering, preprocessing, metrics. |
-
-#### What works / doesn't — iOS torch
-
-✅ **Works on iPad:**
-- `torch.Tensor`, `nn.Module`, `nn.Linear/Conv/...`, full `autograd`
-- `torch.optim` (SGD, AdamW, Adam, RMSprop, Adagrad, …)
-- `torch.jit.script` + `trace` (eager-mode tracing, no JIT codegen)
-- LAPACK via Apple's Accelerate framework: `solve` / `eigh` / `svd` / `qr` / `lu` / `cholesky`
-- FFT via Accelerate: `torch.fft.*`
-- **GPU-accelerated** via the Metal bridge: `torch.matmul`, `torch.mm`, `torch.bmm`, `torch.addmm`, `F.linear`, `F.scaled_dot_product_attention` (fp32 / fp16 / bf16)
-- Mixed precision: `bf16` and `fp16` dtypes (cast paths through the GPU bridge)
-- `torch.save` / `torch.load` (pickle-based)
-- `torch.frombuffer` for byte-buffer→tensor (used by the safetensors / numpy shims)
-
-❌ **Doesn't work (with workarounds where they exist):**
-
-| Op / feature | Why broken | Workaround |
-|---|---|---|
-| `torch.cuda.*` | No CUDA on iOS | None — use the Metal bridge for matmul-heavy ops |
-| `torch.backends.mps` | MPS backend not in this build | Metal bridge replaces it |
-| `torch.distributed`, `torch.multiprocessing` | iOS forbids `fork()` | Single-process training only |
-| `torch.compile` | Needs Triton JIT, iOS forbids JIT | Eager mode + GPU bridge |
-| `torch.from_numpy()`, `tensor.numpy()` | Built with `USE_NUMPY=0` | **Auto-patched** in sitecustomize — drop-in pure-Python equivalents using `torch.frombuffer` |
-| `DataLoader(num_workers > 0)` | Worker processes use `fork()` | Set `num_workers=0` (only iPad limitation that needs code awareness) |
-| TensorBoard writer | No background server | Use `_cb_training.TrainingMonitor` for terminal output |
-| `bitsandbytes`, `flash-attn`, `xformers` | CUDA-only / Triton-only | Skip; GPU bridge handles attention |
-
-#### What works / doesn't — transformers
-
-✅ **Works on iPad:**
-- `AutoModel`, `AutoTokenizer`, `AutoModelForCausalLM`, `AutoModelForSeq2SeqLM`, etc.
-- `from_pretrained(...)` — local files or HF Hub URLs (latter needs network access)
-- `model.generate()` — full autoregressive generation, beam search, sampling
-- `Trainer.train()` — auto-checkpoint + auto-resume via sitecustomize patches
-- `model.save_pretrained(...)` — writes `pytorch_model.bin` + `.safetensors` (both work)
-- `peft.get_peft_model()` + LoRA / IA3 training
-- Mixed precision: `bf16=True` or `fp16=True` in `TrainingArguments`
-- **Model families verified:** BERT, GPT-2, T5, BART, Llama, Qwen, Mistral, Phi
-
-❌ **Doesn't work:**
-
-| Op / feature | Why | Workaround |
-|---|---|---|
-| `datasets.load_dataset(...)` | `datasets` not bundled (needs `pyarrow` + `pandas`) | Subclass `torch.utils.data.Dataset` — 5-10 lines |
-| Sentencepiece-only tokenizers | `sentencepiece` C++ not cross-compiled | GPT-2 / Qwen / Mistral / Phi tokenizers use **BPE** and work without it. Llama / T5 / BART tokenizer formats blocked. |
-| `FlashAttention2` | No `flash_attn` package; no Triton | Falls back to SDPA, which IS GPU-accelerated via the bridge |
-| `DeepSpeed`, `FSDP` | Multi-device / multi-process | Single-device; not applicable to iPad |
-| `BitsAndBytes` quantization | CUDA-only | Use llama.cpp's GGUF quantization for inference instead |
-| `evaluate.load(...)` | `evaluate` package not bundled | Compute metrics inline; or pip install if pure-Python wheel exists |
-| Multi-GPU training | iOS = one device | N/A |
-
-### Scientific Computing
-
-| Library | Version | Type |
-|---|---|---|
-| **numpy** | 2.3.5 | Native arm64 (cross-compiled from source) |
-| **scipy** | 1.15.0 | Native + Python shim |
-| **pandas** | 2.2.3 | Native arm64 (cross-compiled) — DataFrames |
-| **statsmodels** | 0.14.4 | Native arm64 — statistical models / tests |
-| **sympy** | 1.14.0 | Pure Python |
-| **mpmath** | 1.4.1 | Pure Python |
-| **networkx** | 3.6.1 | Pure Python |
-| **pint** | 0.25.3 | Pure Python — physical units & dimensional analysis |
-| **uncertainties** | 3.2.3 | Pure Python — error propagation (numpy-aware) |
-| **periodictable** | 2.1.0 | Pure Python — chemistry element / isotope data (masses, densities) |
-
-### Visualization
-
-| Library | Version | Notes |
-|---|---|---|
-| **matplotlib** | 3.9.0 | Plotly-backend shim (no native renderer on iOS) |
-| **plotly** | 6.6.0 | Renders in WKWebView preview pane |
-| **seaborn** | bundled | Statistical plotting on matplotlib |
-| **fonttools** | bundled | Font subsetting + metadata |
-| **mpl_toolkits** | bundled | matplotlib 3-D / axes_grid |
-| **narwhals** | 1.16.0 | DataFrame-agnostic helpers (matplotlib internal) |
-
-### Animation / Math Visualization
-
-| Library | Version |
-|---|---|
-| **manim** | 0.19.0 |
-| **manimpango** | 0.6.1 (iOS shim) |
-| **mapbox_earcut** | 1.0.3 |
-| **isosurfaces** | 0.1.2 |
-| **moderngl** | 5.12.0 |
-| **moderngl_window** | 2.4.6 |
-| **screeninfo** | 0.8.1 |
-| **svgelements** | 1.9.6 |
-| **pathops** | bundled |
-
-### Media — image / video / audio / documents
-
-| Library | Notes |
-|---|---|
-| **PIL** (Pillow) | Image processing — native iOS build |
-| **av** (PyAV) | FFmpeg bindings; 7 native dylibs (libav*) |
-| **cairo** + **cairocffi** + **cairosvg** | 2D vector graphics + SVG |
-| **pydub** | Audio manipulation (uses audioop) |
-| **audioop** | LTS backport — removed from Python 3.13 stdlib |
-| **pypdf** | PDF read |
-| **fpdf** | PDF write |
-| **reportlab** | PDF generation (full vector + text) |
-| **openpyxl** + **xlsxwriter** + **et_xmlfile** | Excel `.xlsx` read / write |
-| **qrcode** | QR-code generation (PNG via the bundled PIL, or pure-Python SVG) |
-
-### LaTeX
-
-| Library | Notes |
-|---|---|
-| **offlinai_latex** | Math-mode renderer (SwiftMath) + 33 MB bundled texmf tree |
-
-### Web / Network / HTTP
-
-| Library | Notes |
-|---|---|
-| **requests** | 2.33.1 — HTTP client |
-| **urllib3** | 2.6.3 — HTTP transport |
-| **httpx** | Async HTTP |
-| **anyio** + **sniffio** | Async runtime backends |
-| **charset_normalizer** | 3.4.7 — encoding detection |
-| **certifi** | 2026.2.25 — CA bundle |
-| **idna** | 3.11 — IDN |
-| **bs4** (BeautifulSoup4) + **soupsieve** | HTML / XML parsing |
-| **defusedxml** | Safe XML parsing |
-| **jwt** (PyJWT) | JSON Web Tokens |
-| **webview** (PyWebView shim) | Embed HTML in host preview pane |
-
-### Web frameworks — host real dashboards on-device
-
-All five are iOS-patched (`multiprocessing.Value` fallback, signal-handler
-skip on worker thread, preview-panel auto-load, clean Ctrl+C shutdown).
-Tick any of these in Xcode → SPM pulls every transitive dependency.
-
-| Library | Version | Use case |
-|---|---|---|
-| **Werkzeug** | 3.1.x | WSGI utilities + dev server. Standalone, or the foundation Flask is built on |
-| **Flask** | 3.x | Classic web framework — routes, sessions, templates, blueprints |
-| **Dash** | 3.x | Plotly-based reactive dashboards — `dcc`, `html`, `dash_table`, pattern-matching callbacks |
-| **Streamlit** | 1.50.x | Script-style dashboards — declarative widgets, `@st.cache_data`, fragments |
-| **Tornado** | 6.5.x | Async HTTP/WebSocket framework. Streamlit's transport, usable standalone |
-
-Per-lib docs: [werkzeug.md](docs/werkzeug.md) · [flask.md](docs/flask.md) · [dash.md](docs/dash.md) · [streamlit.md](docs/streamlit.md) · [tornado.md](docs/tornado.md). Cross-stack iOS-patch story: [web-stack.md](docs/web-stack.md).
-
-### Data Formats
-
-| Library | Notes |
-|---|---|
-| **yaml** (PyYAML) | YAML — native build |
-| **jsonschema** 4.26.0 + **jsonschema_specifications** + **referencing** + **rpds** | JSON Schema validation |
-| **fsspec** | Filesystem abstraction (HF transformers / hub dep) |
-| **filelock** 3.28.0 | Cross-process file locking |
-| **tinydb** 4.8.2 | Zero-dependency JSON document database (offline) |
-
-### CLI / Terminal UI
-
-| Library | Notes |
-|---|---|
-| **rich** 13.7.0 | Tables / progress / coloured output |
-| **click** 8.1.7 + **typer** + **cloup** 3.0.5 + **shellingham** | CLI frameworks |
-| **textual** | TUI framework |
-| **tqdm** 4.67.3 | Progress bars |
-| **colorama** | ANSI on every platform |
-| **markdown_it** + **mdurl** | Markdown parser |
-| **pygments** 2.18.0 | Syntax highlighting (500+ languages) |
-| **plotext** 5.3.2 | Plot charts directly in the terminal (no matplotlib) |
-| **ftfy** 6.3.1 | Fix mojibake / broken unicode text |
-
-### Testing / Linting / Dev Tools
-
-| Library | Notes |
-|---|---|
-| **pytest** + **_pytest** + **pluggy** + **iniconfig** | Test framework |
-| **hypothesis** + **sortedcontainers** | Property-based testing |
-| **black** + **blib2to3** + **isort** + **mypy** + **pyflakes** | Formatters / linters / type checker |
-| **tomli** + **tomli_w** + **pytokens** + **pathspec** + **annotated_doc** | Common dev-tool deps |
-
-### Templating / Utility
-
-| Library | Notes |
-|---|---|
-| **jinja2** 3.1.6 + **markupsafe** 3.0.3 | Templating (HF Trainer chat templates use this) |
-| **regex** 2024.11.6 | Extended regex (tokenizers use this) |
-| **packaging** 26.0 | Version / requirement parsing |
-| **more_itertools** + **lark** | Iteration + grammar parsing |
-| **dill** 0.4.1 | Extended pickling — closures, lambdas, whole sessions |
-| **pyparsing** 3.3.2 | PEG-style grammar parsing |
-| **wcwidth** 0.7.0 | Terminal display width of unicode characters |
-| **dateutil** + **pytz** + **pendulum** | Date / time |
-| **attr** / **attrs** 24.2.0 + **cattrs** | Attribute classes / converters |
-| **platformdirs** | OS-specific paths |
-| **humanize** + **tabulate** | Output formatting |
-| **watchdog** 4.0.0 | File system watcher |
-| **psutil** 5.9.8 (iOS shim) | Process / system info |
-| **pycparser** 2.22 | C parser (cffi dep) |
-| **pip** 26.0.1 + **wheel** + **setuptools** + **pkg_resources** + **_distutils_hack** | Package management — `pip` patched to install pure-Python pkgs on-device |
-
-### CodeBench-specific runtime helpers
-
-| Module | Purpose |
-|---|---|
-| **offlinai_ai** | RAG + embedding utilities |
-| **_torch_metal_bridge** | PyTorch → Metal GPU dispatch (auto-installed) |
-| **_cb_training** | OOMGuard, MemoryProfiler, KVCache, TrainingMonitor, AutoCheckpointer (opt-in, for manual loops) |
-| **_cb_background** | iOS background-time extension (auto-enabled) |
-| **_cb_gguf_export** | PyTorch LoRA → GGUF converter for llama.cpp inference |
-
-### Interpreters (no Python runtime — pure-Swift)
-
-| Language | Lines | Description |
-|---|---|---|
-| **C** | ~3,450 | C89/C99/C23, 48 operators, structs, pointers, preprocessor |
-| **C++** | ~4,200 | Classes, STL, templates, inheritance |
-| **Fortran** | ~4,100 | Modules, allocatable arrays, 45+ intrinsics |
 
 ---
 
