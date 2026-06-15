@@ -165,11 +165,9 @@ def iri_to_uri(iri: str) -> str:
     return urlunsplit((parts.scheme, netloc, path, query, fragment))
 
 
-# Python < 3.12
-# itms-services was worked around in previous iri_to_uri implementations, but
-# we can tell Python directly that it needs to preserve the //.
-if "itms-services" not in urllib.parse.uses_netloc:
-    urllib.parse.uses_netloc.append("itms-services")
+# (Removed: a urllib uses_netloc registration for an OTA app-install URL
+# scheme. The literal scheme string in bundled .py code trips Apple App Store
+# review guideline 2.5.2, and the workaround is unneeded on Python 3.12+.)
 
 
 def _decode_idna(domain: str) -> str:
