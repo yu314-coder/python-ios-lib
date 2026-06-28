@@ -244,6 +244,9 @@ let package = Package(
         .library(name: "Transformers",
                  targets: ["Transformers", "PyTorch", "Tokenizers"]),
 
+        // ── 3D content creation: Blender `bpy` ──
+        .library(name: "Blender",      targets: ["Blender"]),
+
         // ── GPU acceleration on Apple Metal ──
         // Also published as standalone repos:
         //   github.com/yu314-coder/cairometal  (pycairo-compatible GPU cairo)
@@ -862,6 +865,26 @@ let package = Package(
             .copy("regex-2024.11.6.dist-info"),
             .copy("torch-2.1.0.dist-info"),
             .copy("typing_extensions-4.15.0.dist-info"),
+            ]
+        ),
+
+        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        //  3D — Blender `bpy` (Cycles + Metal GPU, native iOS arm64)
+        //  (first public build of Blender's bpy module on iOS)
+        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        // `import bpy` → Cycles (SVM + Metal GPU) with OpenImageDenoise,
+        // OpenSubdiv / OpenVDB / Alembic / Bullet / Mantaflow / FFTW ocean
+        // and the full modifier stack. The 161 MB module binary
+        // (bpy/__init__.so) ships LZMA-compressed as
+        // bpy_dylib/__init__.so.applzma — GitHub rejects raw blobs over
+        // 100 MB and Git LFS is incompatible with SwiftPM's checkout — and is
+        // materialized at first use via BlenderLib.bootstrap() (see Blender.swift).
+        .target(
+            name: "Blender",
+            path: "Sources/Blender",
+            resources: [
+                .copy("bpy"),
+                .copy("bpy_dylib"),
             ]
         ),
 

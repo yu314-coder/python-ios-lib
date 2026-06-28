@@ -1,6 +1,8 @@
 # python-ios-lib
 
-Full Python 3.14 runtime for iOS/iPadOS with **30+ offline libraries including real PyTorch + HuggingFace transformers + Rust tokenizers**. No JIT, App Store safe.
+Full Python 3.14 runtime for iOS/iPadOS with **30+ offline libraries including real PyTorch + HuggingFace transformers + Rust tokenizers + Blender `bpy`**. No JIT, App Store safe.
+
+> **New:** Full `import bpy` — the **complete Blender module** cross-compiled for iOS arm64. Render with **Cycles on the Apple GPU (Metal) + OpenImageDenoise**, plus OpenSubdiv / OpenVDB / Alembic / Bullet / Mantaflow and the full modifier stack. First public iOS build. In CodeBench, saving a `.blend` auto-opens an interactive WebGL 3D preview. [doc](docs/blender-bpy.md)
 
 > **New:** Full `import torch` (v2.1), `import transformers` (v4.41), and `import tokenizers` (v0.19, real Rust cross-compile) all work on-device. Train and fine-tune transformer models on an iPad with zero network. [Full integration test: 24/24 passing.](docs/transformers.md#test-coverage)
 
@@ -114,6 +116,12 @@ The `app_packages/site-packages/` bundle ships **~180 Python packages** — ever
 | **screeninfo** | 0.8.1 |
 | **svgelements** | 1.9.6 |
 | **pathops** | bundled |
+
+### 3D content creation — Blender
+
+| Library | Version | Notes |
+|---|---|---|
+| **bpy** (Blender) | 5.3.0 | Full `import bpy` — **Cycles on the Apple GPU (Metal) + OpenImageDenoise**, plus OpenSubdiv / OpenVDB / Alembic / Bullet / Mantaflow / FFTW ocean / Freestyle and the full modifier stack. First public iOS build. In CodeBench, saving a `.blend` auto-opens an interactive WebGL 3D preview. [doc](docs/blender-bpy.md) |
 
 ### Media — image / video / audio / documents
 
@@ -1125,6 +1133,12 @@ notes, limitations, troubleshooting, and build provenance.
 | **manim** | [docs/manim.md](docs/manim.md) |
 | **manim deps** (pathops + mapbox_earcut + isosurfaces) | [docs/manim-deps.md](docs/manim-deps.md) |
 | **manimpango** | [docs/manimpango.md](docs/manimpango.md) |
+
+### 3D content creation
+
+| Library | Doc |
+|---|---|
+| **bpy** (Blender — Cycles on Metal GPU + OpenImageDenoise) | [docs/blender-bpy.md](docs/blender-bpy.md) |
 
 ### Media (image / audio / video)
 

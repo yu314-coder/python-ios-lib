@@ -139,6 +139,12 @@ psutil_ios/psutil-*.tar.gz
 app_packages/site-packages/torch/lib/libtorch_python.dylib
 Sources/PyTorch/torch/lib/libtorch_python.dylib
 
+# bpy (Blender) module binary (161MB, exceeds GitHub's per-file limit; ships
+# LZMA-compressed as Sources/Blender/bpy_dylib/__init__.so.applzma and is
+# materialized at runtime by BlenderLib.bootstrap() — see Sources/Blender)
+app_packages/site-packages/bpy/__init__.so
+Sources/Blender/bpy/__init__.so
+
 # Local lib-build scratch trees (rebuild via per-lib scripts)
 cartopy_ios/
 pyarrow_ios/
