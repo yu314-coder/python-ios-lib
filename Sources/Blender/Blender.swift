@@ -112,7 +112,7 @@ public enum BlenderLib {
     /// Expected size of the decompressed `bpy/__init__.so`. Hard-coded so we
     /// can cheaply detect partial / corrupted files without re-decompressing.
     /// Re-run `scripts/repack-bpy-so.swift` and update this if bpy is rebuilt.
-    private static let expectedModuleSize: UInt64 = 168_770_064
+    private static let expectedModuleSize: UInt64 = 168_770_160
 
     /// LZMA decompression via `Compression.framework` (zero added deps — the
     /// framework ships in iOS 9+). The bundled blob is a raw
