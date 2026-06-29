@@ -73,16 +73,31 @@ prefs = bpy.context.preferences.addons["cycles"].preferences
 prefs.compute_device_type = "METAL"
 (prefs.refresh_devices if hasattr(prefs, "refresh_devices") else prefs.get_devices)()
 for d in prefs.devices: d.use = True
+prefs.metalrt = "OFF"                     # iOS: skip the hardware-RT path
+prefs.kernel_optimization_level = "OFF"   # iOS: skip the slow specialized kernel compile
 scene.cycles.device = "GPU"
 scene.cycles.samples = 24
 scene.cycles.use_denoising = True
 scene.cycles.denoiser = "OPENIMAGEDENOISE"
 scene.render.resolution_x, scene.render.resolution_y = 480, 360
-scene.render.filepath = "/tmp/render.png"
+scene.render.filepath = "render.png"      # NB: /tmp is read-only on iOS — use a relative path or ~/Documents
 bpy.ops.render.render(write_still=True)
 ```
 
-A Mac-M4 / iPad-M-series GPU renders a subdivided Suzanne at 480×360 in ~1.7 s.
+**GPU on a real device:** the Metal path works (the iOS-only
+`setShouldMaximizeConcurrentCompilation:` unrecognized-selector crash is patched
+in the module). But Cycles compiles its Metal kernels on the **first render of a
+session (~3 min, serial)** — there is no progress callback during that compile;
+kernels then cache and later renders run in ~2–3 s. Set `prefs.metalrt = "OFF"`
+and `prefs.kernel_optimization_level = "OFF"` (above) to keep that first compile
+manageable. **CPU** (`scene.cycles.device = "CPU"`) has no compile wait and is a
+good default for quick stills — the full 16-module gallery + a CPU render
+finishes in ~16 s on an M3.
+
+In CodeBench you usually don't write any of the render/preview plumbing: the
+bundled startup handler shows a **tqdm progress bar** during every render and
+opens the **interactive viewer** (orbit + a "Rendered" toggle) automatically —
+see the next section.
 
 ---
 
