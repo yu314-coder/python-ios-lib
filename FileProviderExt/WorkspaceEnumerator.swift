@@ -49,8 +49,25 @@ final class WorkspaceEnumerator: NSObject, NSFileProviderEnumerator {
     ///     `.fp_diag` and the container metadata. None are user data.
     static let anchorVolatile: Set<String> = [
         "log.txt", "shell_bootstrap.txt", "fp_debug.log", ".symbol_index.json",
+        "conversations.json",  // AI history — rewritten on every message; would churn the Documents anchor
         "Library", "File Provider Storage", ".fp_diag", ".fp_snapshots",
         ".com.apple.mobile_container_manager.metadata.plist",
+    ]
+
+    /// Top-level entries HIDDEN from the Location root. The Location is rooted at
+    /// the App Group container, whose `Library` holds `Caches/pycache` — Python's
+    /// byte-code cache that mirrors the full bundle path
+    /// (`…/CodeBench.app/{python,app_packages}`) for EVERY historical app-install
+    /// UUID, i.e. thousands of files times dozens of installs. Excluding `Library`
+    /// from the anchor stopped it *churning* the hash, but the replicated engine
+    /// still *recursed* into it and drowned → permanent "Paused". Hiding these at
+    /// the root means the engine never sees them as children, so it never walks
+    /// them. Only the user's `Documents` (Workspace · ToolOutputs · Imported) and
+    /// real user content remain visible — matching what people expect in Files.
+    static let rootHidden: Set<String> = [
+        "Library", "tmp", "SystemData", ".fp_diag", ".fp_snapshots",
+        "File Provider Storage", ".com.apple.mobile_container_manager.metadata.plist",
+        ".Trash",
     ]
 
     /// The directory this enumerator lists. The working set maps to the File
@@ -64,12 +81,16 @@ final class WorkspaceEnumerator: NSObject, NSFileProviderEnumerator {
     /// Direct children, sorted by name (stable order across pages), capped.
     private func childURLs() -> [URL] {
         guard let dir = dirURL else { return [] }
-        // Show EVERYTHING the directory holds — including the container's
-        // `File Provider Storage` and the user's dotfiles. (The iOS Files app
-        // still hides dot-prefixed names itself; the terminal shows them via
-        // `ls -a`. Nothing is filtered here.)
         var entries = (try? FileManager.default.contentsOfDirectory(
             at: dir, includingPropertiesForKeys: nil, options: [])) ?? []
+        // At the Location ROOT (the App Group container, also what the working
+        // set maps to), drop the system/cache dirs in `rootHidden`. Otherwise
+        // the replicated engine recurses into `Library/Caches/pycache` — a
+        // byte-code cache mirroring every app-install's bundle path — and
+        // drowns into a permanent "Paused". Deeper folders are listed in full.
+        if dir.standardizedFileURL.path == AppPaths.fileProviderRootURL.standardizedFileURL.path {
+            entries = entries.filter { !Self.rootHidden.contains($0.lastPathComponent) }
+        }
         entries.sort { $0.lastPathComponent < $1.lastPathComponent }
         if entries.count > Self.maxItems {
             NSLog("[FileProvider] %ld items in %@ exceeds cap %d — listing first %d",
