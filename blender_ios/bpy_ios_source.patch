@@ -1,0 +1,224 @@
+# iOS arm64 source patches for the Blender (bpy) headless Python module.
+# Base: upstream Blender commit c9dd766c.
+# Apply from the Blender source root:   git apply bpy_ios_source.patch
+#                              (or:)    patch -p1 < bpy_ios_source.patch
+#
+# context.cc    - Headless bpy context. Resolve active_object / object /
+#                 selected_objects / selected_editable_objects / visible_objects /
+#                 objects from the active view layer when there is no screen/editor
+#                 context, so desktop bpy scripts run unmodified on iOS; and relax
+#                 the main-thread guard under WITH_PYTHON_MODULE so bpy.context.*
+#                 works when user code runs on a worker thread.
+# movie_util.cc - MOV_thread_count() returns 1 on iOS; the FFmpeg encoder thread
+#                 teardown crashes with >1 on this platform.
+# movie_write.cc- Skip the hardware pixel format AV_PIX_FMT_VIDEOTOOLBOX (advertised
+#                 first by the HW encoders) and pick the first software format, so
+#                 h264_videotoolbox / hevc_videotoolbox actually encode.
+diff --git a/source/blender/blenkernel/intern/context.cc b/source/blender/blenkernel/intern/context.cc
+--- a/source/blender/blenkernel/intern/context.cc
++++ b/source/blender/blenkernel/intern/context.cc
+@@ -34,6 +34,7 @@
+ 
+ #include "BKE_context.hh"
+ #include "BKE_layer.hh"
++#include "BKE_library.hh" /* ID_IS_EDITABLE() — BASE_SELECTED_EDITABLE in the headless ctx fallback */
+ #include "BKE_main.hh"
+ #include "BKE_scene.hh"
+ #include "BKE_screen.hh"
+@@ -476,6 +477,63 @@
+   return return_data;
+ }
+ 
++/* Headless object-context fallback for `ctx_data_get` (below). When there is no
++ * editor context (region/area/screen) to provide them — e.g. inside the `bpy`
++ * Python module on a headless build — resolve the common object members from the
++ * active view layer, so that `bpy.context.active_object` / `.selected_objects` /
++ * `.selected_editable_objects` / `.visible_objects` / `.objects` work the same as
++ * in a GUI session. There is no View3D here, so the BASE_* macros fall back to
++ * the view-layer visibility flags. */
++static eContextResult ctx_data_view_layer_object_fallback(const bContext *C,
++                                                          const char *member,
++                                                          bContextDataResult *result)
++{
++  Scene *scene = CTX_data_scene(C);
++  if (scene == nullptr) {
++    return CTX_RESULT_MEMBER_NOT_FOUND;
++  }
++  ViewLayer *view_layer = CTX_data_view_layer(C);
++  if (view_layer == nullptr) {
++    return CTX_RESULT_MEMBER_NOT_FOUND;
++  }
++  const Main *bmain = CTX_data_main(C);
++  BKE_view_layer_synced_ensure(*bmain, scene, view_layer);
++
++  if (STREQ(member, "active_object") || STREQ(member, "object")) {
++    Object *obact = BKE_view_layer_active_object_get(view_layer);
++    if (obact != nullptr) {
++      CTX_data_id_pointer_set(result, &obact->id);
++    }
++    return CTX_RESULT_OK;
++  }
++
++  const bool want_selected = STREQ(member, "selected_objects");
++  const bool want_selected_editable = STREQ(member, "selected_editable_objects");
++  const bool want_visible = STREQ(member, "visible_objects");
++  const bool want_all = STREQ(member, "objects");
++  if (want_selected || want_selected_editable || want_visible || want_all) {
++    for (Base &base : *BKE_view_layer_object_bases_get(view_layer)) {
++      bool add = want_all;
++      if (want_selected) {
++        add = BASE_SELECTED(nullptr, &base);
++      }
++      else if (want_selected_editable) {
++        add = BASE_SELECTED_EDITABLE(nullptr, &base);
++      }
++      else if (want_visible) {
++        add = BASE_VISIBLE(nullptr, &base);
++      }
++      if (add) {
++        CTX_data_id_list_add(result, &base.object->id);
++      }
++    }
++    CTX_data_type_set(result, ContextDataType::Collection);
++    return CTX_RESULT_OK;
++  }
++
++  return CTX_RESULT_MEMBER_NOT_FOUND;
++}
++
+ static eContextResult ctx_data_get(bContext *C, const char *member, bContextDataResult *result)
+ {
+   bScreen *screen;
+@@ -498,11 +556,24 @@
+   }
+ #endif
+ 
++#ifdef WITH_PYTHON_MODULE
++  /* Built as the `bpy` Python module there is no Blender main loop or UI thread:
++   * the embedding application drives all data access and commonly runs Python on
++   * a worker thread (e.g. to keep its own UI responsive). With no concurrent UI
++   * to race against, context access must be allowed from any thread — otherwise
++   * `bpy.context.active_object` (and every other context member) raises
++   * AttributeError whenever the host happens to run the script off the main
++   * thread. An explicit access-deny is still honoured. */
++  if (C->data.ui_data_access_deny) {
++    return CTX_RESULT_MEMBER_NOT_FOUND;
++  }
++#else
+   /* Don't allow UI context access from non-main threads or when access has been explicitly denied.
+    */
+   if (!BLI_thread_is_main() || C->data.ui_data_access_deny) {
+     return CTX_RESULT_MEMBER_NOT_FOUND;
+   }
++#endif
+ 
+   /* we check recursion to ensure that we do not get infinite
+    * loops requesting data from ourselves in a context callback */
+@@ -558,6 +629,17 @@
+       if (ret) {
+         done = -(-ret | -done);
+       }
++    }
++  }
++
++  /* Headless fallback: with no region/area/screen context to provide them (e.g.
++   * the `bpy` Python module), resolve common object members from the active view
++   * layer so headless scripts behave like a GUI session. */
++  if (done != 1 && recursion < 5) {
++    C->data.recursion = 5;
++    ret = ctx_data_view_layer_object_fallback(C, member, result);
++    if (ret) {
++      done = -(-ret | -done);
+     }
+   }
+ 
+diff --git a/source/blender/imbuf/movie/intern/movie_util.cc b/source/blender/imbuf/movie/intern/movie_util.cc
+--- a/source/blender/imbuf/movie/intern/movie_util.cc
++++ b/source/blender/imbuf/movie/intern/movie_util.cc
+@@ -20,6 +20,10 @@
+ #include "movie_util.hh"
+ #include <mutex>
+ 
++#if defined(__APPLE__)
++#  include <TargetConditionals.h> /* TARGET_OS_IPHONE — iOS single-threaded codec path */
++#endif
++
+ #ifdef WITH_FFMPEG
+ #  include "BLI_string.hh"
+ 
+@@ -551,8 +555,16 @@
+ 
+ int MOV_thread_count()
+ {
++#if defined(__APPLE__) && TARGET_OS_IPHONE
++  /* iOS: ffmpeg's encoder slice/frame worker threads crash the process when torn
++   * down by avcodec_free_context() at the end of a movie write (frames encode
++   * fine, then finalize aborts). Run the movie codecs single-threaded on-device
++   * to avoid the faulty thread teardown — correctness over encode speed. */
++  return 1;
++#else
+   /* ffmpeg does not recommend thread counts above 16. */
+   return std::min(BLI_system_thread_count(), 16);
++#endif
+ }
+ 
+ #endif /* WITH_FFMPEG */
+diff --git a/source/blender/imbuf/movie/intern/movie_write.cc b/source/blender/imbuf/movie/intern/movie_write.cc
+--- a/source/blender/imbuf/movie/intern/movie_write.cc
++++ b/source/blender/imbuf/movie/intern/movie_write.cc
+@@ -1054,6 +1054,19 @@
+   const enum AVPixelFormat *pix_fmts = ffmpeg_get_pix_fmts(c, codec);
+   if (pix_fmts) {
+     c->pix_fmt = pix_fmts[0];
++    /* Hardware encoders (e.g. h264_videotoolbox / hevc_videotoolbox on Apple
++     * platforms, the only H.264/H.265 encoders available on iOS) advertise their
++     * hardware-surface format (AV_PIX_FMT_VIDEOTOOLBOX) first. Blender feeds
++     * software frames and never sets up a hw_frames_ctx, so selecting the
++     * hardware format crashes the encoder on open/first-frame. Pick the first
++     * non-hardware (software) format the encoder supports instead. */
++    for (int i = 0; pix_fmts[i] != AV_PIX_FMT_NONE; i++) {
++      const AVPixFmtDescriptor *desc = av_pix_fmt_desc_get(pix_fmts[i]);
++      if (desc && (desc->flags & AV_PIX_FMT_FLAG_HWACCEL) == 0) {
++        c->pix_fmt = pix_fmts[i];
++        break;
++      }
++    }
+   }
+   else {
+     /* makes HuffYUV happy ... */
+@@ -1199,6 +1212,35 @@
+     }
+     else {
+       CLOG_ERROR(&LOG, "ffmpeg: invalid profile %d", context->ffmpeg_profile);
++    }
++  }
++
++  /* Final pixel-format safety net: after all the codec-specific overrides above,
++   * make sure c->pix_fmt is a non-hardware format that the encoder actually
++   * supports. On iOS the only H.264/H.265 encoders are hardware (videotoolbox),
++   * which are 4:2:0-only and reject both their own hardware-surface format and
++   * the 4:4:4 lossless override (default crf == FFM_CRF_LOSSLESS == 0) — either
++   * crashes the encoder. Fall back to the first supported software format. */
++  if (pix_fmts) {
++    const AVPixFmtDescriptor *cur_desc = av_pix_fmt_desc_get(c->pix_fmt);
++    bool pix_ok = (cur_desc && (cur_desc->flags & AV_PIX_FMT_FLAG_HWACCEL) == 0);
++    if (pix_ok) {
++      pix_ok = false;
++      for (int i = 0; pix_fmts[i] != AV_PIX_FMT_NONE; i++) {
++        if (pix_fmts[i] == c->pix_fmt) {
++          pix_ok = true;
++          break;
++        }
++      }
++    }
++    if (!pix_ok) {
++      for (int i = 0; pix_fmts[i] != AV_PIX_FMT_NONE; i++) {
++        const AVPixFmtDescriptor *desc = av_pix_fmt_desc_get(pix_fmts[i]);
++        if (desc && (desc->flags & AV_PIX_FMT_FLAG_HWACCEL) == 0) {
++          c->pix_fmt = pix_fmts[i];
++          break;
++        }
++      }
+     }
+   }
+ 
