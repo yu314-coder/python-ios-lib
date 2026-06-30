@@ -29,13 +29,23 @@ cmake -S blender -B build/blender -G Ninja \
   -DWITH_OPENIMAGEIO=ON -DWITH_OPENCOLORIO=ON -DWITH_IMAGE_OPENEXR=ON -DWITH_TBB=ON \
   -DWITH_CYCLES_OSL=OFF \
   -DWITH_RUBBERBAND=OFF -DWITH_LIBMV=OFF \
+  `# libmv OFF: needs ceres-solver, which rejects Blender's Eigen 5.0.1 (API clash)` \
   -DWITH_TRACY=OFF \
-  -DWITH_USD=OFF -DWITH_HYDRA=OFF -DWITH_MATERIALX=OFF \
+  -DWITH_USD=ON -DWITH_HYDRA=OFF -DWITH_MATERIALX=ON \
+  `# USD = OpenUSD 26.03 built minimal-for-iOS (no boost: python+openvdb off; no GL;` \
+  `# imaging/usdImaging + MaterialX support ON; monolithic libusd_ms.dylib). Hydra OFF` \
+  `# (needs a live GPU context). See bpy_ios_source.patch for the io/usd compile guards.` \
   \
   -DWITH_CODEC_FFMPEG=ON -DWITH_CODEC_SNDFILE=OFF -DWITH_JACK=OFF \
-  -DWITH_PULSEAUDIO=OFF -DWITH_COREAUDIO=OFF -DWITH_OPENAL=OFF -DWITH_SDL=OFF -DWITH_AUDASPACE=OFF \
+  -DWITH_PULSEAUDIO=OFF -DWITH_COREAUDIO=OFF -DWITH_OPENAL=OFF -DWITH_SDL=OFF -DWITH_AUDASPACE=ON \
+  `# audaspace ON gives the 'aud' module; backends OFF (no playback) is fine headless.` \
+  `# The aud bindings need numpy C headers — point at the bundled iOS numpy:` \
+  -DPYTHON_NUMPY_PATH=/Volumes/D/OfflinAi/numpy_ios/headers-ios-arm64 \
+  -DPYTHON_NUMPY_INCLUDE_DIRS=/Volumes/D/OfflinAi/numpy_ios/headers-ios-arm64/numpy/_core/include \
   -DWITH_INPUT_NDOF=OFF -DWITH_XR_OPENXR=OFF -DWITH_BOOST=OFF \
-  -DWITH_FRIBIDI=OFF -DWITH_INTERNATIONAL=OFF \
+  -DWITH_FRIBIDI=ON -DWITH_INTERNATIONAL=ON \
+  `# i18n: fribidi cross-built (src/fribidi-1.0.16, meson); .mo built with a host msgfmt` \
+  `# shim (build/blender/bin/msgfmt.app/msgfmt) since the cross msgfmt can't run on host.` \
   -DWITH_BUILDINFO=OFF \
   -DWITH_IMAGE_CINEON=ON \
   \
