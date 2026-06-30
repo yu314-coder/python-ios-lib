@@ -33,9 +33,9 @@ network, no JIT. First public build of Blender's `bpy` on iOS.
 | **HarfBuzz / FreeType** | ✅ | Text objects |
 | **OBJ / PLY / STL / glTF** | ✅ | Mesh I/O (glTF without draco — see below) |
 | **Geometry nodes** | ✅ | Full node graph |
+| **FFmpeg video** | ✅ | H.264 (Apple VideoToolbox) · MPEG-4 · FFV1 · QTRLE · … — see [Video output](#video-output-ffmpeg) |
 | **Cycles OSL** | ❌ | Needs LLVM JIT — forbidden on iOS |
 | **USD** | ❌ | Deferred (very large) |
-| **FFmpeg video** | ❌ | Deferred (`bpy.app.build_options.codec_ffmpeg == False`) |
 
 The definitive runtime check for a compiled-in feature is
 `bpy.app.build_options.<name>` (e.g. `.cycles`, `.openvdb`, `.bullet`). **OIDN is
@@ -98,6 +98,44 @@ In CodeBench you usually don't write any of the render/preview plumbing: the
 bundled startup handler shows a **tqdm progress bar** during every render and
 opens the **interactive viewer** (orbit + a "Rendered" toggle) automatically —
 see the next section.
+
+---
+
+## Video output (FFmpeg)
+
+Render an animation straight to a video file. **Blender 5.x gotcha:** set
+`image_settings.media_type = 'VIDEO'` *before* `file_format = 'FFMPEG'` — the
+file-format enum only exposes the movie formats once the media type is video.
+
+```python
+scene = bpy.data.scenes[0]
+scene.render.image_settings.media_type = "VIDEO"   # ← must come first
+scene.render.image_settings.file_format = "FFMPEG"
+scene.render.ffmpeg.format = "MPEG4"                # container (.mp4)
+scene.render.ffmpeg.codec  = "H264"                 # see table below
+scene.render.filepath = "anim"                      # ~/Documents, NOT /tmp
+scene.frame_start, scene.frame_end = 1, 48
+bpy.ops.render.render(animation=True)               # → anim0001-0048.mp4
+```
+
+**Codecs verified on-device (iPad):**
+
+| Codec | Encoder | Notes |
+|-------|---------|-------|
+| `H264` / `H265` | Apple **VideoToolbox** (hardware) | standard compact `.mp4`; 4:2:0, lossy |
+| `MPEG4` | native libavcodec | widely playable `.mp4` |
+| `FFV1` | native libavcodec | lossless (use the `MKV` container) |
+| `QTRLE` / `PNG` / `HUFFYUV` | native | lossless / intra-only |
+
+iOS specifics, handled for you in the module:
+
+- **Encoding is single-threaded** on iOS — ffmpeg's encoder worker threads abort
+  on teardown on-device, so the movie codecs run on one thread (slower, stable).
+- **H.264/H.265 use the hardware VideoToolbox encoder** (no `libx264` is bundled);
+  the module feeds it a software 4:2:0 frame, so the *default lossless* setting is
+  high-quality lossy for those two — pick `FFV1` for true lossless.
+- **Audio is not muxed yet** (no audaspace) — output is video-only.
+- Confirm with `bpy.app.build_options.codec_ffmpeg` (`True`).
 
 ---
 
@@ -178,5 +216,4 @@ harvested from the build, recompiled host-native, and re-imported as
 Bullet, Mantaflow, FFTW, GMP/manifold, …) were rebuilt for iOS arm64. Full
 build notes live in the project's `blender_ios/` tree.
 
-**Deferred:** OSL (LLVM JIT, banned on iOS), USD (size), FFmpeg video
-(headers-only link), libmv (Eigen version clash).
+**Deferred:** OSL (LLVM JIT, banned on iOS), USD (size), libmv (Eigen version clash).
