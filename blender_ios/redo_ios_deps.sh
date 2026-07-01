@@ -39,9 +39,13 @@ harvest() {
   echo "  harvested $dest (platform=$plat $([ "$plat" = 2 ] && echo iOS✓ || echo BAD))"
 }
 
-# --- jpeg: reuse the known-iOS one from pillow_ios (same libjpeg-turbo family) ---
-cp /Volumes/D/OfflinAi/pillow_ios/install/lib/libjpeg.a "$PREFIX/lib/libjpeg.a"
-echo "jpeg: copied iOS libjpeg from pillow_ios (platform=$(otool -l "$PREFIX/lib/libjpeg.a" | grep -A3 LC_BUILD_VERSION | grep platform | head -1 | awk '{print $2}'))"
+# --- jpeg: build libjpeg-turbo 3.1.1 at JPEG_LIB_VERSION 80 to MATCH the v80 headers in
+# deps-install/include. Do NOT copy pillow_ios's libjpeg.a here: it is v62 (libjpeg's
+# DEFAULT ABI, struct 520), and its jpeg_CreateCompress rejects the version-80 callers
+# baked into Blender's format_jpeg.cc, OpenImageIO and libtiff with JERR_BAD_LIB_VERSION
+# -> JPEG save fails silently ("cannot save ...", errno 0; the output file is removed).
+# build_libjpeg_ios.sh builds v80 and self-checks the ABI (0x50/0x248) before installing.
+./build_libjpeg_ios.sh
 
 build_dep fmt fmt-12.1.0 -DFMT_TEST=OFF -DFMT_DOC=OFF -DFMT_INSTALL=ON
 harvest fmt "libfmt.a" libfmt.a

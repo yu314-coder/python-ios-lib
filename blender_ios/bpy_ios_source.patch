@@ -1630,3 +1630,22 @@ new file mode 100644
 +
 +# Same as `CFBundleIdentifier` in Info.plist.
 +set(CMAKE_XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "org.blenderfoundation.blender")
+diff --git a/source/blender/imbuf/intern/format_jpeg.cc b/source/blender/imbuf/intern/format_jpeg.cc
+index a97a8196..bfd79ce4 100644
+--- a/source/blender/imbuf/intern/format_jpeg.cc
++++ b/source/blender/imbuf/intern/format_jpeg.cc
+@@ -87,6 +87,14 @@ static void jpeg_error(j_common_ptr cinfo)
+   /* Always display the message */
+   (*cinfo->err->output_message)(cinfo);
+ 
++  /* On iOS the default output_message writes to stderr, which the host app does not
++   * surface, so a libjpeg fatal used to reach the user as only the generic "cannot save"
++   * report with "Undefined error: 0". Format libjpeg's real reason and route it through
++   * CLOG so the actual cause (e.g. a library/header ABI mismatch) is visible in the log. */
++  char jpeg_error_msg[JMSG_LENGTH_MAX];
++  (*cinfo->err->format_message)(cinfo, jpeg_error_msg);
++  CLOG_ERROR(&LOG, "libjpeg fatal: %s", jpeg_error_msg);
++
+   /* Let the memory manager delete any temp files before we die */
+   jpeg_destroy(cinfo);
+ 
