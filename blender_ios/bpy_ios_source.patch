@@ -17,7 +17,12 @@
 # usd_hook.cc     - stub the USD <-> Python hook bridge: iOS OpenUSD is built
 #                   without its Python bindings (pxr/external/boost/python), so
 #                   USD import/export work while script-registered USDHook
-#                   callbacks no-op. (Original kept as usd_hook.cc.ios-orig.)
+#                   callbacks no-op. Stubs BOTH the internal converters AND the
+#                   public registration API (USD_register_hook / _unregister_hook
+#                   / _find_hook_name) that the USDHook RNA type links against --
+#                   omitting the latter makes `import bpy` fail at runtime with an
+#                   undefined USD_register_hook symbol. (Original kept as
+#                   usd_hook.cc.ios-orig.)
 # messages_apple.mm - Cocoa -> Foundation (NSLocale lives in Foundation; iOS has
 #                   no Cocoa/AppKit, and the body is #if'd out under WITH_HEADLESS).
 diff --git a/source/blender/blenkernel/intern/context.cc b/source/blender/blenkernel/intern/context.cc
@@ -31,10 +36,12 @@ diff --git a/source/blender/blenkernel/intern/context.cc b/source/blender/blenke
  #include "BKE_main.hh"
  #include "BKE_scene.hh"
  #include "BKE_screen.hh"
-@@ -476,6 +477,63 @@
-   return return_data;
- }
+@@ -474,6 +475,63 @@
+   }
  
+   return return_data;
++}
++
 +/* Headless object-context fallback for `ctx_data_get` (below). When there is no
 + * editor context (region/area/screen) to provide them — e.g. inside the `bpy`
 + * Python module on a headless build — resolve the common object members from the
@@ -90,11 +97,9 @@ diff --git a/source/blender/blenkernel/intern/context.cc b/source/blender/blenke
 +  }
 +
 +  return CTX_RESULT_MEMBER_NOT_FOUND;
-+}
-+
+ }
+ 
  static eContextResult ctx_data_get(bContext *C, const char *member, bContextDataResult *result)
- {
-   bScreen *screen;
 @@ -498,11 +556,24 @@
    }
  #endif
@@ -120,13 +125,10 @@ diff --git a/source/blender/blenkernel/intern/context.cc b/source/blender/blenke
  
    /* we check recursion to ensure that we do not get infinite
     * loops requesting data from ourselves in a context callback */
-@@ -558,6 +629,17 @@
-       if (ret) {
-         done = -(-ret | -done);
-       }
-+    }
-+  }
-+
+@@ -561,6 +632,17 @@
+     }
+   }
+ 
 +  /* Headless fallback: with no region/area/screen context to provide them (e.g.
 +   * the `bpy` Python module), resolve common object members from the active view
 +   * layer so headless scripts behave like a GUI session. */
@@ -135,23 +137,26 @@ diff --git a/source/blender/blenkernel/intern/context.cc b/source/blender/blenke
 +    ret = ctx_data_view_layer_object_fallback(C, member, result);
 +    if (ret) {
 +      done = -(-ret | -done);
-     }
-   }
++    }
++  }
++
+   C->data.recursion = recursion;
  
+   eContextResult final_result = eContextResult(done);
 diff --git a/source/blender/imbuf/movie/intern/movie_util.cc b/source/blender/imbuf/movie/intern/movie_util.cc
 --- a/source/blender/imbuf/movie/intern/movie_util.cc
 +++ b/source/blender/imbuf/movie/intern/movie_util.cc
-@@ -20,6 +20,10 @@
+@@ -19,6 +19,10 @@
+ #include "ffmpeg_swscale.hh"
  #include "movie_util.hh"
  #include <mutex>
- 
++
 +#if defined(__APPLE__)
 +#  include <TargetConditionals.h> /* TARGET_OS_IPHONE — iOS single-threaded codec path */
 +#endif
-+
+ 
  #ifdef WITH_FFMPEG
  #  include "BLI_string.hh"
- 
 @@ -551,8 +555,16 @@
  
  int MOV_thread_count()
@@ -192,7 +197,7 @@ diff --git a/source/blender/imbuf/movie/intern/movie_write.cc b/source/blender/i
    }
    else {
      /* makes HuffYUV happy ... */
-@@ -1199,6 +1212,35 @@
+@@ -1199,7 +1212,36 @@
      }
      else {
        CLOG_ERROR(&LOG, "ffmpeg: invalid profile %d", context->ffmpeg_profile);
@@ -216,7 +221,7 @@ diff --git a/source/blender/imbuf/movie/intern/movie_write.cc b/source/blender/i
 +          break;
 +        }
 +      }
-+    }
+     }
 +    if (!pix_ok) {
 +      for (int i = 0; pix_fmts[i] != AV_PIX_FMT_NONE; i++) {
 +        const AVPixFmtDescriptor *desc = av_pix_fmt_desc_get(pix_fmts[i]);
@@ -225,9 +230,10 @@ diff --git a/source/blender/imbuf/movie/intern/movie_write.cc b/source/blender/i
 +          break;
 +        }
 +      }
-     }
++    }
    }
  
+   if (of->oformat->flags & AVFMT_GLOBALHEADER) {
 diff --git a/source/blender/io/usd/intern/usd_precomp.hh b/source/blender/io/usd/intern/usd_precomp.hh
 --- a/source/blender/io/usd/intern/usd_precomp.hh
 +++ b/source/blender/io/usd/intern/usd_precomp.hh
@@ -247,25 +253,36 @@ diff --git a/source/blender/io/usd/intern/usd_precomp.hh b/source/blender/io/usd
 diff --git a/source/blender/io/usd/intern/usd_hook.cc b/source/blender/io/usd/intern/usd_hook.cc
 --- a/source/blender/io/usd/intern/usd_hook.cc
 +++ b/source/blender/io/usd/intern/usd_hook.cc
-@@ -2,684 +2,53 @@
+@@ -2,684 +2,63 @@
   *
   * SPDX-License-Identifier: GPL-2.0-or-later */
  
 -#include "usd_hook.hh"
--
++/** \file
++ * \ingroup edusd
++ *
++ * iOS build: OpenUSD is cross-compiled WITHOUT its Python bindings
++ * (`pxr/external/boost/python`), so the script-facing USD I/O hook bridge is
++ * stubbed out here. Basic USD import/export works; a `USDHook` subclass
++ * registered from a bpy script simply never fires. The full boost::python
++ * implementation is preserved alongside as `usd_hook.cc.ios-orig`.
++ */
+ 
 -#include "usd.hh"
--#include "usd_api_hook.hh"
++#include "usd_hook.hh"
+ #include "usd_api_hook.hh"
 -#include "usd_asset_utils.hh"
 -#include "usd_hash_types.hh"
 -#include "usd_hierarchy_iterator.hh"
 -#include "usd_reader_prim.hh"
 -#include "usd_reader_stage.hh"
 -#include "usd_writer_material.hh"
--
+ 
 -#include "BLI_map.hh"
 -#include "BLI_utildefines.hh"
 -#include "BLI_vector.hh"
--
++namespace blender::io::usd {
+ 
 -#include "BKE_lib_id.hh"
 -#include "BKE_report.hh"
 -
@@ -302,30 +319,45 @@ diff --git a/source/blender/io/usd/intern/usd_hook.cc b/source/blender/io/usd/in
 -
 -/* USD hook type declarations */
 -static USDHookList &hook_list()
--{
++/* Public hook registration API (used by the USDHook RNA type). Stubbed: with no
++ * USD Python bindings, registering a hook is a no-op (the unique_ptr frees it). */
++void USD_register_hook(std::unique_ptr<USDHook> /*hook*/) {}
++void USD_unregister_hook(const USDHook * /*hook*/) {}
++USDHook *USD_find_hook_name(const char /*idname*/[])
+ {
 -  static USDHookList hooks{};
 -  return hooks;
--}
--
++  return nullptr;
+ }
+ 
 -void USD_register_hook(std::unique_ptr<USDHook> hook)
 -{
 -  if (USD_find_hook_name(hook->idname)) {
 -    /* The hook is already in the list. */
 -    return;
 -  }
--
++void register_hook_converters() {}
+ 
 -  /* Add hook type to the list. */
 -  hook_list().push_back(std::move(hook));
 -}
 -
 -void USD_unregister_hook(const USDHook *hook)
--{
++void call_export_hooks(Depsgraph * /*depsgraph*/,
++                       const USDHierarchyIterator * /*iter*/,
++                       ReportList * /*reports*/)
+ {
 -  hook_list().remove_if(
 -      [hook](const std::unique_ptr<USDHook> &item) { return item.get() == hook; });
--}
--
+ }
+ 
 -USDHook *USD_find_hook_name(const char idname[])
--{
++void call_material_export_hooks(pxr::UsdStageRefPtr /*stage*/,
++                                const Material * /*material*/,
++                                const pxr::UsdShadeMaterial & /*usd_material*/,
++                                const USDExportParams & /*export_params*/,
++                                ReportList * /*reports*/)
+ {
 -  /* sanity checks */
 -  if (hook_list().empty() || (idname == nullptr) || (idname[0] == 0)) {
 -    return nullptr;
@@ -337,11 +369,12 @@ diff --git a/source/blender/io/usd/intern/usd_hook.cc b/source/blender/io/usd/in
 -      });
 -
 -  return (hook_iter == hook_list().end()) ? nullptr : hook_iter->get();
--}
--
+ }
+ 
 -/* Convert PointerRNA to a PyObject*. */
 -struct PointerRNAToPython {
--
++void call_import_hooks(USDStageReader * /*archive*/, ReportList * /*reports*/) {}
+ 
 -  /* We pass the argument by value because we need
 -   * to obtain a non-const pointer to it. */
 -  static PyObject *convert(PointerRNA ptr)
@@ -547,7 +580,11 @@ diff --git a/source/blender/io/usd/intern/usd_hook.cc b/source/blender/io/usd/in
 -};
 -
 -void register_hook_converters()
--{
++bool have_material_import_hook(pxr::UsdStageRefPtr /*stage*/,
++                               const pxr::UsdShadeMaterial & /*usd_material*/,
++                               const USDImportParams & /*import_params*/,
++                               ReportList * /*reports*/)
+ {
 -  static bool registered = false;
 -
 -  /* No need to register if there are no hooks. */
@@ -591,11 +628,17 @@ diff --git a/source/blender/io/usd/intern/usd_hook.cc b/source/blender/io/usd/in
 -      .def("import_texture", &USDMaterialImportContext::import_texture);
 -
 -  PyGILState_Release(gilstate);
--}
--
++  return false;
+ }
+ 
 -/* Retrieve and report the current Python error. */
 -static void handle_python_error(USDHook *hook, ReportList *reports)
--{
++bool call_material_import_hooks(pxr::UsdStageRefPtr /*stage*/,
++                                Material * /*material*/,
++                                const pxr::UsdShadeMaterial & /*usd_material*/,
++                                const USDImportParams & /*import_params*/,
++                                ReportList * /*reports*/)
+ {
 -  if (!PyErr_Occurred()) {
 -    return;
 -  }
@@ -606,42 +649,32 @@ diff --git a/source/blender/io/usd/intern/usd_hook.cc b/source/blender/io/usd/in
 -              RPT_ERROR,
 -              "An exception occurred invoking USD hook '%s'. Please see the console for details",
 -              hook->name);
--}
--
++  return false;
+ }
+ 
 -/* Abstract base class to facilitate calling a function with a given
 - * signature defined by the registered USDHook classes.  Subclasses
 - * override virtual methods to specify the hook function name and to
 - * call the hook with the required arguments.
-+/** \file
-+ * \ingroup edusd
-+ *
-+ * iOS build: OpenUSD is cross-compiled WITHOUT its Python bindings
-+ * (`pxr/external/boost/python`), so the script-facing USD I/O hook bridge is
-+ * stubbed out here. Basic USD import/export works; a `USDHook` subclass
-+ * registered from a bpy script simply never fires. The full boost::python
-+ * implementation is preserved alongside as `usd_hook.cc.ios-orig`.
-  */
+- */
 -class USDHookInvoker {
 - private:
 -  ReportList *reports_;
- 
+-
 - public:
 -  explicit USDHookInvoker(ReportList *reports) : reports_(reports) {}
 -  virtual ~USDHookInvoker() = default;
-+#include "usd_hook.hh"
- 
+-
 -  /* Attempt to call the function, if defined by the registered hooks. */
 -  void call()
 -  {
 -    if (hook_list().empty()) {
 -      return;
 -    }
-+namespace blender::io::usd {
- 
+-
 -    PyGILState_STATE gilstate = PyGILState_Ensure();
 -    init_in_gil();
-+void register_hook_converters() {}
- 
+-
 -    /* Iterate over the hooks and invoke the hook function, if it's defined. */
 -    USDHookList::const_iterator hook_iter = hook_list().begin();
 -    while (hook_iter != hook_list().end()) {
@@ -853,29 +886,21 @@ diff --git a/source/blender/io/usd/intern/usd_hook.cc b/source/blender/io/usd/in
 -};
 -
 -void call_export_hooks(Depsgraph *depsgraph, const USDHierarchyIterator *iter, ReportList *reports)
-+void call_export_hooks(Depsgraph * /*depsgraph*/,
-+                       const USDHierarchyIterator * /*iter*/,
-+                       ReportList * /*reports*/)
- {
+-{
 -  if (hook_list().empty()) {
 -    return;
 -  }
 -
 -  OnExportInvoker on_export(iter, depsgraph, reports);
 -  on_export.call();
- }
- 
+-}
+-
 -void call_material_export_hooks(pxr::UsdStageRefPtr stage,
 -                                const Material *material,
 -                                const pxr::UsdShadeMaterial &usd_material,
 -                                const USDExportParams &export_params,
 -                                ReportList *reports)
-+void call_material_export_hooks(pxr::UsdStageRefPtr /*stage*/,
-+                                const Material * /*material*/,
-+                                const pxr::UsdShadeMaterial & /*usd_material*/,
-+                                const USDExportParams & /*export_params*/,
-+                                ReportList * /*reports*/)
- {
+-{
 -  if (hook_list().empty()) {
 -    return;
 -  }
@@ -883,15 +908,14 @@ diff --git a/source/blender/io/usd/intern/usd_hook.cc b/source/blender/io/usd/in
 -  OnMaterialExportInvoker on_material_export(
 -      stage, material, usd_material, export_params, reports);
 -  on_material_export.call();
- }
- 
+-}
+-
 -void call_import_hooks(USDStageReader *archive, ReportList *reports)
 -{
 -  if (hook_list().empty()) {
 -    return;
 -  }
-+void call_import_hooks(USDStageReader * /*archive*/, ReportList * /*reports*/) {}
- 
+-
 -  const Vector<USDPrimReader *> &readers = archive->readers();
 -  const ImportSettings &settings = archive->settings();
 -  ImportedPrimMap prim_map;
@@ -923,11 +947,7 @@ diff --git a/source/blender/io/usd/intern/usd_hook.cc b/source/blender/io/usd/in
 -                               const pxr::UsdShadeMaterial &usd_material,
 -                               const USDImportParams &import_params,
 -                               ReportList *reports)
-+bool have_material_import_hook(pxr::UsdStageRefPtr /*stage*/,
-+                               const pxr::UsdShadeMaterial & /*usd_material*/,
-+                               const USDImportParams & /*import_params*/,
-+                               ReportList * /*reports*/)
- {
+-{
 -  if (hook_list().empty()) {
 -    return false;
 -  }
@@ -936,20 +956,14 @@ diff --git a/source/blender/io/usd/intern/usd_hook.cc b/source/blender/io/usd/in
 -  poll.call();
 -
 -  return poll.result();
-+  return false;
- }
- 
+-}
+-
 -bool call_material_import_hooks(pxr::UsdStageRefPtr stage,
 -                                Material *material,
 -                                const pxr::UsdShadeMaterial &usd_material,
 -                                const USDImportParams &import_params,
 -                                ReportList *reports)
-+bool call_material_import_hooks(pxr::UsdStageRefPtr /*stage*/,
-+                                Material * /*material*/,
-+                                const pxr::UsdShadeMaterial & /*usd_material*/,
-+                                const USDImportParams & /*import_params*/,
-+                                ReportList * /*reports*/)
- {
+-{
 -  if (hook_list().empty()) {
 -    return false;
 -  }
@@ -958,9 +972,8 @@ diff --git a/source/blender/io/usd/intern/usd_hook.cc b/source/blender/io/usd/in
 -      stage, material, usd_material, import_params, reports);
 -  on_material_import.call();
 -  return on_material_import.result();
-+  return false;
- }
- 
+-}
+-
 -}  // namespace io::usd
 -}  // namespace blender
 +}  // namespace blender::io::usd
