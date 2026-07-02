@@ -37,8 +37,8 @@ for everything that doesn't need a GPU windowing backend (see
 | **OpenColorIO** | ✅ | Color management |
 | **Image I/O** | ✅ | **10/10 on-device:** PNG · JPEG · OpenEXR · TIFF · WebP · JPEG2000 · Cineon · DPX · Targa · BMP (+ DDS/HDR read) |
 | **Potrace / Haru** | ✅ | Trace-to-curve / grease-pencil PDF export |
-| **HarfBuzz / FreeType / fribidi** | ✅ | Text objects + full i18n (`bpy.app.translations`, 49 locales — *more than the PyPI wheel, which disables i18n*) |
-| **OBJ / PLY / STL / FBX / glTF** | ✅ | Mesh I/O — FBX via the new C++ `bpy.ops.wm.fbx_*`; glTF **with Draco** (statically linked, round-trip verified) |
+| **HarfBuzz / FreeType / fribidi** | ✅ | Text objects + the i18n machinery (`bpy.app.translations`) is compiled in (PyPI disables it) — but the app bundle ships **no locale catalogs**, so `translations.locales` is empty on device and UI strings stay English |
+| **OBJ / PLY / STL / FBX / glTF** | ✅ | Mesh I/O — FBX via the new C++ `bpy.ops.wm.fbx_*`; glTF exports/imports (Draco/MeshOptimizer compression unavailable on iOS → uncompressed output) |
 | **Geometry nodes** | ✅ | Full node graph |
 | **FFmpeg video** | ✅ | H.264/H.265 (Apple VideoToolbox) · MPEG-4 · FFV1 · QTRLE · … — see [Video output](#video-output-ffmpeg) |
 | **Cycles OSL** | ❌ | Needs LLVM JIT — impossible under iOS W^X; script shader node only (SVM nodes work) |
@@ -57,16 +57,18 @@ Audited against Blender's own wheel build config
 (`build_files/cmake/config/blender_release.cmake` + `bpy_module.cmake`) and
 probed at runtime on device. Things people *assume* are gaps but aren't: the
 **PyPI wheel itself** ships with CoreAudio/OpenAL/JACK playback **off**, NDOF
-off, IME off — and **i18n off** (this build has i18n **on**).
+off, IME off — and **i18n off** (this build compiles i18n in, though no locale
+catalogs ship in the app bundle, so translations are English-only in practice).
 
 | | PyPI wheel (macOS arm64) | this iOS build |
 |---|---|---|
 | Cycles CPU + Metal GPU, Embree, OIDN, guiding | ✅ | ✅ (Metal renders verified on device) |
-| USD + MaterialX, Alembic, all mesh I/O, Draco | ✅ | ✅ |
+| USD + MaterialX, Alembic, all mesh I/O | ✅ | ✅ |
+| glTF **Draco / MeshOptimizer** compression | ✅ | ❌ (glTF exports fine, uncompressed — the add-on reports both "unavailable" on iOS) |
 | Fluid, ocean, bullet, tracking (libmv) | ✅ | ✅ |
 | Image formats / video (ffmpeg) | ✅ | ✅ (H.264/265 via VideoToolbox) |
 | `aud` present, **no playback device** | ✅ | ✅ (identical: null device) |
-| i18n (`bpy.app.translations`) | ❌ off | ✅ **on** (49 locales) |
+| i18n (`bpy.app.translations`) | ❌ off | ⚠️ compiled **on**, but no locale catalogs in the bundle → `locales` empty, English-only (practical parity) |
 | **Eevee render + working `gpu` module** | ✅ (Metal) | ✅ **(Metal offscreen — verified on device)** |
 | Hydra render-delegate framework | ✅ flag on | ❌ off (Storm needs a full GPU windowing stack) |
 | Cycles **OSL** script nodes | ✅ | ❌ (LLVM JIT emits runtime code — forbidden by iOS W^X) |
@@ -88,6 +90,30 @@ off, IME off — and **i18n off** (this build has i18n **on**).
   is fixed; see [GPU module / Eevee](#gpu-module--eevee-metal).)
 - **Add-ons:** the 13 bundled add-ons match PyPI 5.x `addons_core` exactly
   (`io_scene_gltf2`, `io_scene_fbx`, `rigify`, `pose_library`, `node_wrangler`, …).
+- **Verified on a real iPad** (Air 11" M3, 2026-07-03, module-coverage suite):
+  core data/ops, `mathutils` (incl. kdtree/bvhtree/noise), `bmesh`+ops, the
+  modifier stack (OpenSubdiv/Array/Solidify/Boolean), curves/text/metaballs,
+  geometry nodes, animation + drivers + constraints (5.x layered actions),
+  grease pencil, 10/10 image saves, `aud`+sndfile decode, movieclip + tracking
+  API, USD & Alembic round-trips, OBJ/STL/PLY/glTF, `gpu` Metal offscreen
+  readback, **Eevee**, Freestyle, the compositor, the sequencer, and
+  **Cycles-Metal** renders — all pass in one run.
+- **Known issue — `blf`:** the font-metrics module can hard-crash the process
+  headless (font subsystem init); keep `import blf` out of scripts until fixed.
+- **Ocean modifier tip:** `geometry_mode='DISPLACE'` only moves the base mesh's
+  *existing* vertices — on a default 4-vert plane the water stays flat. Use
+  `'GENERATE'` (and set `viewport_resolution` to match `resolution`) to get the
+  actual wave grid.
+
+### Blender 5.x Python API changes (bite every 4.x script)
+
+| 4.x | 5.x |
+|---|---|
+| `scene.node_tree` (compositor) | `scene.compositing_node_group` — a standalone `CompositorNodeTree` in `bpy.data.node_groups`, output via `NodeGroupOutput` |
+| `SequenceEditor.sequences` | `.strips` |
+| `strips.new_effect(..., frame_end=N)` | `strips.new_effect(..., length=N)` |
+| `action.fcurves` | layered actions: `action.layers[0].strips[0].channelbag(action.slots[0]).fcurves` |
+| `CompositorNodeBlur.size_x/.size_y` | socket inputs on the node |
 
 ---
 
@@ -344,8 +370,9 @@ Set `CB_BLEND_NO_RENDER=1` to skip the still render for faster saves.
 - **`gpu.init()` works** — the headless build now has an offscreen Metal backend,
   so the `gpu` module and `BLENDER_EEVEE` render on device. (Cycles GPU rendering
   still doesn't require it.)
-- **glTF + Draco works** (statically linked): export with
-  `export_draco_mesh_compression_enable=True` round-trips on device.
+- **glTF exports/imports on device**, but the add-on reports **Draco and
+  MeshOptimizer unavailable** on iOS — leave
+  `export_draco_mesh_compression_enable` off; output is valid, uncompressed.
 - **No `_multiprocessing`** on iOS — a stub ships so `bpy` imports cleanly.
 
 ---
