@@ -51,42 +51,65 @@ public enum BlenderLib {
             .appendingPathComponent("python-ios-lib/bpy/__init__.so")
     }
 
-    /// One-time decompression. Returns immediately if the binary is already
-    /// materialized AND has the expected size — re-runs if the file is
-    /// missing, truncated, or corrupted.
+    /// One-time decompression of BOTH binaries — the bpy module and its hard
+    /// dylib dependency `libusd_ms` (USD), which the packed `.so` references as
+    /// `@loader_path/libusd_ms.dylib`, i.e. side-by-side with `modulePath`.
+    /// Returns immediately if both are already materialized at the expected
+    /// sizes — re-runs if either is missing, truncated, or corrupted. Also
+    /// points `PXR_PLUGINPATH_NAME` at the bundled USD plugin metadata so the
+    /// USD plugin registry resolves at `import bpy` time.
     ///
-    /// Throws if the bundled `.applzma` isn't found or decompression fails
+    /// Throws if a bundled `.applzma` isn't found or decompression fails
     /// (both indicate a corrupted install — re-add the package).
     public static func bootstrap() throws {
-        let target = modulePath
         let fm = FileManager.default
+        let dir = (modulePath as NSString).deletingLastPathComponent
+        let targets: [(blob: String, dest: String, expected: UInt64)] = [
+            ("__init__.so", modulePath, expectedModuleSize),
+            ("libusd_ms.dylib", (dir as NSString).appendingPathComponent("libusd_ms.dylib"),
+             expectedUsdSize),
+        ]
 
-        // Fast path: already materialized at the expected size.
-        if let attrs = try? fm.attributesOfItem(atPath: target),
-           let size = attrs[.size] as? UInt64,
-           size == expectedModuleSize {
-            return
+        for t in targets {
+            // Fast path: already materialized at the expected size.
+            if let attrs = try? fm.attributesOfItem(atPath: t.dest),
+               let size = attrs[.size] as? UInt64,
+               size == t.expected {
+                continue
+            }
+
+            guard let blobPath = resourceBundle.path(
+                forResource: t.blob,
+                ofType: "applzma",
+                inDirectory: "bpy_dylib")
+            else {
+                throw BootstrapError.bundledBinaryMissing
+            }
+
+            try fm.createDirectory(
+                atPath: (t.dest as NSString).deletingLastPathComponent,
+                withIntermediateDirectories: true)
+
+            try decompressLZMA(source: blobPath, dest: t.dest, expected: t.expected)
+
+            let attrs = try fm.attributesOfItem(atPath: t.dest)
+            guard let size = attrs[.size] as? UInt64, size == t.expected else {
+                throw BootstrapError.sizeMismatch(
+                    got: (attrs[.size] as? UInt64) ?? 0,
+                    expected: t.expected)
+            }
         }
 
-        guard let blobPath = resourceBundle.path(
-            forResource: "__init__.so",
-            ofType: "applzma",
-            inDirectory: "bpy_dylib")
-        else {
-            throw BootstrapError.bundledBinaryMissing
-        }
-
-        try fm.createDirectory(
-            atPath: (target as NSString).deletingLastPathComponent,
-            withIntermediateDirectories: true)
-
-        try decompressLZMA(source: blobPath, dest: target)
-
-        let attrs = try fm.attributesOfItem(atPath: target)
-        guard let size = attrs[.size] as? UInt64, size == expectedModuleSize else {
-            throw BootstrapError.sizeMismatch(
-                got: (attrs[.size] as? UInt64) ?? 0,
-                expected: expectedModuleSize)
+        // USD plugin discovery: without this, `import bpy` still works but
+        // USD import/export fails with a plugin-registry error.
+        if let pkg = packagePath {
+            let res = (pkg as NSString).appendingPathComponent("usd_resources")
+            if fm.fileExists(atPath: res),
+               getenv("PXR_PLUGINPATH_NAME") == nil {
+                let paths = [(res as NSString).appendingPathComponent("lib_usd"),
+                             (res as NSString).appendingPathComponent("plugin_usd")]
+                setenv("PXR_PLUGINPATH_NAME", paths.joined(separator: ":"), 0)
+            }
         }
     }
 
@@ -109,10 +132,11 @@ public enum BlenderLib {
         }
     }
 
-    /// Expected size of the decompressed `bpy/__init__.so`. Hard-coded so we
-    /// can cheaply detect partial / corrupted files without re-decompressing.
-    /// Re-run `scripts/repack-bpy-so.swift` and update this if bpy is rebuilt.
-    private static let expectedModuleSize: UInt64 = 168_835_216
+    /// Expected sizes of the decompressed binaries. Hard-coded so we can
+    /// cheaply detect partial / corrupted files without re-decompressing.
+    /// Re-run `scripts/repack-bpy-so.swift` and update these if bpy is rebuilt.
+    private static let expectedModuleSize: UInt64 = 232_093_520
+    private static let expectedUsdSize: UInt64 = 68_866_848
 
     /// LZMA decompression via `Compression.framework` (zero added deps — the
     /// framework ships in iOS 9+). The bundled blob is a raw
@@ -121,11 +145,11 @@ public enum BlenderLib {
     ///
     /// Memory cost: peak ~230 MB during decode (compressed ~69 MB + output
     /// ~161 MB). Done once at app launch, then never again.
-    private static func decompressLZMA(source: String, dest: String) throws {
+    private static func decompressLZMA(source: String, dest: String, expected: UInt64) throws {
         guard let compressed = FileManager.default.contents(atPath: source) else {
             throw BootstrapError.decompressionFailed(reason: "couldn't read \(source)")
         }
-        let dstCapacity = Int(expectedModuleSize) + 4096
+        let dstCapacity = Int(expected) + 4096
         let dst = UnsafeMutablePointer<UInt8>.allocate(capacity: dstCapacity)
         defer { dst.deallocate() }
 

@@ -121,7 +121,7 @@ The `app_packages/site-packages/` bundle ships **~180 Python packages** — ever
 
 | Library | Version | Notes |
 |---|---|---|
-| **bpy** (Blender) | 5.3.0 | Full `import bpy` — **Cycles on the Apple GPU (Metal) + OpenImageDenoise**, plus OpenSubdiv / OpenVDB / Alembic / Bullet / Mantaflow / FFTW ocean / Freestyle and the full modifier stack. First public iOS build. In CodeBench, saving a `.blend` auto-opens an interactive WebGL 3D preview. [doc](docs/blender-bpy.md) |
+| **bpy** (Blender) | 5.3.0 | Full `import bpy` — **Cycles on the Apple GPU (Metal) + OpenImageDenoise**, plus OpenSubdiv / OpenVDB / Alembic / **USD + MaterialX** / Bullet / **Mantaflow fluid sim** / **motion tracking (libmv)** / **audio (`aud` + libsndfile)** / i18n / FFTW ocean / Freestyle, the full modifier stack, and **10/10 image formats** (JPEG/TIFF/WebP included). At feature parity with the PyPI `bpy` wheel except GPU-viewport features (Eevee/`gpu` module) — see the doc's gap table. First public iOS build. In CodeBench, saving a `.blend` auto-opens an interactive WebGL 3D preview. [doc](docs/blender-bpy.md) |
 
 ### Media — image / video / audio / documents
 
