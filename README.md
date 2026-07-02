@@ -119,6 +119,18 @@ The `app_packages/site-packages/` bundle ships **~180 Python packages** — ever
 
 ### 3D content creation — Blender
 
+The complete Blender Python module (`bpy` 5.3.0) runs on-device — **the first public iOS build**, and the **first with a working Metal GPU backend**. Beyond Cycles-on-Metal, an offscreen `GHOST_ContextMTL` powers the `gpu` module *and* the **Eevee** render engine, so `gpu.init()` / `GPUOffScreen` and `BLENDER_EEVEE` renders all run on the Apple GPU. It's at **feature parity with the PyPI `bpy` wheel** except Cycles-OSL (which needs a runtime JIT that iOS forbids).
+
+```python
+import bpy, gpu
+gpu.init()                                  # offscreen Metal context; gpu.platform.backend_type_get() == 'METAL'
+gpu.types.GPUOffScreen(256, 256)            # render targets on the iPad GPU
+
+bpy.data.scenes[0].render.engine = 'BLENDER_EEVEE'
+bpy.data.scenes[0].render.filepath = '/…/out.png'
+bpy.ops.render.render(write_still=True)     # Eevee still — ~9 s for a lit scene on an M-series iPad
+```
+
 | Library | Version | Notes |
 |---|---|---|
 | **bpy** (Blender) | 5.3.0 | Full `import bpy` — **Cycles *and* Eevee on the Apple GPU (Metal)** + OpenImageDenoise + a working **`gpu` module** (`gpu.init()` / `GPUOffScreen`, offscreen Metal backend), plus OpenSubdiv / OpenVDB / Alembic / **USD + MaterialX** / Bullet / **Mantaflow fluid sim** / **motion tracking (libmv)** / **audio (`aud` + libsndfile)** / i18n / FFTW ocean / Freestyle, the full modifier stack, and **10/10 image formats** (JPEG/TIFF/WebP included). **At feature parity with the PyPI `bpy` wheel** (only Cycles-OSL remains — it needs a runtime JIT, forbidden on iOS). First public iOS build — including the first iOS Eevee / Metal-GPU backend. In CodeBench, saving a `.blend` auto-opens an interactive WebGL 3D preview. [doc](docs/blender-bpy.md) |
@@ -1138,7 +1150,7 @@ notes, limitations, troubleshooting, and build provenance.
 
 | Library | Doc |
 |---|---|
-| **bpy** (Blender — Cycles on Metal GPU + OpenImageDenoise) | [docs/blender-bpy.md](docs/blender-bpy.md) |
+| **bpy** (Blender — Cycles **and Eevee** on Metal GPU + a working `gpu` module + OpenImageDenoise) | [docs/blender-bpy.md](docs/blender-bpy.md) |
 
 ### Media (image / audio / video)
 
