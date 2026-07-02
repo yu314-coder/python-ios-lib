@@ -1,0 +1,830 @@
+diff --git a/source/blender/gpu/metal/mtl_ios_compat.hh b/source/blender/gpu/metal/mtl_ios_compat.hh
+new file mode 100644
+--- /dev/null
++++ b/source/blender/gpu/metal/mtl_ios_compat.hh
+@@ -0,0 +1,76 @@
++/* SPDX-FileCopyrightText: 2026 Blender Authors
++ *
++ * SPDX-License-Identifier: GPL-2.0-or-later */
++
++/** \file
++ * \ingroup gpu
++ *
++ * iOS Metal compatibility shims.
++ *
++ * iOS GPUs are always unified-memory (Apple silicon): there is no "managed"
++ * storage mode, and the managed-storage CPU<->GPU coherency calls that macOS
++ * needs -- `-[MTLBlitCommandEncoder synchronizeResource:]` and
++ * `-[MTLBuffer didModifyRange:]` -- are `API_UNAVAILABLE(ios)` in the SDK, so
++ * referencing them is a hard compile error even in dead code.
++ *
++ * This header:
++ *   1. Maps the managed storage enums onto their shared equivalents *after*
++ *      `<Metal/Metal.h>` has fully declared the real enum (so the SDK's own
++ *      declaration is untouched, and every subsequent Blender reference to
++ *      `...Managed` resolves to `...Shared`). Because
++ *      `MTLResourceStorageModeShared == 0`, the common test
++ *      `options & MTLResourceStorageModeManaged` becomes `& 0` -> always false,
++ *      which is exactly right: no iOS buffer is ever managed.
++ *   2. Provides no-op inline wrappers for the coherency calls, so the ~20
++ *      call sites compile for iphoneos (shared storage is coherent with no
++ *      explicit flush).
++ *
++ * Include this FIRST in every Metal `.mm` that touches those APIs; it pulls in
++ * `<Metal/Metal.h>` itself, guaranteeing the include-order requirement above.
++ * On macOS / Mac Catalyst this header is a transparent pass-through.
++ */
++
++#pragma once
++
++#include <Metal/Metal.h>
++#include <TargetConditionals.h>
++
++/* "Real" iOS: device or simulator, but NOT Mac Catalyst (which is macOS ABI and
++ * keeps the managed-storage APIs). */
++#if defined(TARGET_OS_IOS) && TARGET_OS_IOS && !(defined(TARGET_OS_MACCATALYST) && TARGET_OS_MACCATALYST)
++#  define GHOST_MTL_IOS_UNIFIED 1
++#else
++#  define GHOST_MTL_IOS_UNIFIED 0
++#endif
++
++#if GHOST_MTL_IOS_UNIFIED
++/* Remap managed -> shared for all Blender usage below this include. Safe: the
++ * SDK enum is already declared by <Metal/Metal.h> above. */
++#  define MTLStorageModeManaged MTLStorageModeShared
++#  define MTLResourceStorageModeManaged MTLResourceStorageModeShared
++#endif
++
++/* CPU-modified-a-managed-buffer notification. No-op on iOS (shared storage is
++ * automatically coherent; the GPU sees CPU writes without a flush). */
++static inline void mtl_buffer_did_modify_range(id<MTLBuffer> buffer, NSRange range)
++{
++#if GHOST_MTL_IOS_UNIFIED
++  (void)buffer;
++  (void)range;
++#else
++  [buffer didModifyRange:range];
++#endif
++}
++
++/* Flush a managed resource from GPU caches back to CPU-visible memory. No-op on
++ * iOS (shared storage needs no synchronize). */
++static inline void mtl_blit_synchronize_resource(id<MTLBlitCommandEncoder> encoder,
++                                                  id<MTLResource> resource)
++{
++#if GHOST_MTL_IOS_UNIFIED
++  (void)encoder;
++  (void)resource;
++#else
++  [encoder synchronizeResource:resource];
++#endif
++}
+diff --git a/source/blender/gpu/metal/mtl_backend.mm b/source/blender/gpu/metal/mtl_backend.mm
+--- a/source/blender/gpu/metal/mtl_backend.mm
++++ b/source/blender/gpu/metal/mtl_backend.mm
+@@ -6,6 +6,7 @@
+  * \ingroup gpu
+  */
+ 
++#include "mtl_ios_compat.hh"
+ #include <cstring>
+ 
+ #include "BLI_threads.hh"
+@@ -29,7 +30,10 @@
+ #include "gpu_capabilities_private.hh"
+ #include "gpu_platform_private.hh"
+ 
+-#include <Cocoa/Cocoa.h>
++#include <TargetConditionals.h>
++#if !TARGET_OS_IOS
++#  include <Cocoa/Cocoa.h>  /* macOS only; iOS has no AppKit */
++#endif
+ #include <Metal/Metal.h>
+ #include <QuartzCore/QuartzCore.h>
+ #include <sys/sysctl.h>
+@@ -395,6 +399,24 @@
+ 
+   id<MTLDevice> device = MTLCreateSystemDefaultDevice();
+ 
++#if GHOST_MTL_IOS_UNIFIED
++  /* iOS: every targeted device (iOS 16.4+ => Apple4 GPU family and up) meets
++   * Blender's Metal requirements. The macOS feature-set probes below use APIs
++   * that are unavailable on iOS (MTLGPUFamilyMac2 returns false;
++   * MTLCopyAllDevices is iOS 18+), so short-circuit with the checks that apply.
++   * Apple silicon is always TBDR with argument-buffer tier-2. */
++  {
++    bool ok = (device != nil) &&
++              ([device argumentBuffersSupport] == MTLArgumentBuffersTier2) &&
++              [device supportsFamily:MTLGPUFamilyApple4];
++    if (G.debug & G_DEBUG_GPU) {
++      printf("[Metal][iOS] device=%s supported=%d\n",
++             device ? [[device name] UTF8String] : "(none)",
++             (int)ok);
++    }
++    return ok;
++  }
++#else
+   /* Debug: Enable low power GPU with Environment Var: METAL_FORCE_INTEL. */
+   static const char *forceIntelStr = getenv("METAL_FORCE_INTEL");
+   bool forceIntel = forceIntelStr ? (atoi(forceIntelStr) != 0) : false;
+@@ -437,6 +459,7 @@
+   }
+ 
+   return result;
++#endif /* GHOST_MTL_IOS_UNIFIED */
+ }
+ 
+ void MTLBackend::capabilities_init(MTLContext *ctx)
+@@ -448,12 +471,21 @@
+   /* Initialize Capabilities. */
+   MTLBackend::capabilities.supports_argument_buffers_tier2 = ([device argumentBuffersSupport] ==
+                                                               MTLArgumentBuffersTier2);
++#if GHOST_MTL_IOS_UNIFIED
++  /* Mac / Mac-Catalyst GPU families don't apply to iOS, and Mac1/MacCatalyst1/2
++   * are deprecated in the iOS SDK (would warn/-Werror). iOS is Apple silicon. */
++  MTLBackend::capabilities.supports_family_mac1 = false;
++  MTLBackend::capabilities.supports_family_mac2 = false;
++  MTLBackend::capabilities.supports_family_mac_catalyst1 = false;
++  MTLBackend::capabilities.supports_family_mac_catalyst2 = false;
++#else
+   MTLBackend::capabilities.supports_family_mac1 = [device supportsFamily:MTLGPUFamilyMac1];
+   MTLBackend::capabilities.supports_family_mac2 = [device supportsFamily:MTLGPUFamilyMac2];
+   MTLBackend::capabilities.supports_family_mac_catalyst1 = [device
+       supportsFamily:MTLGPUFamilyMacCatalyst1];
+   MTLBackend::capabilities.supports_family_mac_catalyst2 = [device
+       supportsFamily:MTLGPUFamilyMacCatalyst2];
++#endif
+   /* NOTE(Metal): Texture gather is supported on AMD, but results are non consistent
+    * with Apple Silicon GPUs. Disabling for now to avoid erroneous rendering. */
+   MTLBackend::capabilities.supports_texture_gather = [device hasUnifiedMemory];
+diff --git a/source/blender/gpu/metal/mtl_context.mm b/source/blender/gpu/metal/mtl_context.mm
+--- a/source/blender/gpu/metal/mtl_context.mm
++++ b/source/blender/gpu/metal/mtl_context.mm
+@@ -5,6 +5,7 @@
+ /** \file
+  * \ingroup gpu
+  */
++#include "mtl_ios_compat.hh"
+ #include "mtl_context.hh"
+ #include "mtl_debug.hh"
+ #include "mtl_framebuffer.hh"
+@@ -220,7 +221,12 @@
+    * NOTE: Disable warning for missing method when building on older OS's, as compiled code will
+    * still work correctly when run on a system with the API available. */
+   if (@available(macOS 13.3, *)) {
+-    [this->device setShouldMaximizeConcurrentCompilation:YES];
++    /* iOS: not implemented by the iOS GPU driver (AGXG15GDevice on M3) — the
++     * macOS-13.3 `@available` wildcard passes on iOS but the selector is absent,
++     * so a bare call throws an unrecognized-selector NSException. Guard it. */
++    if ([this->device respondsToSelector:@selector(setShouldMaximizeConcurrentCompilation:)]) {
++      [this->device setShouldMaximizeConcurrentCompilation:YES];
++    }
+   }
+ #pragma clang diagnostic pop
+ 
+@@ -562,7 +568,7 @@
+   [null_buffer_ retain];
+   uint32_t *null_data = (uint32_t *)calloc(1, null_buffer_size);
+   memcpy([null_buffer_ contents], null_data, null_buffer_size);
+-  [null_buffer_ didModifyRange:NSMakeRange(0, null_buffer_size)];
++  mtl_buffer_did_modify_range(null_buffer_, NSMakeRange(0, null_buffer_size));
+   free(null_data);
+ 
+   BLI_assert(null_buffer_ != nil);
+@@ -584,7 +590,7 @@
+   [null_attribute_buffer_ retain];
+   float data[4] = {0.0f, 0.0f, 0.0f, 1.0f};
+   memcpy([null_attribute_buffer_ contents], data, sizeof(float) * 4);
+-  [null_attribute_buffer_ didModifyRange:NSMakeRange(0, null_buffer_size)];
++  mtl_buffer_did_modify_range(null_attribute_buffer_, NSMakeRange(0, null_buffer_size));
+ 
+   return null_attribute_buffer_;
+ }
+diff --git a/source/blender/gpu/metal/mtl_memory.mm b/source/blender/gpu/metal/mtl_memory.mm
+--- a/source/blender/gpu/metal/mtl_memory.mm
++++ b/source/blender/gpu/metal/mtl_memory.mm
+@@ -2,6 +2,7 @@
+  *
+  * SPDX-License-Identifier: GPL-2.0-or-later */
+ 
++#include "mtl_ios_compat.hh"
+ #include "BKE_global.hh"
+ 
+ #include "DNA_userdef_types.h"
+@@ -770,7 +771,7 @@
+ {
+   this->debug_ensure_used();
+   if (this->requires_flush()) {
+-    [metal_buffer_ didModifyRange:NSMakeRange(0, size_)];
++    mtl_buffer_did_modify_range(metal_buffer_, NSMakeRange(0, size_));
+   }
+ }
+ 
+@@ -779,7 +780,7 @@
+   this->debug_ensure_used();
+   if (this->requires_flush()) {
+     BLI_assert((offset + length) <= size_);
+-    [metal_buffer_ didModifyRange:NSMakeRange(offset, length)];
++    mtl_buffer_did_modify_range(metal_buffer_, NSMakeRange(offset, length));
+   }
+ }
+ 
+@@ -821,8 +822,7 @@
+     BLI_assert(this->metal_buffer);
+     BLI_assert((this->buffer_offset + this->size) <= [this->metal_buffer length]);
+     BLI_assert(this->buffer_offset >= 0);
+-    [this->metal_buffer
+-        didModifyRange:NSMakeRange(this->buffer_offset, this->size - this->buffer_offset)];
++    mtl_buffer_did_modify_range(this->metal_buffer, NSMakeRange(this->buffer_offset, this->size - this->buffer_offset));
+   }
+ }
+ 
+diff --git a/source/blender/gpu/metal/mtl_query.mm b/source/blender/gpu/metal/mtl_query.mm
+--- a/source/blender/gpu/metal/mtl_query.mm
++++ b/source/blender/gpu/metal/mtl_query.mm
+@@ -6,6 +6,7 @@
+  * \ingroup gpu
+  */
+ 
++#include "mtl_ios_compat.hh"
+ #include "mtl_query.hh"
+ 
+ namespace blender::gpu {
+@@ -106,7 +107,7 @@
+     id<MTLBlitCommandEncoder> blit_encoder = ctx->main_command_buffer.ensure_begin_blit_encoder();
+     BLI_assert(blit_encoder);
+     for (gpu::MTLBuffer *buf : buffer_) {
+-      [blit_encoder synchronizeResource:buf->get_metal_buffer()];
++      mtl_blit_synchronize_resource(blit_encoder, buf->get_metal_buffer());
+     }
+     BLI_assert(ctx->get_inside_frame());
+   }
+diff --git a/source/blender/gpu/metal/mtl_storage_buffer.mm b/source/blender/gpu/metal/mtl_storage_buffer.mm
+--- a/source/blender/gpu/metal/mtl_storage_buffer.mm
++++ b/source/blender/gpu/metal/mtl_storage_buffer.mm
+@@ -6,6 +6,7 @@
+  * \ingroup gpu
+  */
+ 
++#include "mtl_ios_compat.hh"
+ #include "BLI_string.hh"
+ #include "BLI_time.hh"
+ 
+@@ -376,7 +377,7 @@
+   id<MTLBuffer> storage_buf_mtl = this->metal_buffer_->get_metal_buffer();
+   if (storage_buf_mtl.storageMode == MTLStorageModeManaged) {
+     id<MTLBlitCommandEncoder> blit_encoder = ctx->main_command_buffer.ensure_begin_blit_encoder();
+-    [blit_encoder synchronizeResource:storage_buf_mtl];
++    mtl_blit_synchronize_resource(blit_encoder, storage_buf_mtl);
+   }
+ 
+   /* Encode event signal and flush command buffer to ensure GPU work is in the pipeline for future
+@@ -421,7 +422,7 @@
+                destinationOffset:0
+                             size:size_in_bytes_];
+     if (staging_buf_mtl.storageMode == MTLStorageModeManaged) {
+-      [blit_encoder synchronizeResource:staging_buf_mtl];
++      mtl_blit_synchronize_resource(blit_encoder, staging_buf_mtl);
+     }
+ 
+     /* Device-only reads will always stall the GPU pipe. */
+@@ -458,7 +459,7 @@
+       /* Ensure GPU updates are flushed back to CPU. */
+       id<MTLBlitCommandEncoder> blit_encoder =
+           ctx->main_command_buffer.ensure_begin_blit_encoder();
+-      [blit_encoder synchronizeResource:metal_buffer_->get_metal_buffer()];
++      mtl_blit_synchronize_resource(blit_encoder, metal_buffer_->get_metal_buffer());
+ 
+       /* Wait for the blit to finish. */
+       GPU_finish();
+diff --git a/source/blender/gpu/metal/mtl_texture.mm b/source/blender/gpu/metal/mtl_texture.mm
+--- a/source/blender/gpu/metal/mtl_texture.mm
++++ b/source/blender/gpu/metal/mtl_texture.mm
+@@ -6,6 +6,7 @@
+  * \ingroup gpu
+  */
+ 
++#include "mtl_ios_compat.hh"
+ #include "BKE_global.hh"
+ 
+ #include "BLI_math_half.hh"
+@@ -172,9 +173,11 @@
+     MTLPixelFormat texture_view_pixel_format = gpu_texture_format_to_metal(format_);
+     if (texture_view_stencil_) {
+       switch (texture_view_pixel_format) {
+-        case MTLPixelFormatDepth24Unorm_Stencil8:
++#if !TARGET_OS_IOS
++        case MTLPixelFormatDepth24Unorm_Stencil8: /* macOS-only depth format */
+           texture_view_pixel_format = MTLPixelFormatX24_Stencil8;
+           break;
++#endif
+         case MTLPixelFormatDepth32Float_Stencil8:
+           texture_view_pixel_format = MTLPixelFormatX32_Stencil8;
+           break;
+@@ -1134,7 +1137,7 @@
+       /* Textures which use MTLStorageModeManaged need to have updated contents
+        * synced back to CPU to avoid an automatic flush overwriting contents. */
+       if (texture_.storageMode == MTLStorageModeManaged) {
+-        [blit_encoder synchronizeResource:texture_];
++        mtl_blit_synchronize_resource(blit_encoder, texture_);
+       }
+       [blit_encoder optimizeContentsForGPUAccess:texture_];
+     }
+@@ -1144,7 +1147,7 @@
+       blit_encoder = ctx->main_command_buffer.ensure_begin_blit_encoder();
+       if (texture_.storageMode == MTLStorageModeManaged) {
+ 
+-        [blit_encoder synchronizeResource:texture_];
++        mtl_blit_synchronize_resource(blit_encoder, texture_);
+       }
+       [blit_encoder optimizeContentsForGPUAccess:texture_];
+     }
+@@ -1208,7 +1211,7 @@
+                destinationOrigin:MTLOriginMake(offset[0], offset[1], 0)];
+ 
+     if (texture_.storageMode == MTLStorageModeManaged) {
+-      [blit_encoder synchronizeResource:texture_];
++      mtl_blit_synchronize_resource(blit_encoder, texture_);
+     }
+     [blit_encoder optimizeContentsForGPUAccess:texture_];
+   }
+@@ -1951,7 +1954,7 @@
+         if (G.debug & G_DEBUG_GPU) {
+           [enc insertDebugSignpost:@"GPUTextureRead-syncResource"];
+         }
+-        [enc synchronizeResource:destination_buffer];
++        mtl_blit_synchronize_resource(enc, destination_buffer);
+       }
+ 
+       /* Ensure GPU copy commands have completed. */
+@@ -2584,7 +2587,7 @@
+ 
+   /* Ensure changes are synchronized. */
+   if (buffer_.resourceOptions & MTLResourceStorageModeManaged) {
+-    [buffer_ didModifyRange:NSMakeRange(0, size_)];
++    mtl_buffer_did_modify_range(buffer_, NSMakeRange(0, size_));
+   }
+ }
+ 
+diff --git a/source/blender/gpu/metal/mtl_texture_util.mm b/source/blender/gpu/metal/mtl_texture_util.mm
+--- a/source/blender/gpu/metal/mtl_texture_util.mm
++++ b/source/blender/gpu/metal/mtl_texture_util.mm
+@@ -105,7 +105,9 @@
+       return 8;
+     case MTLPixelFormatRGBA8Unorm_sRGB:
+     case MTLPixelFormatDepth32Float:
+-    case MTLPixelFormatDepth24Unorm_Stencil8:
++#if !TARGET_OS_IOS
++    case MTLPixelFormatDepth24Unorm_Stencil8: /* macOS-only depth format */
++#endif
+       return 4;
+     case MTLPixelFormatDepth16Unorm:
+       return 2;
+@@ -182,7 +184,9 @@
+     case MTLPixelFormatR16Snorm:
+     case MTLPixelFormatDepth32Float:
+     case MTLPixelFormatDepth16Unorm:
+-    case MTLPixelFormatDepth24Unorm_Stencil8:
++#if !TARGET_OS_IOS
++    case MTLPixelFormatDepth24Unorm_Stencil8: /* macOS-only depth format */
++#endif
+       /* Treating this format as single-channel for direct data copies -- Stencil component is not
+        * addressable. */
+       return 1;
+diff --git a/source/blender/gpu/metal/mtl_vertex_buffer.mm b/source/blender/gpu/metal/mtl_vertex_buffer.mm
+--- a/source/blender/gpu/metal/mtl_vertex_buffer.mm
++++ b/source/blender/gpu/metal/mtl_vertex_buffer.mm
+@@ -6,6 +6,7 @@
+  * \ingroup gpu
+  */
+ 
++#include "mtl_ios_compat.hh"
+ #include "GPU_vertex_format.hh"
+ 
+ #include "mtl_debug.hh"
+@@ -182,7 +183,7 @@
+       /* Flush newly copied data back to host-side buffer, if one exists.
+        * Ensures data and cache coherency for managed MTLBuffers. */
+       if (copy_new_buffer.storageMode == MTLStorageModeManaged) {
+-        [enc synchronizeResource:copy_new_buffer];
++        mtl_blit_synchronize_resource(enc, copy_new_buffer);
+       }
+ 
+       /* For VBOs flagged as static, release host data as it will no longer be needed. */
+@@ -224,8 +225,7 @@
+       ctx->get_scratch_buffer_manager().scratch_buffer_allocate_range_aligned(len, 256);
+   memcpy(scratch_allocation.data, data, len);
+   if ([scratch_allocation.metal_buffer storageMode] == MTLStorageModeManaged) {
+-    [scratch_allocation.metal_buffer
+-        didModifyRange:NSMakeRange(scratch_allocation.buffer_offset, len)];
++    mtl_buffer_did_modify_range(scratch_allocation.metal_buffer, NSMakeRange(scratch_allocation.buffer_offset, len));
+   }
+   id<MTLBuffer> data_buffer = scratch_allocation.metal_buffer;
+   uint64_t data_buffer_offset = scratch_allocation.buffer_offset;
+@@ -246,7 +246,7 @@
+ 
+   /* Flush modified buffer back to host buffer, if one exists. */
+   if (dst_buffer.storageMode == MTLStorageModeManaged) {
+-    [enc synchronizeResource:dst_buffer];
++    mtl_blit_synchronize_resource(enc, dst_buffer);
+   }
+ }
+ 
+@@ -305,7 +305,7 @@
+     id<MTLBuffer> source_buffer = vbo_->get_metal_buffer();
+     if (source_buffer.storageMode == MTLStorageModeManaged) {
+       id<MTLBlitCommandEncoder> enc = ctx->main_command_buffer.ensure_begin_blit_encoder();
+-      [enc synchronizeResource:source_buffer];
++      mtl_blit_synchronize_resource(enc, source_buffer);
+     }
+ 
+     /* Ensure GPU has finished operating on commands which may modify data. */
+@@ -336,7 +336,7 @@
+     /* Flush newly copied data back to host-side buffer, if one exists.
+      * Ensures data and cache coherency for managed MTLBuffers. */
+     if (dest_buffer.storageMode == MTLStorageModeManaged) {
+-      [enc synchronizeResource:dest_buffer];
++      mtl_blit_synchronize_resource(enc, dest_buffer);
+     }
+ 
+     /* wait for GPU. */
+diff --git a/source/blender/gpu/metal/mtl_index_buffer.mm b/source/blender/gpu/metal/mtl_index_buffer.mm
+--- a/source/blender/gpu/metal/mtl_index_buffer.mm
++++ b/source/blender/gpu/metal/mtl_index_buffer.mm
+@@ -6,6 +6,7 @@
+  * \ingroup gpu
+  */
+ 
++#include "mtl_ios_compat.hh"
+ #include "mtl_index_buffer.hh"
+ #include "mtl_context.hh"
+ #include "mtl_debug.hh"
+@@ -73,7 +74,7 @@
+     id<MTLBuffer> source_buffer = ibo_->get_metal_buffer();
+     if (source_buffer.storageMode == MTLStorageModeManaged) {
+       id<MTLBlitCommandEncoder> enc = ctx->main_command_buffer.ensure_begin_blit_encoder();
+-      [enc synchronizeResource:source_buffer];
++      mtl_blit_synchronize_resource(enc, source_buffer);
+     }
+ 
+     /* Ensure GPU has finished operating on commands which may modify data. */
+@@ -200,7 +201,7 @@
+   /* Synchronize changes back to host to ensure CPU-side data is up-to-date for non
+    * Shared buffers. */
+   if (dest_buffer.storageMode == MTLStorageModeManaged) {
+-    [enc synchronizeResource:dest_buffer];
++    mtl_blit_synchronize_resource(enc, dest_buffer);
+   }
+ 
+   /* Invalidate patched/optimized buffers. */
+diff --git a/source/blender/gpu/metal/mtl_command_buffer.mm b/source/blender/gpu/metal/mtl_command_buffer.mm
+--- a/source/blender/gpu/metal/mtl_command_buffer.mm
++++ b/source/blender/gpu/metal/mtl_command_buffer.mm
+@@ -638,7 +638,15 @@
+   MTLBarrierScope scope = 0;
+   if (barrier_bits & GPU_BARRIER_SHADER_IMAGE_ACCESS || barrier_bits & GPU_BARRIER_TEXTURE_FETCH) {
+     bool is_compute = (active_command_encoder_type_ != MTL_RENDER_COMMAND_ENCODER);
++#if TARGET_OS_IOS
++    /* MTLBarrierScopeRenderTargets is macOS-only (API_UNAVAILABLE(ios)). This
++     * whole block is unreachable on iOS anyway -- Apple silicon is always TBDR,
++     * which early-outs above -- so render-target scope collapses to none. */
++    (void)is_compute;
++    scope |= MTLBarrierScopeTextures;
++#else
+     scope |= (is_compute ? 0 : MTLBarrierScopeRenderTargets) | MTLBarrierScopeTextures;
++#endif
+   }
+   if (barrier_bits & GPU_BARRIER_SHADER_STORAGE ||
+       barrier_bits & GPU_BARRIER_VERTEX_ATTRIB_ARRAY || barrier_bits & GPU_BARRIER_ELEMENT_ARRAY ||
+diff --git a/source/blender/gpu/metal/mtl_shader.mm b/source/blender/gpu/metal/mtl_shader.mm
+--- a/source/blender/gpu/metal/mtl_shader.mm
++++ b/source/blender/gpu/metal/mtl_shader.mm
+@@ -5,6 +5,8 @@
+ /** \file
+  * \ingroup gpu
+  */
++
++#include <TargetConditionals.h>
+ 
+ #include "BKE_global.hh"
+ 
+@@ -226,6 +228,17 @@
+     if (use_texture_atomic) {
+       options.languageVersion = MTLLanguageVersion3_1;
+     }
++  }
++#endif
++#if TARGET_OS_IOS
++  /* iOS 16.4+ always supports Metal 3, so raise the baseline to MSL 3.0 (3.1 on
++   * iOS 17+). This declares the SIMD-group reduction intrinsics (simd_or /
++   * simd_min / simd_max, used by EEVEE's light iterator under GPU_METAL) and
++   * texture atomics -- the macOS-gated 3.1 path above is compiled out on iOS,
++   * which otherwise left iOS shaders stuck at 2.2 and failed to compile EEVEE. */
++  options.languageVersion = MTLLanguageVersion3_0;
++  if (@available(iOS 17.0, *)) {
++    options.languageVersion = MTLLanguageVersion3_1;
+   }
+ #endif
+   return options;
+diff --git a/source/blender/gpu/metal/mtl_memory.hh b/source/blender/gpu/metal/mtl_memory.hh
+--- a/source/blender/gpu/metal/mtl_memory.hh
++++ b/source/blender/gpu/metal/mtl_memory.hh
+@@ -16,7 +16,10 @@
+ #include <set>
+ #include <unordered_map>
+ 
+-#include <Cocoa/Cocoa.h>
++#include <TargetConditionals.h>
++#if !TARGET_OS_IOS
++#  include <Cocoa/Cocoa.h>  /* macOS only; iOS has no AppKit */
++#endif
+ #include <Metal/Metal.h>
+ #include <QuartzCore/QuartzCore.h>
+ 
+diff --git a/source/blender/gpu/metal/mtl_immediate.hh b/source/blender/gpu/metal/mtl_immediate.hh
+--- a/source/blender/gpu/metal/mtl_immediate.hh
++++ b/source/blender/gpu/metal/mtl_immediate.hh
+@@ -16,7 +16,10 @@
+ 
+ #include "mtl_context.hh"
+ 
+-#include <Cocoa/Cocoa.h>
++#include <TargetConditionals.h>
++#if !TARGET_OS_IOS
++#  include <Cocoa/Cocoa.h>  /* macOS only; iOS has no AppKit */
++#endif
+ #include <Metal/Metal.h>
+ #include <QuartzCore/QuartzCore.h>
+ 
+diff --git a/source/blender/gpu/metal/mtl_context.hh b/source/blender/gpu/metal/mtl_context.hh
+--- a/source/blender/gpu/metal/mtl_context.hh
++++ b/source/blender/gpu/metal/mtl_context.hh
+@@ -33,7 +33,10 @@
+ #include "mtl_shader_interface.hh"
+ #include "mtl_texture.hh"
+ 
+-#include <Cocoa/Cocoa.h>
++#include <TargetConditionals.h>
++#if !TARGET_OS_IOS
++#  include <Cocoa/Cocoa.h>  /* macOS only; iOS has no AppKit */
++#endif
+ #include <Metal/Metal.h>
+ #include <QuartzCore/QuartzCore.h>
+ #include <chrono>
+diff --git a/source/blender/gpu/metal/mtl_vertex_buffer.hh b/source/blender/gpu/metal/mtl_vertex_buffer.hh
+--- a/source/blender/gpu/metal/mtl_vertex_buffer.hh
++++ b/source/blender/gpu/metal/mtl_vertex_buffer.hh
+@@ -13,7 +13,10 @@
+ 
+ #include "mtl_context.hh"
+ 
+-#include <Cocoa/Cocoa.h>
++#include <TargetConditionals.h>
++#if !TARGET_OS_IOS
++#  include <Cocoa/Cocoa.h>  /* macOS only; iOS has no AppKit */
++#endif
+ #include <Metal/Metal.h>
+ #include <QuartzCore/QuartzCore.h>
+ 
+diff --git a/source/blender/gpu/metal/mtl_texture.hh b/source/blender/gpu/metal/mtl_texture.hh
+--- a/source/blender/gpu/metal/mtl_texture.hh
++++ b/source/blender/gpu/metal/mtl_texture.hh
+@@ -19,7 +19,10 @@
+ #include <string>
+ #include <thread>
+ 
+-#include <Cocoa/Cocoa.h>
++#include <TargetConditionals.h>
++#if !TARGET_OS_IOS
++#  include <Cocoa/Cocoa.h>  /* macOS only; iOS has no AppKit */
++#endif
+ #include <Metal/Metal.h>
+ #include <QuartzCore/QuartzCore.h>
+ 
+@@ -602,7 +605,9 @@
+     case MTLPixelFormatDepth32Float:
+     case MTLPixelFormatDepth32Float_Stencil8:
+     case MTLPixelFormatBGR10A2Unorm:
+-    case MTLPixelFormatDepth24Unorm_Stencil8:
++#if !TARGET_OS_IOS
++    case MTLPixelFormatDepth24Unorm_Stencil8: /* macOS-only depth format */
++#endif
+       return false;
+     default:
+       return true;
+@@ -633,11 +638,13 @@
+       /* No alternative mirror format. This should not be used for
+        * manual data upload */
+       return MTLPixelFormatInvalid;
+-    case MTLPixelFormatDepth24Unorm_Stencil8:
++#if !TARGET_OS_IOS
++    case MTLPixelFormatDepth24Unorm_Stencil8: /* macOS-only depth format */
+       /* No direct format, but we'll just mirror the bytes -- `Uint`
+        * should ensure bytes are not re-normalized or manipulated */
+       // return MTLPixelFormatR32Uint;
+       return MTLPixelFormatInvalid;
++#endif
+     default:
+       return format;
+   }
+diff --git a/source/blender/gpu/metal/mtl_index_buffer.hh b/source/blender/gpu/metal/mtl_index_buffer.hh
+--- a/source/blender/gpu/metal/mtl_index_buffer.hh
++++ b/source/blender/gpu/metal/mtl_index_buffer.hh
+@@ -13,7 +13,10 @@
+ 
+ #include "mtl_context.hh"
+ 
+-#include <Cocoa/Cocoa.h>
++#include <TargetConditionals.h>
++#if !TARGET_OS_IOS
++#  include <Cocoa/Cocoa.h>  /* macOS only; iOS has no AppKit */
++#endif
+ #include <Metal/Metal.h>
+ #include <QuartzCore/QuartzCore.h>
+ 
+diff --git a/intern/ghost/intern/GHOST_ContextMTL.hh b/intern/ghost/intern/GHOST_ContextMTL.hh
+--- a/intern/ghost/intern/GHOST_ContextMTL.hh
++++ b/intern/ghost/intern/GHOST_ContextMTL.hh
+@@ -11,9 +11,16 @@
+ #include "GHOST_Context.hh"
+ #include "GHOST_Types.hh"
+ 
+-#include <Cocoa/Cocoa.h>
+ #include <Metal/Metal.h>
+ #include <QuartzCore/QuartzCore.h>
++#include <TargetConditionals.h>
++
++/* iOS has no AppKit/Cocoa (and no NSView). The offscreen Metal context never
++ * uses `metalView` -- it is only null-checked -- so on iOS `NSView` stays an
++ * opaque forward-declared type and the Cocoa header is omitted. */
++#if !TARGET_OS_IOS
++#  include <Cocoa/Cocoa.h>
++#endif
+ 
+ @class CAMetalLayer;
+ @class MTLCommandQueue;
+diff --git a/intern/ghost/intern/GHOST_ContextMTL.mm b/intern/ghost/intern/GHOST_ContextMTL.mm
+--- a/intern/ghost/intern/GHOST_ContextMTL.mm
++++ b/intern/ghost/intern/GHOST_ContextMTL.mm
+@@ -16,7 +16,10 @@
+ 
+ #include "GHOST_ContextMTL.hh"
+ 
+-#import <Cocoa/Cocoa.h>
++#import <TargetConditionals.h>
++#if !TARGET_OS_IOS
++#  import <Cocoa/Cocoa.h>
++#endif
+ #import <Metal/Metal.h>
+ #import <QuartzCore/QuartzCore.h>
+ 
+@@ -28,6 +31,7 @@
+ 
+ static void ghost_fatal_error_dialog(const char *msg)
+ {
++#if !TARGET_OS_IOS
+   @autoreleasepool {
+     NSString *message = [NSString stringWithFormat:@"Error opening window:\n%s", msg];
+ 
+@@ -40,12 +44,26 @@
+     [alert addButtonWithTitle:@"Quit"];
+     [alert runModal];
+   }
++#else
++  /* iOS has no AppKit / NSAlert; log and abort. */
++  fprintf(stderr, "Blender: error opening Metal context:\n%s\n", msg);
++#endif
+ 
+   exit(1);
+ }
+ 
+ MTLCommandQueue *GHOST_ContextMTL::s_sharedMetalCommandQueue = nil;
+ int GHOST_ContextMTL::s_sharedCount = 0;
++
++#ifdef WITH_METAL_BACKEND
++/* Factory used by GHOST_SystemHeadless (plain C++) to build a windowless
++ * offscreen Metal context without including this ObjC++ header. Passing a nil
++ * NSView selects the offscreen branch of the constructor. */
++GHOST_Context *GHOST_ContextMTL_new_offscreen(const GHOST_ContextParams &context_params)
++{
++  return new GHOST_ContextMTL(context_params, nil, nil);
++}
++#endif
+ 
+ GHOST_ContextMTL::GHOST_ContextMTL(const GHOST_ContextParams &context_params,
+                                    NSView *metalView,
+@@ -87,12 +105,16 @@
+         metal_layer_.device = metalDevice;
+         metal_layer_.allowsNextDrawableTimeout = NO;
+ 
++#if !TARGET_OS_IOS
++        /* `displaySyncEnabled` is macOS-only (API_UNAVAILABLE(ios)); irrelevant
++         * for an offscreen context that never presents to a display. */
+         {
+           const GHOST_TVSyncModes vsync = getVSync();
+           if (vsync != GHOST_kVSyncModeUnset) {
+             metal_layer_.displaySyncEnabled = (vsync == GHOST_kVSyncModeOff) ? NO : YES;
+           }
+         }
++#endif
+ 
+         /* Enable EDR support. This is done by:
+          * 1. Using a floating point render target, so that values outside 0..1 can be used
+@@ -352,7 +374,8 @@
+ void GHOST_ContextMTL::metalUpdateFramebuffer()
+ {
+   @autoreleasepool {
+-    const NSSize drawableSize = metal_layer_.drawableSize;
++    /* `drawableSize` is a CGSize; NSSize is a macOS-only alias for it. */
++    const CGSize drawableSize = metal_layer_.drawableSize;
+     const size_t width = size_t(drawableSize.width);
+     const size_t height = size_t(drawableSize.height);
+ 
+diff --git a/intern/ghost/intern/GHOST_SystemHeadless.hh b/intern/ghost/intern/GHOST_SystemHeadless.hh
+--- a/intern/ghost/intern/GHOST_SystemHeadless.hh
++++ b/intern/ghost/intern/GHOST_SystemHeadless.hh
+@@ -20,6 +20,13 @@
+ #  include "GHOST_ContextVK.hh"
+ #endif
+ #include "GHOST_ContextNone.hh"
++
++#ifdef WITH_METAL_BACKEND
++/* Defined in GHOST_ContextMTL.mm (ObjC++). Returns a new windowless offscreen
++ * Metal context. Declared here so this plain-C++ header can create one without
++ * including the ObjC++ GHOST_ContextMTL.hh. */
++GHOST_Context *GHOST_ContextMTL_new_offscreen(const GHOST_ContextParams &context_params);
++#endif
+ 
+ class GHOST_WindowNULL;
+ 
+@@ -150,6 +157,20 @@
+       }
+ #endif
+ 
++#ifdef WITH_METAL_BACKEND
++      case GHOST_kDrawingContextTypeMetal: {
++        /* Windowless offscreen Metal context (iOS / headless macOS). The
++         * factory lives in GHOST_ContextMTL.mm so this plain-C++ header need
++         * not include the ObjC++ Metal context header. */
++        GHOST_Context *context = GHOST_ContextMTL_new_offscreen(context_params_offscreen);
++        if (context && context->initializeDrawingContext()) {
++          return context;
++        }
++        delete context;
++        return nullptr;
++      }
++#endif
++
+ #if defined(WITH_OPENGL_BACKEND) && defined(__linux__)
+       case GHOST_kDrawingContextTypeOpenGL: {
+         GHOST_Context *context;
+diff --git a/intern/opensubdiv/internal/evaluator/gpu_compute_evaluator.cc b/intern/opensubdiv/internal/evaluator/gpu_compute_evaluator.cc
+--- a/intern/opensubdiv/internal/evaluator/gpu_compute_evaluator.cc
++++ b/intern/opensubdiv/internal/evaluator/gpu_compute_evaluator.cc
+@@ -2,7 +2,11 @@
+  *
+  * SPDX-License-Identifier: GPL-2.0-or-later */
+ 
+-#include <epoxy/gl.h>
++#ifdef WITH_OPENGL_BACKEND
++#  include <epoxy/gl.h> /* Only the GL backend needs epoxy; this evaluator itself
++                         * is written against Blender's backend-agnostic GPU
++                         * module, so headless/Metal (iOS) builds omit it. */
++#endif
+ 
+ #include "gpu_compute_evaluator.h"
+ 
+diff --git a/intern/opensubdiv/CMakeLists.txt b/intern/opensubdiv/CMakeLists.txt
+--- a/intern/opensubdiv/CMakeLists.txt
++++ b/intern/opensubdiv/CMakeLists.txt
+@@ -70,10 +70,29 @@
+     internal/topology/topology_refiner_impl_compare.cc
+   )
+ 
++  if(NOT (WITH_OPENGL_BACKEND OR WITH_METAL_BACKEND OR WITH_VULKAN_BACKEND))
++    # Headless (iOS): the GPU subdivision evaluator needs epoxy/OpenGL. CPU
++    # subdivision (eval_output_cpu) is all that's needed without a draw backend.
++    list(REMOVE_ITEM SRC
++      internal/evaluator/eval_output_gpu.cc
++      internal/evaluator/eval_output_gpu.h
++      internal/evaluator/gpu_compute_evaluator.cc
++      internal/evaluator/gpu_compute_evaluator.h
++      internal/evaluator/gpu_patch_table.cc
++      internal/evaluator/gpu_patch_table.hh
++      internal/evaluator/gpu_vertex_buffer_wrapper.hh
++    )
++  endif()
++
+   list(APPEND LIB
+     bf::dependencies::optional::opensubdiv
+-    bf::dependencies::epoxy
+   )
++  if((WITH_OPENGL_BACKEND OR WITH_METAL_BACKEND OR WITH_VULKAN_BACKEND) AND NOT WITH_HEADLESS)
++    # epoxy is only find_package()'d when NOT WITH_HEADLESS (see platform files);
++    # a headless Metal build (iOS) drives the GPU evaluator through Blender's own
++    # GPU module and never touches epoxy/OpenGL, so don't try to link it.
++    list(APPEND LIB bf::dependencies::epoxy)
++  endif()
+ 
+   if(WITH_METAL_BACKEND)
+     add_definitions(-DWITH_METAL_BACKEND)

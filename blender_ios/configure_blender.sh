@@ -22,7 +22,12 @@ cmake -S blender -B build/blender -G Ninja \
   -DPYTHON_INCLUDE_DIR="$PYROOT/include/python3.14" -DPYTHON_INCLUDE_CONFIG_DIR="$PYROOT/include/python3.14" \
   -DPYTHON_LIBRARY="$PYROOT/lib/libpython3.14.dylib" -DPYTHON_LIBPATH="$PYROOT/lib" \
   -DFREETYPE_INCLUDE_DIRS="$PREFIX/include/freetype2" -DFREETYPE_LIBRARY="$PREFIX/lib/libfreetype.a" \
-  -DWITH_HEADLESS=ON -DWITH_CYCLES=ON -DWITH_CYCLES_DEVICE_METAL=ON -DWITH_GPU_BACKEND=none -DWITH_METAL_BACKEND=OFF \
+  -DWITH_HEADLESS=ON -DWITH_CYCLES=ON -DWITH_CYCLES_DEVICE_METAL=ON -DWITH_METAL_BACKEND=ON \
+  `# WITH_METAL_BACKEND=ON: iOS offscreen Metal GPU backend (gpu.init / GPUOffScreen /` \
+  `# realtime compositor / EEVEE). GHOST_SystemHeadless now creates a windowless` \
+  `# GHOST_ContextMTL (nil NSView); the mtl_* backend is made iphoneos-clean via` \
+  `# mtl_ios_compat.hh (managed-storage -> shared, no-op coherency calls) + iOS` \
+  `# guards in mtl_backend.mm / GHOST_ContextMTL.mm. See bpy_ios_source.patch.` \
   -DWITH_VULKAN_BACKEND=OFF -DWITH_OPENGL=OFF \
   -DWITH_BLENDER_THUMBNAILER=OFF \
   `# macOS-only QuickLook .appex; pulls in AppKit/NSImage which isn't on iOS` \

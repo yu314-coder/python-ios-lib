@@ -2,7 +2,7 @@
 
 Full Python 3.14 runtime for iOS/iPadOS with **30+ offline libraries including real PyTorch + HuggingFace transformers + Rust tokenizers + Blender `bpy`**. No JIT, App Store safe.
 
-> **New:** Full `import bpy` — the **complete Blender module** cross-compiled for iOS arm64. Render with **Cycles on the Apple GPU (Metal) + OpenImageDenoise**, plus OpenSubdiv / OpenVDB / Alembic / Bullet / Mantaflow and the full modifier stack. First public iOS build. In CodeBench, saving a `.blend` auto-opens an interactive WebGL 3D preview. [doc](docs/blender-bpy.md)
+> **New:** Full `import bpy` — the **complete Blender module** cross-compiled for iOS arm64. Render with **both Cycles and Eevee on the Apple GPU (Metal)** + OpenImageDenoise, with a working **`gpu` module** (`gpu.init()` / `GPUOffScreen`), plus OpenSubdiv / OpenVDB / Alembic / Bullet / Mantaflow and the full modifier stack. First public iOS build — including the first iOS Eevee / Metal-GPU backend. In CodeBench, saving a `.blend` auto-opens an interactive WebGL 3D preview. [doc](docs/blender-bpy.md)
 
 > **New:** Full `import torch` (v2.1), `import transformers` (v4.41), and `import tokenizers` (v0.19, real Rust cross-compile) all work on-device. Train and fine-tune transformer models on an iPad with zero network. [Full integration test: 24/24 passing.](docs/transformers.md#test-coverage)
 
@@ -121,7 +121,7 @@ The `app_packages/site-packages/` bundle ships **~180 Python packages** — ever
 
 | Library | Version | Notes |
 |---|---|---|
-| **bpy** (Blender) | 5.3.0 | Full `import bpy` — **Cycles on the Apple GPU (Metal) + OpenImageDenoise**, plus OpenSubdiv / OpenVDB / Alembic / **USD + MaterialX** / Bullet / **Mantaflow fluid sim** / **motion tracking (libmv)** / **audio (`aud` + libsndfile)** / i18n / FFTW ocean / Freestyle, the full modifier stack, and **10/10 image formats** (JPEG/TIFF/WebP included). At feature parity with the PyPI `bpy` wheel except GPU-viewport features (Eevee/`gpu` module) — see the doc's gap table. First public iOS build. In CodeBench, saving a `.blend` auto-opens an interactive WebGL 3D preview. [doc](docs/blender-bpy.md) |
+| **bpy** (Blender) | 5.3.0 | Full `import bpy` — **Cycles *and* Eevee on the Apple GPU (Metal)** + OpenImageDenoise + a working **`gpu` module** (`gpu.init()` / `GPUOffScreen`, offscreen Metal backend), plus OpenSubdiv / OpenVDB / Alembic / **USD + MaterialX** / Bullet / **Mantaflow fluid sim** / **motion tracking (libmv)** / **audio (`aud` + libsndfile)** / i18n / FFTW ocean / Freestyle, the full modifier stack, and **10/10 image formats** (JPEG/TIFF/WebP included). **At feature parity with the PyPI `bpy` wheel** (only Cycles-OSL remains — it needs a runtime JIT, forbidden on iOS). First public iOS build — including the first iOS Eevee / Metal-GPU backend. In CodeBench, saving a `.blend` auto-opens an interactive WebGL 3D preview. [doc](docs/blender-bpy.md) |
 
 ### Media — image / video / audio / documents
 

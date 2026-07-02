@@ -41,8 +41,8 @@ for everything that doesn't need a GPU windowing backend (see
 | **OBJ / PLY / STL / FBX / glTF** | ✅ | Mesh I/O — FBX via the new C++ `bpy.ops.wm.fbx_*`; glTF **with Draco** (statically linked, round-trip verified) |
 | **Geometry nodes** | ✅ | Full node graph |
 | **FFmpeg video** | ✅ | H.264/H.265 (Apple VideoToolbox) · MPEG-4 · FFV1 · QTRLE · … — see [Video output](#video-output-ffmpeg) |
-| **Cycles OSL** | ❌ | Needs LLVM — not bundled (PyPI has it; script nodes only) |
-| **Eevee / `gpu` module** | ❌ | Needs a GPU windowing backend (Metal GHOST) — headless build; **do not call `gpu.init()` — it deadlocks** |
+| **Cycles OSL** | ❌ | Needs LLVM JIT — impossible under iOS W^X; script shader node only (SVM nodes work) |
+| **Eevee + `gpu` module** | ✅ (Metal) | Offscreen Metal GHOST backend — `gpu.init()`, `GPUOffScreen`, `BLENDER_EEVEE` render all work on device (see [GPU backend](#gpu-module--eevee-metal)) |
 
 The definitive runtime check for a compiled-in feature is
 `bpy.app.build_options.<name>` (e.g. `.cycles`, `.openvdb`, `.libmv`, `.fluid`,
@@ -67,9 +67,9 @@ off, IME off — and **i18n off** (this build has i18n **on**).
 | Image formats / video (ffmpeg) | ✅ | ✅ (H.264/265 via VideoToolbox) |
 | `aud` present, **no playback device** | ✅ | ✅ (identical: null device) |
 | i18n (`bpy.app.translations`) | ❌ off | ✅ **on** (49 locales) |
-| **Eevee render + working `gpu` module** | ✅ (Metal) | ❌ headless — the *one big gap* |
-| Hydra render-delegate framework | ✅ flag on | ❌ off (pointless without GPU delegates) |
-| Cycles **OSL** script nodes | ✅ | ❌ (needs LLVM cross-build) |
+| **Eevee render + working `gpu` module** | ✅ (Metal) | ✅ **(Metal offscreen — verified on device)** |
+| Hydra render-delegate framework | ✅ flag on | ❌ off (Storm needs a full GPU windowing stack) |
+| Cycles **OSL** script nodes | ✅ | ❌ (LLVM JIT emits runtime code — forbidden by iOS W^X) |
 | **OpenMP** (mantaflow/oceansim threading) | ✅ | ❌ (perf only; Cycles uses TBB regardless) |
 | **Rubberband** (VSE audio time-stretch quality) | ✅ | ❌ (falls back to plain resampling) |
 | `bpy.app.build_hash` | real hash | `Unknown` (cosmetic; `WITH_BUILDINFO=OFF`) |
@@ -80,13 +80,48 @@ off, IME off — and **i18n off** (this build has i18n **on**).
 - **Cycles Metal really renders** (kernels compile on first render, cache after).
   On *small* scenes the CPU is often faster (GPU dispatch overhead dominates);
   the GPU pays off at higher resolutions/sample counts — benchmark your workload.
-- **Never call `gpu.init()`.** Blender 5.x exposes it for headless-GPU wheels,
-  but this build has no GPU backend: it blocks forever inside
-  `WM_system_gpu_context` (worker thread, `semaphore_wait_trap`) and the Python
-  interpreter never returns. The `BLENDER_EEVEE` enum entry fails the same way
-  at render time.
+- **`gpu.init()` works** (as of the Metal-backend port). It creates an offscreen
+  Metal context via a headless `GHOST_ContextMTL` and reports
+  `gpu.platform.backend_type_get() == 'METAL'`. `GPUOffScreen` render + read-back
+  and `BLENDER_EEVEE` still renders both verified on device. (Earlier headless
+  builds had no GPU backend and *did* deadlock in `WM_system_gpu_context` — that
+  is fixed; see [GPU module / Eevee](#gpu-module--eevee-metal).)
 - **Add-ons:** the 13 bundled add-ons match PyPI 5.x `addons_core` exactly
   (`io_scene_gltf2`, `io_scene_fbx`, `rigify`, `pose_library`, `node_wrangler`, …).
+
+---
+
+## GPU module / Eevee (Metal)
+
+Unlike a stock headless wheel, this build has a **real GPU backend on iOS**: an
+*offscreen* Metal context (no window). It powers the `gpu` module, `GPUOffScreen`,
+the realtime compositor, and the **Eevee** render engine.
+
+```python
+import bpy, gpu
+gpu.init()                              # creates the offscreen Metal context
+gpu.platform.backend_type_get()         # -> 'METAL'
+
+# Eevee still render:
+scn = bpy.data.scenes[0]
+scn.render.engine = 'BLENDER_EEVEE'
+scn.render.filepath = '/path/out.png'
+bpy.ops.render.render(write_still=True) # ~9 s for a lit 400x300 scene on an M-series iPad
+```
+
+How it works / caveats:
+
+- `GHOST_SystemHeadless` gains a Metal case that builds a windowless
+  `GHOST_ContextMTL` (`MTLCreateSystemDefaultDevice` + a `CAMetalLayer`, no
+  `NSView`). The Metal backend is compiled `iphoneos`-clean (managed-storage
+  paths map to shared memory; macOS-only intrinsics guarded).
+- GLSL shaders cross-compile to **MSL at runtime** (baseline raised to MSL 3.0 on
+  iOS so EEVEE's SIMD-group ops — `simd_or`/`simd_min`/`simd_max` — are declared).
+- **`bpy.ops.render.render()` runs on the calling thread.** Metal context
+  creation asserts the main thread in debug builds; call it from your main /
+  Python thread.
+- Eevee's first render compiles its shader library (a few seconds), then caches.
+- Recipes: `bpy_ios_metal_gpu.patch` (source) + `-DWITH_METAL_BACKEND=ON`.
 
 ---
 
@@ -306,8 +341,9 @@ Set `CB_BLEND_NO_RENDER=1` to skip the still render for faster saves.
   primitive-add op, grab the new object with **`bpy.context.active_object`** (or a
   before/after `set(bpy.data.objects.keys())` diff) — `[-1]` returns the
   alphabetically-last object once the scene fills up.
-- **Never call `gpu.init()`** — it deadlocks the interpreter (no GPU backend in
-  this headless build). Cycles GPU rendering does *not* need it.
+- **`gpu.init()` works** — the headless build now has an offscreen Metal backend,
+  so the `gpu` module and `BLENDER_EEVEE` render on device. (Cycles GPU rendering
+  still doesn't require it.)
 - **glTF + Draco works** (statically linked): export with
   `export_draco_mesh_compression_enable=True` round-trips on device.
 - **No `_multiprocessing`** on iOS — a stub ships so `bpy` imports cleanly.
@@ -352,9 +388,10 @@ harvested from the build, recompiled host-native, and re-imported as
 `IMPORTED` targets. All ~30 dependencies (Embree, OIDN, OpenVDB, Alembic,
 Bullet, Mantaflow, FFTW, GMP/manifold, OpenUSD, MaterialX, ceres, libsndfile,
 fribidi, …) were rebuilt for iOS arm64 — recipes in the project's
-`blender_ios/` tree (`build_*_ios.sh` + the 12-file `bpy_ios_source.patch`,
-round-trip verified against upstream `c9dd766c`).
+`blender_ios/` tree (`build_*_ios.sh` + the `bpy_ios_source.patch` and
+`bpy_ios_metal_gpu.patch`, round-trip verified against upstream `c9dd766c`).
 
-**Remaining gaps vs the PyPI wheel:** Eevee + the `gpu` module (needs a Metal
-GHOST backend — the one structural gap), Cycles OSL (LLVM), OpenMP (perf),
-Rubberband (VSE audio stretch quality), `build_hash` (cosmetic).
+**Remaining gaps vs the PyPI wheel:** Cycles OSL (LLVM JIT — forbidden by iOS
+W^X), OpenMP (perf only; Cycles uses TBB regardless), Rubberband (VSE audio
+stretch quality), `build_hash` (cosmetic). **Eevee + the `gpu` module — the
+former "one structural gap" — now work** via the offscreen Metal backend.
