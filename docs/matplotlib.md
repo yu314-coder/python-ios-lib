@@ -1,615 +1,225 @@
 # matplotlib — REAL matplotlib 3.11 (iOS arm64) + plotly interactive showcase
 
-> **Version:** 3.11.0 (real C build) | **Extensions:** ft2font (vendored FreeType 2.14), `_path`, `_image`, `_tri`, `_qhull`, `_backend_agg`, contourpy 1.3.3, kiwisolver 1.5.0 | **Location:** `matplotlib/` (+ `mpl_toolkits/`, `pylab.py`)
+> **Version:** 3.11.0 (real C build) · **C extensions:** `ft2font` (vendored FreeType 2.14.3), `_path`, `_image`, `_tri`, `_qhull`, `_backend_agg`, `_c_internal_utils`, `_tkagg` · **deps:** contourpy 1.3.3, kiwisolver 1.5.0 (both native arm64) + cycler / pyparsing / python-dateutil / packaging / fonttools · **Location:** `matplotlib/`, `mpl_toolkits/`, `pylab.py` · **Recipe:** `matplotlib_ios/build_matplotlib_ios.sh`
 
-The bundled `import matplotlib` is the **real** matplotlib — identical 3.11.0
-source cross-compiled for iOS arm64 (recipe: `matplotlib_ios/build_matplotlib_ios.sh`).
-Full feature surface: Agg/SVG/PDF savefig, mathtext, real mplot3d, contourf,
-28 style sheets, rcParams, `FuncAnimation`, pandas `.plot()`.
+The bundled `import matplotlib` is the **real** matplotlib — the identical
+3.11.0 source cross-compiled for iOS arm64, C extensions and all. This is not
+an emulation layer: `matplotlib.__version__ == "3.11.0"`, `matplotlib.ft2font`
+reports the real FreeType version, and every artist renders through the real
+Agg/SVG/PDF backends. Anything from an upstream tutorial, a notebook, or
+StackOverflow runs unmodified.
 
-## How figures display in CodeBench
-
-`plt.show()` is hooked (sitecustomize):
-
-| Figure | Showcase | Interaction |
-|---|---|---|
-| 2-D | converted to plotly (`codebench_mpl2plotly`) | hover = data values, wheel/pinch zoom, drag pan, legend toggle |
-| 3-D | plotly WebGL (`go.Surface` / `Scatter3d`) | **drag = orbit, tap = x/y/z values**; axis tick text lives in the SVG layer (title + ranges line) because iOS WebKit cannot rasterize plotly's WebGL glyph atlas |
-| animation | `Animation.to_jshtml()` player | play / pause / step / loop + frame slider |
-| unconvertible 2-D | crisp-SVG viewer (`codebench_mpl_viewer`) | zoom/pan + nearest-point tooltip |
-| last resort | WebAgg live canvas → PNG | mpl's own toolbar |
-
-A PNG snapshot is **always** written to ToolOutputs as the static record.
-
-Conversion coverage (host-verified 17/17): lines, scatter, bar, hist,
-fill_between, imshow (gray + RGB), contour/contourf (exact grids via
-capture-at-call), pcolormesh, pie, log/date axes, subplots, 3-D
-surface/wireframe/scatter/line. `plt.savefig()` is untouched real matplotlib
-— every format works regardless of showcase mode.
-
-**Environment switches**
-
-| Variable | Effect |
-|---|---|
-| `CODEBENCH_MPL_INTERACTIVE=1` *(default)* | plotly showcase |
-| `CODEBENCH_MPL_INTERACTIVE=webagg` | matplotlib's own WebAgg server (mpl toolbar) |
-| `CODEBENCH_MPL_INTERACTIVE=0` | static PNG only |
-| `CODEBENCH_MPL_BACKEND=plotly` | select the LEGACY plotly-shim matplotlib below |
-
-Known absent on iOS (inherent): `macosx` GUI backend, ffmpeg-binary MP4
-animation writer (GIF/HTML writers work), `usetex`.
+> The legacy pure-Python **plotly-backend shim** (the previous `3.9.0-offlinai`)
+> is preserved and selectable per run — see [the appendix](#appendix--legacy-plotly-backend-shim). Real matplotlib is the default.
 
 ---
 
-# Appendix — Legacy Plotly Backend Shim (`CODEBENCH_MPL_BACKEND=plotly`)
-
-The original pure-Python emulation layer is preserved at
-`site-packages/_mpl_plotly_shim/` and selectable per-run with the env var
-above. Everything below documents that shim.
-
-> **Version:** 3.9.0-offlinai | **Type:** API compatibility layer (matplotlib -> Plotly) | **Modules:** 64
-
-Drop-in replacement for `matplotlib.pyplot` that renders interactive charts via Plotly.js. Import `matplotlib.pyplot as plt` and it just works. Provides comprehensive API coverage across 64 modules matching matplotlib's public interface.
-
----
-
-## Quick Start
+## Quick start
 
 ```python
 import numpy as np
 import matplotlib.pyplot as plt
 
-x = np.linspace(0, 2 * np.pi, 200)
-plt.plot(x, np.sin(x), label='sin(x)')
-plt.plot(x, np.cos(x), label='cos(x)')
-plt.title('Trigonometric Functions')
-plt.xlabel('x')
-plt.ylabel('y')
-plt.legend()
-plt.grid(True)
-plt.show()
+x = np.linspace(0, 4 * np.pi, 400)
+fig, ax = plt.subplots(figsize=(7, 4))
+ax.plot(x, np.sin(x), label="sin")
+ax.plot(x, np.cos(x), "--", label="cos")
+ax.fill_between(x, np.sin(x), alpha=0.15)
+ax.set_title(r"$\int_0^\infty e^{-x^2}\,dx = \frac{\sqrt{\pi}}{2}$")  # real mathtext
+ax.legend(); ax.grid(True)
+plt.show()   # → interactive in the CodeBench preview (see below)
+
+fig.savefig("out.pdf")   # real vector PDF — no kaleido, no shim
 ```
 
----
+## Verified on device (M-series, Designed-for-iPad)
 
-## Module Reference (64 modules)
-
-### `matplotlib.pyplot` -- Primary Plotting Interface
-
-#### 2D Plot Types
-
-| Function | Description |
-|----------|-------------|
-| `plt.plot(x, y, fmt, **kwargs)` | Line plot. Format strings: `'b-'`, `'ro'`, `'g--'`, etc. |
-| `plt.scatter(x, y, s, c, marker, alpha)` | Scatter plot with optional size/color arrays |
-| `plt.bar(x, height, width, bottom, color)` | Vertical bar chart |
-| `plt.barh(y, width, height, left, color)` | Horizontal bar chart |
-| `plt.hist(data, bins, range, density, cumulative)` | Histogram |
-| `plt.hist2d(x, y, bins, cmap)` | 2D histogram / heatmap |
-| `plt.pie(sizes, labels, autopct, explode, shadow)` | Pie chart |
-| `plt.fill_between(x, y1, y2, alpha, color)` | Filled area between curves |
-| `plt.fill_betweenx(y, x1, x2, alpha)` | Horizontal filled area |
-| `plt.stem(x, y, linefmt, markerfmt, basefmt)` | Stem plot |
-| `plt.step(x, y, where, color, linewidth)` | Step plot |
-| `plt.errorbar(x, y, yerr, xerr, fmt, capsize)` | Error bars |
-| `plt.boxplot(data, notch, vert, labels)` | Box-and-whisker plot |
-| `plt.violinplot(data, positions, showmeans)` | Violin plot |
-| `plt.imshow(Z, cmap, aspect, interpolation, extent)` | Image / heatmap display |
-| `plt.matshow(Z, cmap)` | Matrix display (calls imshow) |
-| `plt.pcolormesh(X, Y, Z, cmap, shading)` | Pseudocolor mesh plot |
-| `plt.contour(X, Y, Z, levels, colors, cmap)` | Contour lines |
-| `plt.contourf(X, Y, Z, levels, cmap)` | Filled contours |
-| `plt.polar(theta, r, **kwargs)` | Polar plot |
-| `plt.stackplot(x, *ys, labels, colors)` | Stacked area chart |
-| `plt.hexbin(x, y, gridsize, cmap, mincnt)` | Hexagonal binning plot |
-| `plt.hlines(y, xmin, xmax, colors, linestyles)` | Horizontal line segments |
-| `plt.vlines(x, ymin, ymax, colors, linestyles)` | Vertical line segments |
-| `plt.quiver(X, Y, U, V, C)` | 2D vector field (arrows) |
-| `plt.streamplot(X, Y, U, V, density, color)` | 2D streamlines |
-| `plt.tricontour(x, y, z, levels)` | Unstructured triangular contour |
-| `plt.tricontourf(x, y, z, levels)` | Filled triangular contour |
-| `plt.tripcolor(x, y, z, cmap)` | Pseudocolor on triangular grid |
-| `plt.spy(Z, precision, marker)` | Sparsity pattern visualization |
-| `plt.eventplot(positions, orientation)` | Event/raster plot |
-| `plt.broken_barh(xranges, yrange)` | Broken horizontal bars (Gantt-style) |
-
-#### 3D Plot Types
-
-| Function | Description |
-|----------|-------------|
-| `plt.plot_surface(X, Y, Z, cmap, alpha)` | 3D surface (auto-creates 3D axes) |
-| `plt.plot_wireframe(X, Y, Z, color)` | 3D wireframe mesh |
-| `plt.scatter3D(x, y, z, c, s, cmap)` | 3D scatter plot |
-| `plt.plot3D(x, y, z, color)` | 3D line plot |
-| `plt.bar3d(x, y, z, dx, dy, dz, color)` | 3D bar chart |
-| `plt.plot_trisurf(x, y, z, cmap)` | 3D triangulated surface |
-| `ax.contour3D(X, Y, Z, levels, cmap)` | 3D contour lines |
-| `ax.contourf3D(X, Y, Z, levels, cmap)` | 3D filled contours |
-
-#### Figure & Axes Management
-
-| Function | Description |
-|----------|-------------|
-| `plt.figure(figsize, dpi, facecolor)` | Create new figure |
-| `plt.subplots(nrows, ncols, sharex, sharey, figsize)` | Create figure + axes grid |
-| `plt.subplot(nrows, ncols, index)` | Add subplot to current figure |
-| `plt.subplot2grid(shape, loc, rowspan, colspan)` | Subplot with grid positioning |
-| `plt.axes(rect)` | Add axes at arbitrary position |
-| `plt.gca()` | Get current axes |
-| `plt.gcf()` | Get current figure |
-| `plt.cla()` | Clear current axes |
-| `plt.clf()` | Clear current figure |
-| `plt.close(fig)` | Close a figure |
-| `ax.twinx()` | Create secondary y-axis |
-| `ax.twiny()` | Create secondary x-axis |
-| `fig.add_subplot(nrows, ncols, index, projection)` | Add subplot (`projection='3d'` for 3D) |
-
-#### Annotations & Text
-
-| Function | Description |
-|----------|-------------|
-| `plt.title(s, fontsize, fontweight)` | Set axes title |
-| `plt.suptitle(s, fontsize)` | Set figure super title |
-| `plt.xlabel(s, fontsize)` / `plt.ylabel(s)` | Axis labels |
-| `plt.text(x, y, s, fontsize, ha, va)` | Place text at data coordinates |
-| `plt.annotate(text, xy, xytext, arrowprops)` | Arrow annotation |
-| `plt.figtext(x, y, s)` | Text in figure coordinates |
-| `ax.set_title(s)` | Axes title (OO interface) |
-| `ax.set_xlabel(s)` / `ax.set_ylabel(s)` | Axis labels (OO) |
-
-#### Axis Configuration
-
-| Function | Description |
-|----------|-------------|
-| `plt.xlim(left, right)` / `plt.ylim(bottom, top)` | Set axis limits |
-| `plt.xscale('log')` / `plt.yscale('log')` | Set axis scale (`linear`/`log`/`symlog`/`logit`) |
-| `plt.xticks(ticks, labels, rotation)` | Set tick positions and labels |
-| `plt.yticks(ticks, labels)` | Set y-axis ticks |
-| `plt.grid(visible, which, axis, linestyle)` | Toggle grid |
-| `plt.legend(loc, fontsize, frameon, ncol)` | Show legend |
-| `plt.colorbar(mappable, ax, label)` | Add colorbar |
-| `plt.axis('equal'/'off'/'tight'/'scaled')` | Set axis mode |
-| `plt.tight_layout(pad)` | Adjust subplot spacing |
-| `plt.margins(x, y)` | Set axis margins |
-| `plt.axhline(y, color, linestyle)` | Horizontal reference line |
-| `plt.axvline(x, color, linestyle)` | Vertical reference line |
-| `plt.axhspan(ymin, ymax, alpha, color)` | Horizontal span (shaded region) |
-| `plt.axvspan(xmin, xmax, alpha, color)` | Vertical span |
-| `plt.minorticks_on()` / `plt.minorticks_off()` | Toggle minor ticks |
-| `ax.invert_xaxis()` / `ax.invert_yaxis()` | Invert axis direction |
-| `ax.set_aspect('equal'/'auto')` | Set aspect ratio |
-
-#### Output
-
-| Function | Description |
-|----------|-------------|
-| `plt.show()` | Display chart (renders as interactive HTML in WKWebView) |
-| `plt.savefig('chart.html')` | Save as interactive HTML |
-| `plt.savefig('chart.png', dpi)` | Save as PNG (requires kaleido) |
-| `plt.savefig('chart.svg')` | Save as SVG |
-| `plt.savefig('chart.pdf')` | Save as PDF |
+| Feature | Status |
+|---|---|
+| 2-D lines / scatter / bars / legend / grid | ✅ |
+| **mathtext** (`$…$` TeX-style) via the internal renderer + bundled fonts | ✅ |
+| `contourf` + colorbar (contourpy) | ✅ |
+| **real mplot3d** `plot_surface` / `plot_wireframe` / 3-D scatter | ✅ |
+| 28 style sheets + full `rcParams` | ✅ |
+| **SVG + PDF** vector output | ✅ |
+| pandas `Series.plot()` / `DataFrame.plot()` with date axes | ✅ |
+| **GIF animation** (`FuncAnimation` + `PillowWriter`) | ✅ |
+| `savefig` PNG (Agg) / SVG / PDF — every format, natively | ✅ |
 
 ---
 
-### `matplotlib.figure` -- Figure Class
+## How figures display in CodeBench
 
-| Class / Method | Description |
-|---------------|-------------|
-| `Figure(figsize, dpi, facecolor, edgecolor)` | Figure container |
-| `fig.add_subplot(pos, projection)` | Add Axes to the figure |
-| `fig.add_axes(rect)` | Add Axes at arbitrary position [left, bottom, width, height] |
-| `fig.suptitle(t, fontsize)` | Super title for the figure |
-| `fig.tight_layout()` | Adjust subplot params for tight layout |
-| `fig.subplots_adjust(left, bottom, right, top, wspace, hspace)` | Fine-tune subplot spacing |
-| `fig.savefig(fname, dpi, bbox_inches)` | Save figure |
-| `fig.set_size_inches(w, h)` | Set figure size |
-| `fig.get_axes()` | Return list of axes |
+`plt.show()` is hooked (in `sitecustomize`) so a figure lands in the preview
+pane with real interactivity. The figure type picks the renderer:
 
----
+| Figure | Renderer | Interaction |
+|---|---|---|
+| **2-D** | converted to plotly (`codebench_mpl2plotly`) | hover = **data values**, wheel/pinch **zoom**, drag **pan**, click legend to **toggle** series |
+| **3-D** | plotly WebGL (`go.Surface` / `go.Scatter3d`) | drag = **orbit**, tap = **x/y/z values**. Axis text lives in the SVG layer (a title + a `x: [min…max] · …` ranges line) because iOS WebKit cannot rasterize plotly's WebGL glyph atlas — see the note below |
+| **animation** | `Animation.to_jshtml()` player | **play / pause / step / loop** + frame slider (self-contained HTML, always plays) |
+| **2-D that won't convert** | crisp-SVG viewer (`codebench_mpl_viewer`) | exact mpl vector + zoom/pan + nearest-point tooltip |
+| **last resort** | WebAgg live canvas → static PNG | matplotlib's own pan/zoom toolbar |
 
-### `matplotlib.axes` -- Axes Class
+A PNG snapshot is **always** written to `ToolOutputs/` as the static record,
+regardless of which renderer runs.
 
-The `Axes` object supports the full OO plotting interface. All `plt.xxx()` functions delegate to the current axes.
+**Conversion coverage** (host-verified, 17/17): lines, scatter, bar, hist,
+`fill_between`, `imshow` (grayscale + RGB), `contour`/`contourf` (exact grids
+via capture-at-call), `pcolormesh`, `pie`, log & date axes, subplots, and 3-D
+surface / wireframe / scatter / line. Grids whose source arrays can't be
+recovered from the artist tree are captured at call time, so the plotly trace
+is exact rather than approximate.
 
-| Method | Description |
-|--------|-------------|
-| `ax.plot()`, `ax.scatter()`, `ax.bar()`, etc. | All plot types listed above |
-| `ax.set_xlim()`, `ax.set_ylim()` | Axis limits |
-| `ax.set_xscale()`, `ax.set_yscale()` | Axis scales |
-| `ax.set_xticks()`, `ax.set_yticks()` | Tick positions |
-| `ax.set_xticklabels()`, `ax.set_yticklabels()` | Tick labels |
-| `ax.legend()` | Show legend |
-| `ax.grid()` | Toggle grid |
-| `ax.twinx()`, `ax.twiny()` | Secondary axes |
-| `ax.tick_params(axis, which, direction, length)` | Configure tick appearance |
+### Display modes
 
----
+| `CODEBENCH_MPL_INTERACTIVE` | Behaviour |
+|---|---|
+| `1` / `plotly` *(default)* | plotly showcase (hover, zoom, orbit) |
+| `webagg` | matplotlib's own WebAgg server + navigation toolbar (raster, live) |
+| `0` | static PNG only |
 
-### `matplotlib.cm` -- Colormaps (50+ mapped)
+Set `CODEBENCH_MPL_BACKEND=plotly` to swap the whole `matplotlib` package for
+the [legacy shim](#appendix--legacy-plotly-backend-shim) instead.
 
-Colormaps are callable objects that map normalized values [0, 1] to RGBA colors.
+### Why 3-D axis labels live in the SVG layer
 
-```python
-from matplotlib import cm
+The app's WKWebView runs the **iOS** WebKit stack, which fails to rasterize
+plotly's WebGL glyph atlas — 3-D tick labels and axis titles come out as empty
+"tofu" boxes (the *same* HTML renders perfectly in macOS Safari). So 3-D scenes
+are emitted with **no** WebGL text: ticks hidden, axis titles at a sub-pixel
+font, and the readable information moved to the SVG layer (a centered title
+plus a `x: [-2 … 2] · y: [-2 … 2] · z: [-1 … 1]` ranges line) with a rich
+`hovertemplate` so a **tap** still shows the exact `x/y/z` under the finger.
+Grid lines (pure geometry) are kept for depth.
 
-# Callable colormaps
-rgba = cm.viridis(0.5)    # Returns (R, G, B, A) tuple
-rgba = cm.plasma(0.75)
-rgba = cm.jet(0.25)
+### `savefig` — every format, native
 
-# Get colormap by name
-cmap = cm.get_cmap('coolwarm')
-colors = cmap(np.linspace(0, 1, 10))  # Array of 10 RGBA colors
-```
+`plt.savefig()` / `fig.savefig()` is untouched real matplotlib and is
+completely independent of the display pipeline above:
 
-**Sequential:** `viridis`, `plasma`, `inferno`, `magma`, `cividis`, `turbo`
-
-**Perceptual:** `hot`, `cool`, `bone`, `copper`, `gray`, `binary`
-
-**Seasonal:** `spring`, `summer`, `autumn`, `winter`
-
-**Diverging:** `coolwarm`, `RdBu`, `RdYlGn`, `RdYlBu`, `Spectral`, `PiYG`, `PRGn`, `BrBG`, `seismic`, `bwr`
-
-**Cyclic:** `twilight`, `twilight_shifted`, `hsv`
-
-**Qualitative:** `tab10`, `tab20`, `tab20b`, `tab20c`, `Set1`, `Set2`, `Set3`, `Paired`, `Pastel1`, `Pastel2`, `Dark2`, `Accent`
-
-**Multi-hue sequential:** `YlGnBu`, `YlOrRd`, `PuBu`, `BuGn`, `GnBu`, `PuRd`, `OrRd`, `RdPu`, `BuPu`, `YlGn`
-
-**Single-hue sequential:** `Greens`, `Blues`, `Reds`, `Oranges`, `Purples`, `Greys`
-
-**Other:** `jet`, `rainbow`, `gist_rainbow`, `nipy_spectral`, `terrain`, `ocean`, `cubehelix`
+| Format | Backend | Notes |
+|---|---|---|
+| `.png` | Agg | **no kaleido** — the real raster backend |
+| `.svg` | SVG | true vector |
+| `.pdf` | PDF | true vector, embeds subsetted fonts |
+| `.jpg` / `.tif` / `.webp` | Agg + Pillow | via the bundled Pillow |
+| `.gif` (animation) | `PillowWriter` | frame-by-frame GIF |
 
 ---
 
-### `matplotlib.colors` -- Color Utilities
+## API reference (real matplotlib — full public interface)
 
-| Function / Class | Description |
-|-----------------|-------------|
-| `to_rgba(c, alpha)` | Convert any color spec to (R, G, B, A). Supports hex (`'#ff0000'`), named (`'red'`), CSS4, RGB tuples, shorthand (`'r'`, `'b'`) |
-| `to_hex(c, keep_alpha)` | Convert color to hex string |
-| `to_rgb(c)` | Convert to (R, G, B) tuple |
-| `Normalize(vmin, vmax)` | Linear normalization to [0, 1] |
-| `LogNorm(vmin, vmax)` | Logarithmic normalization |
-| `SymLogNorm(linthresh, vmin, vmax)` | Symmetric log normalization |
-| `PowerNorm(gamma, vmin, vmax)` | Power-law normalization |
-| `BoundaryNorm(boundaries, ncolors)` | Map to discrete boundaries |
-| `TwoSlopeNorm(vcenter, vmin, vmax)` | Diverging normalization around center |
-| `Colormap(name, N)` | Base colormap class |
-| `ListedColormap(colors, name)` | Colormap from explicit color list |
-| `LinearSegmentedColormap(name, segmentdata)` | Colormap from linear segments |
-| `LinearSegmentedColormap.from_list(name, colors)` | Create from list of colors |
-| `CSS4_COLORS` | Dict of 148 CSS4 named colors |
-| `TABLEAU_COLORS` | Dict of Tableau 10 colors |
-| `BASE_COLORS` | Dict of single-letter colors (r, g, b, c, m, y, k, w) |
-| `XKCD_COLORS` | Dict of 954 XKCD color survey names |
+This is the genuine library, so its entire public API is present. The tables
+below are a quick cheat-sheet of the most-used surface; anything not listed
+still works exactly as upstream.
 
----
+### `matplotlib.pyplot` — primary interface
 
-### `matplotlib.ticker` -- Tick Locators & Formatters
+**2-D plot types:** `plot`, `scatter`, `bar`, `barh`, `hist`, `hist2d`, `pie`,
+`fill_between`, `fill_betweenx`, `stem`, `step`, `errorbar`, `boxplot`,
+`violinplot`, `imshow`, `matshow`, `pcolormesh`, `pcolor`, `contour`,
+`contourf`, `polar`, `stackplot`, `hexbin`, `hlines`, `vlines`, `quiver`,
+`streamplot`, `tricontour`, `tricontourf`, `tripcolor`, `spy`, `eventplot`,
+`broken_barh`.
 
-#### Locators
+**3-D plot types** (`projection='3d'`): `plot_surface`, `plot_wireframe`,
+`scatter` / `scatter3D`, `plot` / `plot3D`, `bar3d`, `plot_trisurf`,
+`contour3D`, `contourf3D`, `voxels`, `quiver` (3-D).
 
-| Class | Description |
-|-------|-------------|
-| `AutoLocator()` | Automatic tick placement |
-| `MaxNLocator(nbins)` | At most N bins |
-| `MultipleLocator(base)` | Ticks at multiples of base |
-| `FixedLocator(locs)` | Ticks at specific locations |
-| `IndexLocator(base, offset)` | Ticks at index intervals |
-| `LinearLocator(numticks)` | Evenly spaced ticks |
-| `LogLocator(base, subs)` | Log-scale tick locations |
-| `SymmetricalLogLocator(linthresh)` | Symmetric log ticks |
-| `NullLocator()` | No ticks |
-| `AutoMinorLocator(n)` | Automatic minor ticks |
+**Figure & axes:** `figure`, `subplots`, `subplot`, `subplot2grid`,
+`subplot_mosaic`, `axes`, `gca`, `gcf`, `cla`, `clf`, `close`, `twinx`,
+`twiny`, `add_subplot(projection=…)`.
 
-#### Formatters
+**Annotations & text:** `title`, `suptitle`, `xlabel`, `ylabel`, `text`,
+`annotate`, `figtext`; OO forms `ax.set_title/set_xlabel/set_ylabel`.
 
-| Class | Description |
-|-------|-------------|
-| `ScalarFormatter(useOffset, useMathText)` | Default scalar formatting |
-| `FuncFormatter(func)` | Custom function-based formatting |
-| `FormatStrFormatter(fmt)` | Printf-style format string |
-| `StrMethodFormatter(fmt)` | str.format()-style formatting |
-| `FixedFormatter(seq)` | Fixed sequence of label strings |
-| `PercentFormatter(xmax, decimals)` | Display as percentage |
-| `LogFormatter(base)` | Log-scale labels |
-| `LogFormatterMathtext(base)` | Log labels with mathtext |
-| `NullFormatter()` | No labels |
-| `EngFormatter(unit, places)` | Engineering notation (k, M, G) |
+**Axis config:** `xlim`, `ylim`, `xscale`, `yscale` (`linear`/`log`/`symlog`/
+`logit`), `xticks`, `yticks`, `grid`, `legend`, `colorbar`, `axis`,
+`tight_layout`, `margins`, `axhline`, `axvline`, `axhspan`, `axvspan`,
+`minorticks_on/off`, `ax.invert_xaxis/yaxis`, `ax.set_aspect`.
 
----
+**Output:** `show()` (→ interactive preview, see above), `savefig(...)` (every
+format above, natively).
 
-### `matplotlib.patches` -- 2D Shapes
+### Other modules (all real)
 
-| Class | Key Parameters | Description |
-|-------|---------------|-------------|
-| `Rectangle(xy, width, height, angle)` | Rectangle patch |
-| `Circle(xy, radius)` | Circle patch |
-| `Ellipse(xy, width, height, angle)` | Ellipse patch |
-| `FancyBboxPatch(xy, width, height, boxstyle)` | Fancy box with rounded corners etc. |
-| `Polygon(xy, closed)` | Arbitrary polygon |
-| `RegularPolygon(xy, numVertices, radius)` | Regular polygon |
-| `Arc(xy, width, height, angle, theta1, theta2)` | Elliptical arc |
-| `Wedge(center, r, theta1, theta2, width)` | Wedge (pie slice) |
-| `Arrow(x, y, dx, dy, width)` | Arrow patch |
-| `FancyArrow(x, y, dx, dy, width, head_width)` | Fancy arrow |
-| `FancyArrowPatch(posA, posB, arrowstyle)` | Arrow between two points with style |
-| `PathPatch(path, **kwargs)` | Arbitrary path patch |
-| `ConnectionPatch(xyA, xyB, coordsA, coordsB)` | Connect points across axes |
-| `BoxStyle` | Box styles: `round`, `round4`, `roundtooth`, `sawtooth`, `square` |
-| `ArrowStyle` | Arrow styles: `->`, `-[`, `-|>`, `<->`, `<|-|>`, `fancy`, `simple`, `wedge` |
+| Module | What it provides |
+|---|---|
+| `matplotlib.figure` | `Figure`, `add_subplot`, `add_axes`, `suptitle`, `savefig`, `subplots_adjust`, `set_size_inches` |
+| `matplotlib.axes` | full OO `Axes` API — every `plt.*` plot delegates here |
+| `matplotlib.cm` / `matplotlib.colormaps` | **all** built-in colormaps (sequential / perceptual / diverging / cyclic / qualitative), callable + registry |
+| `matplotlib.colors` | `to_rgba/to_hex/to_rgb`, `Normalize`, `LogNorm`, `SymLogNorm`, `PowerNorm`, `BoundaryNorm`, `TwoSlopeNorm`, `ListedColormap`, `LinearSegmentedColormap`, `CSS4_COLORS`, `TABLEAU_COLORS`, `XKCD_COLORS` |
+| `matplotlib.ticker` | locators (`MaxNLocator`, `MultipleLocator`, `LogLocator`, …) + formatters (`ScalarFormatter`, `FuncFormatter`, `PercentFormatter`, `EngFormatter`, `LogFormatterMathtext`, …) |
+| `matplotlib.patches` | `Rectangle`, `Circle`, `Ellipse`, `Polygon`, `Wedge`, `Arc`, `FancyArrowPatch`, `PathPatch`, `ConnectionPatch`, `BoxStyle`, `ArrowStyle` |
+| `matplotlib.lines` | `Line2D` (linestyle / marker / color / width / alpha / zorder) |
+| `matplotlib.collections` | `PathCollection`, `LineCollection`, `PatchCollection`, `PolyCollection`, `QuadMesh`, `EventCollection` |
+| `matplotlib.animation` | `FuncAnimation`, `ArtistAnimation`; writers `PillowWriter` (GIF) + `HTMLWriter` / `to_jshtml` (HTML player). *MP4 needs an ffmpeg binary — export on host.* |
+| `matplotlib.gridspec` | `GridSpec`, `SubplotSpec`, `GridSpecFromSubplotSpec` |
+| `matplotlib.text` | `Text`, `Annotation`, alignment / weight / style |
+| `matplotlib.image` | `imread`, `imsave`, `AxesImage` |
+| `matplotlib.legend` | `loc`, `ncol`, `bbox_to_anchor`, `frameon`, `title`, … |
+| `matplotlib.transforms` | `Affine2D`, `Bbox`, blended / composite transforms |
+| `matplotlib.dates` | `DateFormatter`, auto/day/month/year/hour locators, `date2num`/`num2date` |
+| `matplotlib.scale` | `linear` / `log` / `symlog` / `logit` / custom `FuncScale` |
+| `matplotlib.style` | **28** style sheets — `mplstyle.use('ggplot')`, `plt.style.context(...)`, `plt.style.available` |
+| `matplotlib.rcParams` | **full** rcParams — every parameter propagates (it *is* real matplotlib); e.g. `mpl.rcParams['lines.linewidth'] = 2` |
+| `matplotlib.mathtext` | **full** internal TeX-style math renderer (Greek, sub/superscripts, fractions, roots, sums, integrals, accents, `\mathbb`/`\hat`/`\frac`, …) rendered by ft2font |
+| `mpl_toolkits.mplot3d` | real `Axes3D` — `plot_surface`, `plot_wireframe`, `scatter`, `bar3d`, `plot_trisurf`, `view_init`, `set_zlabel/set_zlim` |
+| `mpl_toolkits.axes_grid1` | `make_axes_locatable`, `ImageGrid`, `inset_axes`, `mark_inset` |
+| `mpl_toolkits.axisartist` | curvilinear / floating axes |
 
----
-
-### `matplotlib.lines` -- Line2D
-
-| Property | Values |
-|----------|--------|
-| `linestyle` / `ls` | `'-'`, `'--'`, `'-.'`, `':'`, `'None'` |
-| `linewidth` / `lw` | Float (points) |
-| `color` / `c` | Any color spec |
-| `marker` | `'o'`, `'s'`, `'^'`, `'v'`, `'D'`, `'*'`, `'+'`, `'x'`, `'.'`, `','`, `'h'`, `'p'`, `'|'`, `'_'` |
-| `markersize` / `ms` | Float (points) |
-| `markerfacecolor` / `mfc` | Marker fill color |
-| `markeredgecolor` / `mec` | Marker edge color |
-| `alpha` | Float 0-1 transparency |
-| `label` | String for legend |
-| `zorder` | Drawing order (higher = on top) |
-
----
-
-### `matplotlib.animation` -- Animation
-
-| Class | Description |
-|-------|-------------|
-| `FuncAnimation(fig, func, frames, init_func, interval, blit)` | Animation by repeatedly calling a function |
-| `ArtistAnimation(fig, artists, interval)` | Animation from a list of artist sequences |
-
-Note: Animation renders as a sequence of frames. Video export requires ffmpeg (limited on iOS).
-
----
-
-### `matplotlib.gridspec` -- Grid Layout
-
-| Class | Description |
-|-------|-------------|
-| `GridSpec(nrows, ncols, figure, width_ratios, height_ratios, wspace, hspace)` | Flexible subplot grid specification |
-| `SubplotSpec` | Specifies location of a subplot in a GridSpec |
-| `GridSpecFromSubplotSpec(nrows, ncols, subplot_spec)` | Nested grid spec |
-
-```python
-import matplotlib.gridspec as gridspec
-fig = plt.figure(figsize=(12, 8))
-gs = gridspec.GridSpec(2, 3, width_ratios=[1, 2, 1], height_ratios=[2, 1])
-ax1 = fig.add_subplot(gs[0, :])   # Top row, all columns
-ax2 = fig.add_subplot(gs[1, 0])   # Bottom-left
-ax3 = fig.add_subplot(gs[1, 1:])  # Bottom-right spanning 2 cols
-```
-
----
-
-### `matplotlib.text` -- Text Rendering
-
-| Class / Property | Description |
-|-----------------|-------------|
-| `Text(x, y, text, fontsize, ha, va, rotation, color, fontweight, fontstyle)` | Text artist |
-| `Annotation(text, xy, xytext, arrowprops, fontsize)` | Annotated text with arrow |
-| `fontsize` | Integer or `'xx-small'`, `'x-small'`, `'small'`, `'medium'`, `'large'`, `'x-large'`, `'xx-large'` |
-| `fontweight` | `'normal'`, `'bold'`, `'light'`, `'heavy'` |
-| `fontstyle` | `'normal'`, `'italic'`, `'oblique'` |
-| `ha` (horizontalalignment) | `'left'`, `'center'`, `'right'` |
-| `va` (verticalalignment) | `'top'`, `'center'`, `'bottom'`, `'baseline'` |
-
----
-
-### `matplotlib.image` -- Image Handling
-
-| Function | Description |
-|----------|-------------|
-| `imread(fname)` | Read image file to numpy array |
-| `imsave(fname, arr, cmap)` | Save numpy array as image |
-| `AxesImage` | Image displayed on axes (returned by `imshow`) |
-
----
-
-### `matplotlib.collections` -- Efficient Drawing
-
-| Class | Description |
-|-------|-------------|
-| `PathCollection` | Collection of paths (used by `scatter()`) |
-| `LineCollection(segments, colors, linewidths)` | Collection of line segments |
-| `PatchCollection(patches, match_original)` | Collection of patches |
-| `PolyCollection(verts, **kwargs)` | Collection of polygons |
-| `QuadMesh` | Quadrilateral mesh (used by `pcolormesh()`) |
-| `EventCollection(positions, orientation)` | Collection of events |
-
----
-
-### `matplotlib.legend` -- Legend
-
-| Parameter | Description |
-|-----------|-------------|
-| `loc` | `'best'`, `'upper right'`, `'upper left'`, `'lower left'`, `'lower right'`, `'center'`, etc. |
-| `fontsize` | Legend font size |
-| `frameon` | Draw frame around legend |
-| `ncol` | Number of columns |
-| `title` | Legend title |
-| `bbox_to_anchor` | Anchor point for positioning |
-| `borderaxespad` | Padding between legend and axes |
-
----
-
-### `matplotlib.transforms` -- Coordinate Transforms
-
-| Class | Description |
-|-------|-------------|
-| `Affine2D()` | 2D affine transform (rotate, translate, scale) |
-| `Bbox(points)` | Bounding box |
-| `TransformedBbox(bbox, transform)` | Transformed bounding box |
-| `BlendedGenericTransform(x_transform, y_transform)` | Blend separate x and y transforms |
-| `CompositeGenericTransform(a, b)` | Composition of two transforms |
-
----
-
-### `matplotlib.dates` -- Date Handling
-
-| Class / Function | Description |
-|-----------------|-------------|
-| `DateFormatter(fmt)` | Format dates on axis (e.g. `'%Y-%m-%d'`) |
-| `AutoDateLocator()` | Automatic date tick placement |
-| `DayLocator(bymonthday)` | Tick every N days |
-| `MonthLocator(bymonth)` | Tick every N months |
-| `YearLocator(base)` | Tick every N years |
-| `HourLocator(byhour)` | Tick every N hours |
-| `MinuteLocator(byminute)` | Tick every N minutes |
-| `date2num(d)` | Convert datetime to matplotlib float |
-| `num2date(n)` | Convert matplotlib float to datetime |
-| `datestr2num(d)` | Convert date string to float |
-
----
-
-### `matplotlib.scale` -- Axis Scales
-
-| Scale | Description |
-|-------|-------------|
-| `'linear'` | Default linear scale |
-| `'log'` | Logarithmic scale (base 10) |
-| `'symlog'` | Symmetric log (linear near zero, log for large values) |
-| `'logit'` | Logit scale for probabilities |
-| `'function'` | Custom function-based scale |
-
----
-
-### `matplotlib.style` -- Style Sheets
-
-```python
-import matplotlib.style as mplstyle
-print(mplstyle.available)  # List available styles
-mplstyle.use('ggplot')     # Apply a style
-mplstyle.use('seaborn-v0_8')
-mplstyle.use('dark_background')
-```
-
-Available styles: `default`, `classic`, `ggplot`, `seaborn-v0_8`, `bmh`, `dark_background`, `fivethirtyeight`, `grayscale`, `Solarize_Light2`, `tableau-colorblind10`
-
----
-
-### `matplotlib.rcParams` -- Configuration
-
-```python
-import matplotlib as mpl
-mpl.rcParams['figure.figsize'] = [10, 6]
-mpl.rcParams['font.size'] = 14
-mpl.rcParams['lines.linewidth'] = 2
-mpl.rcParams['axes.grid'] = True
-```
-
-Note: Only basic rcParams are supported. Complex configuration may not propagate to the Plotly backend.
-
----
-
-### `matplotlib.mathtext` -- Math Text Rendering
-
-Supports TeX-like math expressions in labels and titles:
+### mathtext example
 
 ```python
 plt.title(r'$\alpha \cdot \beta = \gamma$')
-plt.xlabel(r'$x^2 + y^2 = r^2$')
-plt.ylabel(r'$\frac{d}{dx} e^x = e^x$')
+plt.xlabel(r'$\hat\beta = (X^{T}X)^{-1}X^{T}y$')
+plt.ylabel(r'$\frac{d}{dx} e^{x} = e^{x}$')
 ```
 
-Supported: Greek letters, superscripts, subscripts, fractions, square roots, summation, integrals, common math symbols.
+Rendered by matplotlib's own mathtext engine through ft2font — no external
+LaTeX needed. (`usetex=True`, which shells out to a real `latex` binary, is
+**not** available on iOS.)
 
 ---
 
-### `mpl_toolkits.mplot3d` -- 3D Plotting Toolkit
+## What's absent on iOS (inherent)
 
-| Class / Method | Description |
-|---------------|-------------|
-| `Axes3D(fig)` | 3D axes object |
-| `ax.plot_surface(X, Y, Z, cmap, alpha, rstride, cstride)` | 3D surface mesh |
-| `ax.plot_wireframe(X, Y, Z, rstride, cstride)` | 3D wireframe mesh |
-| `ax.scatter(x, y, z, c, s, marker)` | 3D scatter points |
-| `ax.plot(x, y, z, color)` | 3D line |
-| `ax.bar3d(x, y, z, dx, dy, dz, color)` | 3D bar chart |
-| `ax.plot_trisurf(x, y, z, cmap)` | 3D triangulated surface |
-| `ax.contour(X, Y, Z, levels)` | 3D contour |
-| `ax.contourf(X, Y, Z, levels)` | 3D filled contour |
-| `ax.set_zlabel(s)` | Z-axis label |
-| `ax.set_zlim(low, high)` | Z-axis limits |
-| `ax.view_init(elev, azim)` | Set camera angle |
-| `ax.dist` | Camera distance |
+| Missing | Why | Workaround |
+|---|---|---|
+| `macosx` GUI backend | needs AppKit windows | headless Agg + the preview pipeline replace it |
+| ffmpeg-binary MP4 animation writer | `anim.save('x.mp4')` shells out to an ffmpeg executable | `PillowWriter` GIF + `to_jshtml` HTML work on device; render MP4 on host |
+| `usetex=True` (real LaTeX text) | needs a `latex` binary | built-in mathtext covers ~95% of use |
 
-Access via: `fig.add_subplot(111, projection='3d')` or `from mpl_toolkits.mplot3d import Axes3D`
+These are absent from *any* headless environment — not gaps specific to this
+port.
 
 ---
 
-### `mpl_toolkits.axes_grid1` -- Axes Grid Helpers
+## Appendix — Legacy plotly-backend shim
 
-| Class | Description |
-|-------|-------------|
-| `make_axes_locatable(ax)` | Create divider for appending axes (used for colorbars) |
-| `ImageGrid(fig, rect, nrows_ncols, axes_pad)` | Grid of axes for images |
-| `AxesDivider` | Divide axes into sub-axes |
-| `inset_locator.inset_axes(parent_axes, width, height, loc)` | Create inset axes |
-| `inset_locator.mark_inset(parent_axes, inset_axes, loc1, loc2)` | Mark inset region |
+> **Version:** 3.9.0-offlinai · **Type:** pure-Python API-compat layer (matplotlib → Plotly) · **Location:** `site-packages/_mpl_plotly_shim/`
 
----
+Before the real build, matplotlib on iOS was a pure-Python shim that
+re-implemented a slice of the API by translating calls into Plotly traces and
+rendering interactive Plotly.js HTML. It is **preserved** and selectable per
+run:
 
-### `mpl_toolkits.axisartist` -- Custom Axis
+```bash
+CODEBENCH_MPL_BACKEND=plotly   # sitecustomize front-loads sys.path with the shim
+```
 
-| Class | Description |
-|-------|-------------|
-| `Subplot(fig, *args)` | Subplot with axisartist features |
-| `Axes(fig, rect)` | Axes with custom axis drawing |
-| `floating_axes.FloatingSubplot(fig, rect, transform)` | Floating axes (curved coordinate systems) |
-| `grid_helper_curvelinear` | Curvilinear grid helper |
+When it might be worth choosing:
 
----
+- you specifically want Plotly's *2-D* HTML output (hover/zoom) with zero
+  conversion step, or
+- a much smaller memory / import footprint than the real C build.
 
-### Additional Modules
-
-| Module | Description |
-|--------|-------------|
-| `matplotlib.backend_bases` | Abstract backend interface |
-| `matplotlib.backends` | Backend implementations |
-| `matplotlib.bezier` | Bezier curve utilities |
-| `matplotlib.blocking_input` | Blocking input helpers |
-| `matplotlib.category` | Categorical axis support |
-| `matplotlib.cbook` | Utility functions (deprecated_warning, etc.) |
-| `matplotlib.colorbar` | Colorbar class and helpers |
-| `matplotlib.container` | Artist containers (BarContainer, ErrorbarContainer, StemContainer) |
-| `matplotlib.contour` | Contour computation |
-| `matplotlib.dviread` | DVI file reading |
-| `matplotlib.font_manager` | Font discovery and management |
-| `matplotlib.ft2font` | FreeType font interface |
-| `matplotlib.hatch` | Hatch pattern definitions |
-| `matplotlib.markers` | Marker style definitions |
-| `matplotlib.mlab` | MATLAB-compatible helper functions |
-| `matplotlib.offsetbox` | Offset box for annotations (AnchoredText, TextArea, DrawingArea) |
-| `matplotlib.path` | Path class for arbitrary curves |
-| `matplotlib.patheffects` | Path effects (shadow, stroke, normal) |
-| `matplotlib.projections` | Projection registry (polar, etc.) |
-| `matplotlib.quiver` | Quiver and barbs |
-| `matplotlib.sankey` | Sankey diagram |
-| `matplotlib.spines` | Axes spines (borders) |
-| `matplotlib.stackplot` | Stacked area plot |
-| `matplotlib.streamplot` | Streamline plots |
-| `matplotlib.table` | Table rendering on axes |
-| `matplotlib.texmanager` | TeX rendering manager |
-| `matplotlib.textpath` | Text as Path objects |
-| `matplotlib.tri` | Triangulation and triangular grids |
-| `matplotlib.units` | Unit conversion support |
-| `matplotlib.widgets` | Interactive widgets (Slider, Button, etc.) |
-
----
-
-## Compatibility Notes
-
-- All plots render as interactive Plotly.js charts in WKWebView
-- Plotly provides built-in hover, zoom, pan, and legend toggle
-- `plt.show()` generates HTML output (not bitmap)
-- Most `rcParams` are accepted but not all propagate to Plotly
-- The OO interface (`fig, ax = plt.subplots()`) is fully supported
-- Format strings (`'r--'`, `'bo'`, `'g^'`) are parsed and mapped to Plotly styles
+Its limitations (why it's no longer the default): rendering isn't
+pixel-faithful to matplotlib; mathtext, exact styling, many artists, precise
+layouts, real 3-D, SVG/PDF `savefig`, and true animation are approximate or
+absent. `plt.savefig()` on the shim writes Plotly artifacts (`.html`, or
+`.png` **via kaleido**), not real matplotlib output. `rcParams` and styles only
+partially propagate. The shim's broad API surface (64 modules of stubs) exists
+to keep scripts from crashing on unshimmed attributes — for anything beyond
+basic 2-D charts, prefer the real build (the default).
