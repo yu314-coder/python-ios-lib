@@ -1,6 +1,53 @@
-# matplotlib - Plotly Backend Shim
+# matplotlib — REAL matplotlib 3.11 (iOS arm64) + plotly interactive showcase
 
-> **Version:** 3.9.0-offlinai | **Type:** API compatibility layer (matplotlib -> Plotly) | **Modules:** 64 | **Location:** `matplotlib/`
+> **Version:** 3.11.0 (real C build) | **Extensions:** ft2font (vendored FreeType 2.14), `_path`, `_image`, `_tri`, `_qhull`, `_backend_agg`, contourpy 1.3.3, kiwisolver 1.5.0 | **Location:** `matplotlib/` (+ `mpl_toolkits/`, `pylab.py`)
+
+The bundled `import matplotlib` is the **real** matplotlib — identical 3.11.0
+source cross-compiled for iOS arm64 (recipe: `matplotlib_ios/build_matplotlib_ios.sh`).
+Full feature surface: Agg/SVG/PDF savefig, mathtext, real mplot3d, contourf,
+28 style sheets, rcParams, `FuncAnimation`, pandas `.plot()`.
+
+## How figures display in CodeBench
+
+`plt.show()` is hooked (sitecustomize):
+
+| Figure | Showcase | Interaction |
+|---|---|---|
+| 2-D | converted to plotly (`codebench_mpl2plotly`) | hover = data values, wheel/pinch zoom, drag pan, legend toggle |
+| 3-D | plotly WebGL (`go.Surface` / `Scatter3d`) | **drag = orbit, tap = x/y/z values**; axis tick text lives in the SVG layer (title + ranges line) because iOS WebKit cannot rasterize plotly's WebGL glyph atlas |
+| animation | `Animation.to_jshtml()` player | play / pause / step / loop + frame slider |
+| unconvertible 2-D | crisp-SVG viewer (`codebench_mpl_viewer`) | zoom/pan + nearest-point tooltip |
+| last resort | WebAgg live canvas → PNG | mpl's own toolbar |
+
+A PNG snapshot is **always** written to ToolOutputs as the static record.
+
+Conversion coverage (host-verified 17/17): lines, scatter, bar, hist,
+fill_between, imshow (gray + RGB), contour/contourf (exact grids via
+capture-at-call), pcolormesh, pie, log/date axes, subplots, 3-D
+surface/wireframe/scatter/line. `plt.savefig()` is untouched real matplotlib
+— every format works regardless of showcase mode.
+
+**Environment switches**
+
+| Variable | Effect |
+|---|---|
+| `CODEBENCH_MPL_INTERACTIVE=1` *(default)* | plotly showcase |
+| `CODEBENCH_MPL_INTERACTIVE=webagg` | matplotlib's own WebAgg server (mpl toolbar) |
+| `CODEBENCH_MPL_INTERACTIVE=0` | static PNG only |
+| `CODEBENCH_MPL_BACKEND=plotly` | select the LEGACY plotly-shim matplotlib below |
+
+Known absent on iOS (inherent): `macosx` GUI backend, ffmpeg-binary MP4
+animation writer (GIF/HTML writers work), `usetex`.
+
+---
+
+# Appendix — Legacy Plotly Backend Shim (`CODEBENCH_MPL_BACKEND=plotly`)
+
+The original pure-Python emulation layer is preserved at
+`site-packages/_mpl_plotly_shim/` and selectable per-run with the env var
+above. Everything below documents that shim.
+
+> **Version:** 3.9.0-offlinai | **Type:** API compatibility layer (matplotlib -> Plotly) | **Modules:** 64
 
 Drop-in replacement for `matplotlib.pyplot` that renders interactive charts via Plotly.js. Import `matplotlib.pyplot as plt` and it just works. Provides comprehensive API coverage across 64 modules matching matplotlib's public interface.
 

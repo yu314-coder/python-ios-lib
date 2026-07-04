@@ -22,6 +22,7 @@ The `app_packages/site-packages/` bundle ships **~180 Python packages** — ever
 | **peft** | 0.12.0 | LoRA / IA3 / prefix tuning. `get_peft_model()` + `LoraConfig` work as-is. |
 | **tokenizers** | 0.19.1 | Real Rust BPE/WordPiece/Unigram cross-compiled for iOS arm64 via PyO3. First public iOS build. |
 | **safetensors** | 0.4.5 (pure-Python shim) | Bidirectional (read + write). `model.save_pretrained()` writes valid files. |
+| **onnxruntime** | 1.26.0 | Native arm64 + **CoreML execution provider** (Neural Engine) — 12–14× over CPU on conv nets, device-verified. Export ONNX on host (iOS torch 2.1 lacks the export JIT passes), run on device. |
 | **huggingface_hub** | 0.24.7 | HF Hub client — `from_pretrained` works over network. |
 | **scikit-learn** | 1.9.0 | **Real native Cython** cross-compile — 69 `.so`, full API (all 39 submodules). First public iOS build, replaces the old pure-NumPy reimpl. [doc](docs/sklearn.md) |
 | **faiss** | 1.9.0 (CPU) | Vector similarity search — native cross-compile (serial). On-device RAG retrieval. |
@@ -96,11 +97,13 @@ The `app_packages/site-packages/` bundle ships **~180 Python packages** — ever
 
 | Library | Version | Notes |
 |---|---|---|
-| **matplotlib** | 3.9.0 | Plotly-backend shim (no native renderer on iOS) |
+| **matplotlib** | **3.11.0 (REAL C build)** | ft2font/FreeType, Agg + SVG + PDF, mathtext, styles, animation. In CodeBench, `plt.show()` showcases through plotly: hover values, zoom/pan, legend toggle, orbitable 3-D (3-D axis text moved to the SVG layer — iOS WebKit can't raster WebGL glyphs). Legacy plotly shim preserved: `CODEBENCH_MPL_BACKEND=plotly`; static-only: `CODEBENCH_MPL_INTERACTIVE=0` |
 | **plotly** | 6.6.0 | Renders in WKWebView preview pane |
 | **seaborn** | bundled | Statistical plotting on matplotlib |
 | **fonttools** | bundled | Font subsetting + metadata |
-| **mpl_toolkits** | bundled | matplotlib 3-D / axes_grid |
+| **mpl_toolkits** | bundled (real) | real mplot3d / axes_grid1 / axisartist |
+| **kiwisolver** | 1.5.0 | Native arm64 — mpl's constraint solver (Cassowary) |
+| **contourpy** | 1.3.3 | Native arm64 — mpl's contouring engine |
 | **narwhals** | 1.16.0 | DataFrame-agnostic helpers (matplotlib internal) |
 
 ### Animation / Math Visualization
@@ -823,7 +826,7 @@ Pick whichever combination you need. Dependencies auto-resolve.
 |---|---|---|---|
 | **Sklearn** | scikit-learn (40 modules, 12K+ lines) | + NumPy | [doc](docs/sklearn.md) |
 | **SciPy** | SciPy (optimize, integrate, signal, stats) | + NumPy | [doc](docs/scipy-ios.md) |
-| **Matplotlib** | matplotlib (64 modules, Plotly backend) | + Plotly | [doc](docs/matplotlib.md) |
+| **Matplotlib** | REAL matplotlib 3.11 (C extensions: ft2font, Agg, contourpy, kiwisolver) + plotly interactive showcase | + Plotly | [doc](docs/matplotlib.md) |
 | **Manim** | manim (145+ mobjects, 73 animations) | + NumPy, Matplotlib, FFmpegPyAV, CairoGraphics | [doc](docs/manim.md) |
 | **LaTeXEngine** | pdftex.xcframework + 33 MB bundled texmf tree (Latin Modern, amsmath, hyperref, expl3, …). `\documentclass{article}` end-to-end. | + CairoGraphics | [doc](docs/latex-engine.md) |
 | **Flask** | Web framework (3.x, 24 modules) on Werkzeug — routes, sessions, templates, blueprints | + Werkzeug, Jinja2, Markupsafe, Click | [doc](docs/flask.md) · [stack](docs/web-stack.md) |
@@ -1089,7 +1092,6 @@ CodeBench ships a patched `pip` that installs pure-Python wheels on-device into 
 | **`triton`** | LLVM JIT codegen | iOS forbids JIT; no equivalent |
 | **`deepspeed`**, **`fairscale`** | Multi-GPU training infrastructure | Single-device on iPad; not applicable |
 | **`polars`** | Rust DataFrame core | Use the bundled `pandas` instead |
-| **`onnxruntime`** | C++ ONNX runtime | Use ExecuTorch (already bundled separately as an XCFramework) for inference |
 
 ---
 
@@ -1140,7 +1142,8 @@ notes, limitations, troubleshooting, and build provenance.
 
 | Library | Doc |
 |---|---|
-| **matplotlib** (Plotly-backend shim) | [docs/matplotlib.md](docs/matplotlib.md) |
+| **matplotlib** (REAL 3.11 + plotly showcase) | [docs/matplotlib.md](docs/matplotlib.md) |
+| **onnxruntime** (CoreML EP) | [docs/onnxruntime.md](docs/onnxruntime.md) |
 | **Plotly** | [docs/plotly.md](docs/plotly.md) |
 | **manim** | [docs/manim.md](docs/manim.md) |
 | **manim deps** (pathops + mapbox_earcut + isosurfaces) | [docs/manim-deps.md](docs/manim-deps.md) |
@@ -1289,7 +1292,8 @@ If you're looking for a specific package and forgot which doc it's in:
 | `manimpango` | [manimpango.md](docs/manimpango.md) |
 | `mapbox_earcut` | [mapbox-earcut.md](docs/mapbox-earcut.md) |
 | `markdown_it` | [markdown-it.md](docs/markdown-it.md) |
-| `matplotlib` / `mpl_toolkits` | [matplotlib.md](docs/matplotlib.md) |
+| `matplotlib` / `mpl_toolkits` (real 3.11) | [matplotlib.md](docs/matplotlib.md) |
+| `onnxruntime` | [onnxruntime.md](docs/onnxruntime.md) |
 | `mdurl` | [mdurl.md](docs/mdurl.md) |
 | `moderngl` / `moderngl_window` / `screeninfo` | [moderngl.md](docs/moderngl.md) |
 | `mpmath` | [mpmath.md](docs/mpmath.md) |
