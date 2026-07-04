@@ -162,3 +162,7 @@ numexpr_ios/
 bottleneck_ios/
 uvloop_ios/
 orjson_ios/
+matplotlib_ios/src/
+matplotlib_ios/buildenv/
+onnxruntime_ios/src/
+onnxruntime_ios/build_ios/
