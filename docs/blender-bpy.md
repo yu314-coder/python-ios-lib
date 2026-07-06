@@ -71,10 +71,10 @@ locale catalogs, so it actually exceeds the wheel there).
 | i18n (`bpy.app.translations`) | ❌ off | ✅ **on, 50 locale catalogs bundled** — translations work on device (exceeds the PyPI wheel) |
 | **Eevee render + working `gpu` module** | ✅ (Metal) | ✅ **(Metal offscreen — verified on device)** |
 | Hydra render-delegate framework | ✅ flag on | ❌ off (Storm needs a full GPU windowing stack) |
-| Cycles **OSL** script nodes | ✅ | ❌ (LLVM JIT emits runtime code — forbidden by iOS W^X) |
-| **OpenMP** (mantaflow/oceansim threading) | ✅ | ❌ (perf only; Cycles uses TBB regardless) |
-| **Rubberband** (VSE audio time-stretch quality) | ✅ | ❌ (falls back to plain resampling) |
-| `bpy.app.build_hash` | real hash | `Unknown` (cosmetic; `WITH_BUILDINFO=OFF`) |
+| Cycles **OSL** script nodes | ✅ | ❌ (LLVM JIT emits runtime code — forbidden by iOS W^X; *structurally impossible*) |
+| **OpenMP** (mantaflow/oceansim threading) | ✅ | ❌ (perf only; Cycles uses TBB regardless; iOS has no libomp) |
+| **Rubberband** (VSE audio time-stretch quality) | ✅ | ❌ (falls back to plain resampling; moot on iOS — the null audio device can't return stretched buffers anyway) |
+| `bpy.app.build_hash` + `build_date`/`build_commit_date`/`build_branch`/… | real hash | ✅ **`WITH_BUILDINFO=ON`** — real git hash `c9dd766ce9c2`, dates, branch, platform, type all populated (device-verified) |
 | OpenXR / NDOF / IME / audio playback | ❌ off | ❌ off (parity) |
 
 **Runtime notes from the device probes:**
@@ -421,7 +421,20 @@ fribidi, …) were rebuilt for iOS arm64 — recipes in the project's
 `blender_ios/` tree (`build_*_ios.sh` + the `bpy_ios_source.patch` and
 `bpy_ios_metal_gpu.patch`, round-trip verified against upstream `c9dd766c`).
 
-**Remaining gaps vs the PyPI wheel:** Cycles OSL (LLVM JIT — forbidden by iOS
-W^X), OpenMP (perf only; Cycles uses TBB regardless), Rubberband (VSE audio
-stretch quality), `build_hash` (cosmetic). **Eevee + the `gpu` module — the
-former "one structural gap" — now work** via the offscreen Metal backend.
+**Remaining gaps vs the PyPI wheel** — the honest final accounting:
+- **Cycles OSL** — *structurally impossible*: OSL's shader JIT emits runtime
+  machine code, which iOS's W^X policy forbids. Never closeable. (SVM shader
+  nodes work; only the OSL script node is out.)
+- **OpenMP** — perf-only, and not worth it: Blender's threading is TBB (which
+  is on), and iOS ships no libomp (Homebrew's clashes on architecture).
+- **Rubberband** — buildable but pointless here: it only feeds the VSE audio
+  time-stretch, and iOS's null audio device can't return the stretched
+  buffers anyway (`aud.Sound.buffer()` spins).
+
+**`build_hash` — CLOSED** (`WITH_BUILDINFO=ON`, device-verified): `bpy.app`
+now reports a real git hash (`c9dd766ce9c2`) plus `build_date`,
+`build_commit_date`, `build_branch`, `build_platform`, `build_type`,
+`build_system` — the whole family was empty/`Unknown` before.
+
+**Eevee + the `gpu` module — the former "one structural gap" — now work** via
+the offscreen Metal backend.

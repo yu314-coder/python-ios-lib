@@ -55,7 +55,7 @@ cmake -S blender -B build/blender -G Ninja \
   -DWITH_FRIBIDI=ON -DWITH_INTERNATIONAL=ON \
   `# i18n: fribidi cross-built (src/fribidi-1.0.16, meson); .mo built with a host msgfmt` \
   `# shim (build/blender/bin/msgfmt.app/msgfmt) since the cross msgfmt can't run on host.` \
-  -DWITH_BUILDINFO=OFF \
+  -DWITH_BUILDINFO=ON \
   -DWITH_IMAGE_CINEON=ON \
   -DHOST_MSGFMT="$PWD/build/blender/host_msgfmt" \
   `# .po->.mo built by a host msgfmt shim, not the un-runnable cross msgfmt (below).` \
