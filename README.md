@@ -67,7 +67,7 @@ The `app_packages/site-packages/` bundle ships **~180 Python packages** — ever
 - Mixed precision: `bf16=True` or `fp16=True` in `TrainingArguments`
 - **Model families verified:** BERT, GPT-2, T5, BART, Llama, Qwen, Mistral, Phi
 - **SentencePiece tokenizers** (`sentencepiece` C++ **is** cross-compiled + bundled) — Llama / T5 / BART / Gemma / DeBERTa slow tokenizers work, not just BPE ones
-- **`datasets`** (4.0.0) — `load_dataset("json"/"csv"/"parquet", data_files=…)` from local files, `Dataset.from_dict/from_pandas`, `.map` / `.filter` / `.train_test_split` (host-verified against the bundled pyarrow 15 / dill 0.4.1)
+- **`datasets`** (4.0.0) — `load_dataset("json"/"csv", data_files=…)` from local files, `Dataset.from_dict/from_pandas`, `.map` / `.filter` / `.train_test_split`, `.arrow` cache (device-verified). **`.parquet` files are NOT supported** — the bundled pyarrow was built without the Parquet C++ component; a `pyarrow.parquet` shim lets datasets import + all non-parquet paths work, and raises a clear error on parquet I/O. (Real parquet needs pyarrow rebuilt with `ARROW_PARQUET=ON`.)
 - **`evaluate`** (0.4.6) — imports + local metric compute; `evaluate.load("…")` downloads the metric script (needs network)
 
 ❌ **Doesn't work:**
