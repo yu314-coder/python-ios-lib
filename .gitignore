@@ -166,3 +166,4 @@ matplotlib_ios/src/
 matplotlib_ios/buildenv/
 onnxruntime_ios/src/
 onnxruntime_ios/build_ios/
+app_packages/site-packages/pyarrow/dataset.py.real
