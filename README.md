@@ -39,6 +39,7 @@ The `app_packages/site-packages/` bundle ships **~180 Python packages** — ever
 - **GPU-accelerated** via the Metal bridge: `torch.matmul`, `torch.mm`, `torch.bmm`, `torch.addmm`, `F.linear`, `F.scaled_dot_product_attention` (fp32 / fp16 / bf16)
 - Mixed precision: `bf16` and `fp16` dtypes (cast paths through the GPU bridge)
 - `torch.save` / `torch.load` (pickle-based)
+- **TensorBoard** `SummaryWriter` (2.19.0) — `add_scalar/histogram/…` write real event files offline (the *viewer* server needs grpcio → not bundled; copy the logs off-device to view)
 - `torch.frombuffer` for byte-buffer→tensor (used by the safetensors / numpy shims)
 
 ❌ **Doesn't work (with workarounds where they exist):**
@@ -51,7 +52,7 @@ The `app_packages/site-packages/` bundle ships **~180 Python packages** — ever
 | `torch.compile` | Needs Triton JIT, iOS forbids JIT | Eager mode + GPU bridge |
 | `torch.from_numpy()`, `tensor.numpy()` | Built with `USE_NUMPY=0` | **Auto-patched** in sitecustomize — drop-in pure-Python equivalents using `torch.frombuffer` |
 | `DataLoader(num_workers > 0)` | Worker processes use `fork()` | Set `num_workers=0` (only iPad limitation that needs code awareness) |
-| TensorBoard writer | No background server | Use `_cb_training.TrainingMonitor` for terminal output |
+
 | `bitsandbytes`, `flash-attn`, `xformers` | CUDA-only / Triton-only | Skip; GPU bridge handles attention |
 
 #### What works / doesn't — transformers
@@ -65,17 +66,17 @@ The `app_packages/site-packages/` bundle ships **~180 Python packages** — ever
 - `peft.get_peft_model()` + LoRA / IA3 training
 - Mixed precision: `bf16=True` or `fp16=True` in `TrainingArguments`
 - **Model families verified:** BERT, GPT-2, T5, BART, Llama, Qwen, Mistral, Phi
+- **SentencePiece tokenizers** (`sentencepiece` C++ **is** cross-compiled + bundled) — Llama / T5 / BART / Gemma / DeBERTa slow tokenizers work, not just BPE ones
+- **`datasets`** (4.0.0) — `load_dataset("json"/"csv"/"parquet", data_files=…)` from local files, `Dataset.from_dict/from_pandas`, `.map` / `.filter` / `.train_test_split` (host-verified against the bundled pyarrow 15 / dill 0.4.1)
+- **`evaluate`** (0.4.6) — imports + local metric compute; `evaluate.load("…")` downloads the metric script (needs network)
 
 ❌ **Doesn't work:**
 
 | Op / feature | Why | Workaround |
 |---|---|---|
-| `datasets.load_dataset(...)` | `datasets` not bundled (needs `pyarrow` + `pandas`) | Subclass `torch.utils.data.Dataset` — 5-10 lines |
-| Sentencepiece-only tokenizers | `sentencepiece` C++ not cross-compiled | GPT-2 / Qwen / Mistral / Phi tokenizers use **BPE** and work without it. Llama / T5 / BART tokenizer formats blocked. |
 | `FlashAttention2` | No `flash_attn` package; no Triton | Falls back to SDPA, which IS GPU-accelerated via the bridge |
 | `DeepSpeed`, `FSDP` | Multi-device / multi-process | Single-device; not applicable to iPad |
 | `BitsAndBytes` quantization | CUDA-only | Use llama.cpp's GGUF quantization for inference instead |
-| `evaluate.load(...)` | `evaluate` package not bundled | Compute metrics inline; or pip install if pure-Python wheel exists |
 | Multi-GPU training | iOS = one device | N/A |
 
 ### Scientific Computing
