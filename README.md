@@ -71,7 +71,7 @@ The `app_packages/site-packages/` bundle ships **~180 Python packages** — ever
 - **`datasets`** (4.0.0) — `load_dataset("json"/"csv", data_files=…)` from local files, `Dataset.from_dict/from_pandas`, `.map` / `.filter` / `.train_test_split`, `.arrow` cache (device-verified). **`.parquet` files are NOT supported** — the bundled pyarrow was built without the Parquet C++ component; a `pyarrow.parquet` shim lets datasets import + all non-parquet paths work, and raises a clear error on parquet I/O. (Real parquet needs pyarrow rebuilt with `ARROW_PARQUET=ON`.)
 - **`evaluate`** (0.4.6) — imports + local metric compute; `evaluate.load("…")` downloads the metric script (needs network)
 - **TensorBoard logging** — `Trainer(..., report_to="tensorboard")` / `SummaryWriter` write real event files offline (see the torch grid above)
-- **`attn_implementation="flash_attention_2"` doesn't crash** — sitecustomize remaps it to `"sdpa"` (same exact-attention contract, GPU-accelerated via the Metal bridge), so unchanged HF scripts that request FA2 run; a one-line notice is printed. Code that imports `flash_attn` / `xformers` directly gets the bundled SDPA-backed shims.
+- **`attn_implementation="flash_attention_2"` doesn't crash** — sitecustomize remaps it to `"sdpa"` where transformers allows it, else `"eager"` (transformers gates its sdpa path on torch ≥ 2.1.1 — pytorch#112577 — and the bundled torch is 2.1.0, so on-device FA2 requests land on eager: the same implementation every verified model already uses, matmuls GPU-bridged). A one-line notice is printed. Code that imports `flash_attn` / `xformers` directly gets the bundled SDPA-backed shims, which are NOT gated — they call `F.scaled_dot_product_attention` directly and are device-verified numerically correct.
 
 The former software gaps — `sentencepiece`, `datasets`, `evaluate`, TensorBoard, `protobuf` — are all **closed** (bundled + device-verified, listed above). What's left is only what iOS physically can't do:
 
@@ -79,7 +79,7 @@ The former software gaps — `sentencepiece`, `datasets`, `evaluate`, TensorBoar
 
 | Op / feature | Why | Workaround |
 |---|---|---|
-| `FlashAttention2` (real CUDA kernels) | No CUDA; no Triton | **Auto-remapped to SDPA** (GPU via the bridge) — requesting it no longer crashes; `flash_attn` import shim bundled |
+| `FlashAttention2` (real CUDA kernels) | No CUDA; no Triton | **Auto-remapped** — requesting it no longer crashes (→ sdpa on torch ≥ 2.1.1, → eager on the bundled 2.1.0); `flash_attn` import shim bundled and runs SDPA on GPU directly |
 | `DeepSpeed`, `FSDP` | Multi-device / multi-process | Single-device; not applicable to iPad |
 | `BitsAndBytes` quantization | CUDA-only | Use llama.cpp's GGUF quantization for inference instead |
 | Multi-GPU training | iOS = one device | N/A |
