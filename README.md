@@ -41,6 +41,7 @@ The `app_packages/site-packages/` bundle ships **~180 Python packages** — ever
 - `torch.save` / `torch.load` (pickle-based)
 - **TensorBoard** `SummaryWriter` (2.19.0) — `add_scalar/histogram/…` write real event files offline (the *viewer* server needs grpcio → not bundled; copy the logs off-device to view)
 - `torch.frombuffer` for byte-buffer→tensor (used by the safetensors / numpy shims)
+- **`flash_attn` + `xformers` API shims** — `flash_attn_func` / `flash_attn_varlen_func` / `bert_padding` and `xformers.ops.memory_efficient_attention` are implemented on `F.scaled_dot_product_attention` (GPU via the Metal bridge), so code that hard-imports either package runs unchanged. Matches flash-attn ≥2.1 semantics (bottom-right causal alignment, GQA/MQA kv-head repeat, varlen). Not implemented: `window_size` sliding attention, ALiBi slopes, `return_attn_probs`.
 
 ❌ **Doesn't work — the only remaining gaps, all genuine iOS hardware/OS limits (workarounds where they exist):**
 
@@ -52,7 +53,8 @@ The `app_packages/site-packages/` bundle ships **~180 Python packages** — ever
 | `torch.compile` | Needs Triton JIT, iOS forbids JIT | Eager mode + GPU bridge |
 | `torch.from_numpy()`, `tensor.numpy()` | Built with `USE_NUMPY=0` | **Auto-patched** in sitecustomize — drop-in pure-Python equivalents using `torch.frombuffer` |
 | `DataLoader(num_workers > 0)` | Worker processes use `fork()` | Set `num_workers=0` (only iPad limitation that needs code awareness) |
-| `bitsandbytes`, `flash-attn`, `xformers` | CUDA-only / Triton-only | Skip; GPU bridge handles attention |
+| `flash-attn`, `xformers` (real kernels) | CUDA / Triton-only | **API shims bundled** — both packages import and their attention functions run on GPU via SDPA + the Metal bridge (see ✅ above) |
+| `bitsandbytes` | CUDA-only 8/4-bit kernels; no Metal equivalent — a shim would dequantize and lose the memory saving | Use llama.cpp GGUF Q4/Q8 for quantized inference |
 
 #### What works / doesn't — transformers
 
@@ -69,6 +71,7 @@ The `app_packages/site-packages/` bundle ships **~180 Python packages** — ever
 - **`datasets`** (4.0.0) — `load_dataset("json"/"csv", data_files=…)` from local files, `Dataset.from_dict/from_pandas`, `.map` / `.filter` / `.train_test_split`, `.arrow` cache (device-verified). **`.parquet` files are NOT supported** — the bundled pyarrow was built without the Parquet C++ component; a `pyarrow.parquet` shim lets datasets import + all non-parquet paths work, and raises a clear error on parquet I/O. (Real parquet needs pyarrow rebuilt with `ARROW_PARQUET=ON`.)
 - **`evaluate`** (0.4.6) — imports + local metric compute; `evaluate.load("…")` downloads the metric script (needs network)
 - **TensorBoard logging** — `Trainer(..., report_to="tensorboard")` / `SummaryWriter` write real event files offline (see the torch grid above)
+- **`attn_implementation="flash_attention_2"` doesn't crash** — sitecustomize remaps it to `"sdpa"` (same exact-attention contract, GPU-accelerated via the Metal bridge), so unchanged HF scripts that request FA2 run; a one-line notice is printed. Code that imports `flash_attn` / `xformers` directly gets the bundled SDPA-backed shims.
 
 The former software gaps — `sentencepiece`, `datasets`, `evaluate`, TensorBoard, `protobuf` — are all **closed** (bundled + device-verified, listed above). What's left is only what iOS physically can't do:
 
@@ -76,7 +79,7 @@ The former software gaps — `sentencepiece`, `datasets`, `evaluate`, TensorBoar
 
 | Op / feature | Why | Workaround |
 |---|---|---|
-| `FlashAttention2` | No `flash_attn` package; no Triton | Falls back to SDPA, which IS GPU-accelerated via the bridge |
+| `FlashAttention2` (real CUDA kernels) | No CUDA; no Triton | **Auto-remapped to SDPA** (GPU via the bridge) — requesting it no longer crashes; `flash_attn` import shim bundled |
 | `DeepSpeed`, `FSDP` | Multi-device / multi-process | Single-device; not applicable to iPad |
 | `BitsAndBytes` quantization | CUDA-only | Use llama.cpp's GGUF quantization for inference instead |
 | Multi-GPU training | iOS = one device | N/A |
@@ -854,7 +857,7 @@ First public iOS builds of each. Once added, `import torch`, `import transformer
 
 The `safetensors` shim is bidirectional: both `load_file` and `save_file` work, so `model.save_pretrained()` and `peft.save_pretrained()` write valid `.safetensors` files that load back bit-identical (verified via roundtrip test with fp16/bf16/fp32/int64/bool tensors).
 
-**Now bundled** (added since the first release, all device-verified): `datasets` 4.0.0, `evaluate` 0.4.6, `sentencepiece` (the Llama/T5/BART tokenizers), `protobuf` 5.29.6, `pyarrow` 15.0.2 (minimal build — Arrow IPC works, no `.parquet`), and `torch.utils.tensorboard.SummaryWriter`. See the [Machine Learning stack](#machine-learning-stack-bundled) list above for per-library caveats. What's still out is only what iOS physically can't do: CUDA kernels (`bitsandbytes`, `flash-attn`, `xformers`), JIT (`triton`, `torch.compile`), and fork-based multiprocessing (`DataLoader(num_workers>0)`, `deepspeed`, `fairscale`).
+**Now bundled** (added since the first release, all device-verified): `datasets` 4.0.0, `evaluate` 0.4.6, `sentencepiece` (the Llama/T5/BART tokenizers), `protobuf` 5.29.6, `pyarrow` 15.0.2 (minimal build — Arrow IPC works, no `.parquet`), and `torch.utils.tensorboard.SummaryWriter`. See the [Machine Learning stack](#machine-learning-stack-bundled) list above for per-library caveats. What's still out is only what iOS physically can't do: CUDA kernels (`bitsandbytes`; `flash-attn`/`xformers` get SDPA-backed API shims so they import + run on GPU), JIT (`triton`, `torch.compile`), and fork-based multiprocessing (`DataLoader(num_workers>0)`, `deepspeed`, `fairscale`).
 
 ### GPU acceleration for PyTorch (Metal bridge)
 
@@ -1090,7 +1093,7 @@ CodeBench ships a patched `pip` that installs pure-Python wheels on-device into 
 | Package | Reason | Workaround |
 |---|---|---|
 | **`bitsandbytes`** | CUDA-only quantization kernels | Use llama.cpp GGUF Q4/Q8 quantization for inference |
-| **`flash-attn`**, **`xformers`** | CUDA-only attention kernels | Bridge's `F.scaled_dot_product_attention` patch IS GPU-accelerated |
+| **`flash-attn`**, **`xformers`** | CUDA-only attention kernels — don't pip-install them | Already bundled as SDPA-backed API shims (`flash_attn_func`, `memory_efficient_attention` run on GPU via the bridge) |
 | **`triton`** | LLVM JIT codegen | iOS forbids JIT; no equivalent |
 | **`deepspeed`**, **`fairscale`** | Multi-GPU training infrastructure | Single-device on iPad; not applicable |
 | **`polars`** | Rust DataFrame core | Use the bundled `pandas` instead |
