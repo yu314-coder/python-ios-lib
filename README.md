@@ -275,6 +275,9 @@ Per-lib docs: [werkzeug.md](docs/werkzeug.md) · [flask.md](docs/flask.md) · [d
 - **Shell builtins**: `pdflatex` / `latex` / `tex` / `pdftex` / `xelatex` / `latex-diagnose`, `ncdu` with raw arrow-key navigation and real-ncdu styling, `top` with Apple-chip detection, `git clone` via zipball fetch, and universal `--help` / `-h` interception.
 - **matplotlib shim hardening** — user scripts no longer crash on chained attribute access like `ax.xaxis.line.set_color(...)` or `ax.title.set_text(...)`. The plotly-backed matplotlib compatibility shim now uses a chainable `_NoopChainable` singleton for unshimmed attributes (across both `pyplot.py` and the five module stubs in `mpl_toolkits/mplot3d/__init__.py` — `_Art3DModule`, `_Proj3DModule`, `_Axis3DModule`, `_ProjectionModule`, plus the `_art3d_getattr_fallback`), so any chain into a missing attribute degrades silently to `None` instead of raising `'function' object has no attribute X` mid-chain. Plus a swathe of type-mismatch fixes: `get_xticks` / `get_yticks` newly added (were missing on `_Axes` and crashing via the fallback), `get_legend_handles_labels` actually discovers labelled artists from `lines` / `patches` / `collections` / `containers`, `get_array` returns `np.array([])` not `None`, an `_AxisLine` stub for the axis-baseline styling pattern, `set_title(loc=, pad=, y=)` and `set_xticks(minor=)` no longer silently swallow upstream kwargs, and the `__figure__` sentinel that was leaking into `fig.update_layout` (raising `Invalid property '__figure__'` and aborting the whole layout) is now unpacked into the top level. Result: full styling — titles, axis ranges, background colors — actually applies to plotly-rendered charts.
 - **Manim 4K/8K rendering is now memory-safe** — the animated-GIF assembly buffer is bounded (capped + downsampled at capture) and full-resolution frames stream to the mp4 instead of being accumulated, so memory no longer scales with `resolution × frame_count`. With a resolution-tiered RAM pre-flight and `malloc` pressure relief on top, manim renders up to **8K** (7680×4320) without tripping iOS's jetsam limit; quality is selectable 480p→8K. Encode uses `h264_videotoolbox`; manim's rasterization stays on cairo's CPU backend — a GPU cairo ([CairoMetal](https://github.com/yu314-coder/cairometal)) exists but doesn't accelerate manim (its bottleneck is Python interpolation, not cairo). See [docs/manim.md](docs/manim.md#high-resolution-4k--8k-rendering) and python-ios-lib issue #1.
+- **UTF-8 is the on-device default for `open()`** — iOS's C locale is ASCII and a bare `Py_Initialize()` doesn't honor `PYTHONUTF8`, so `sys.flags.utf8_mode` stays `0` and `open(path)` would otherwise default to ASCII — making `open(p).read()` on a UTF-8 file, or `open(p, "w").write("café")`, crash with a `Unicode{Decode,Encode}Error` (stdout dodged this only because CodeBench wraps it in a custom UTF-8 writer; plain file I/O had no such guard). `sitecustomize.py` now wraps `builtins.open` / `io.open` so any text-mode open with no explicit encoding — or the `"locale"` sentinel that `pathlib.read_text` / `write_text` pass — defaults to UTF-8, matching desktop `PYTHONUTF8` / Python 3.15 behavior. Guarded on `sys.flags.utf8_mode` (steps aside if a future build gets real UTF-8 mode) and idempotent.
+- **HuggingFace training-data stack completed** — `datasets` 4.0.0 (local `from_dict` / `map` / `filter` / `train_test_split` / `load_dataset("json")`), `evaluate` 0.4.6, and `torch.utils.tensorboard.SummaryWriter` are bundled and device-verified. `datasets` rides the minimal on-device `pyarrow` via `pyarrow.parquet` / `pyarrow.dataset` import shims (Arrow IPC cache works; real `.parquet` needs pyarrow rebuilt with `ARROW_PARQUET=ON`) plus a Python-3.14 pickle `_batch_setitems` backport. `sentencepiece` (Llama/T5/BART tokenizers) ships too.
+- **Files-app sync no longer "Paused"** — the File Provider extension uses the legacy iSH-style `NSFileProviderExtension` enumeration path; `WorkspaceEnumerator` streams items from the shared App-Group container so the CodeBench workspace mounts reliably in the Files app.
 
 ## Setup — wiring this package into a fresh iOS app
 
@@ -785,6 +788,7 @@ remains, so you can never accidentally upload a broken bundle.
 | `IndentationError: unexpected indent` at ~line 27 of `python_ios_lib_import_hook.py` (field report [#2](https://github.com/yu314-coder/python-ios-lib/issues/2)) | The file's leading `"""docstring"""` got mangled during copy (delimiters lost), so its indented usage example parses as code | Copy `scripts/appstore/python_ios_lib_import_hook.py` **verbatim** (don't hand-retype or reflow it), or delete the leading docstring block (it's purely documentation). Install it with the `\n`-joined `PyRun_SimpleString("import sys, os\n" …)` form in [step 2](#app-store-connect-submission) — **not** an indented `"""…"""` heredoc, which itself triggers this error. |
 | App Store: `Missing Info.plist value. The Info.plist key 'BGTaskSchedulerPermittedIdentifiers' must contain a list of identifiers when 'UIBackgroundModes' has a value of 'processing'.` | Required when `UIBackgroundModes` includes `processing` | Add `BGTaskSchedulerPermittedIdentifiers` array to your Info.plist |
 | `Upload Symbols Failed: archive did not include a dSYM for X.dylib` | Release archive is missing debug symbols | Build Settings → Debug Information Format = `DWARF with dSYM File` for Release; not a rejection — just no crash symbolication |
+| `Unicode{Encode,Decode}Error: 'ascii' codec …` reading/writing a non-ASCII file with a plain `open(p)` / `open(p,'w')` | iOS C locale is ASCII and bare `Py_Initialize()` ignores `PYTHONUTF8` → `sys.flags.utf8_mode == 0` → `open()` defaults to ASCII (stdout is fine — it's a custom UTF-8 writer) | Bundled `sitecustomize.py` (`_install_utf8_open_default`) wraps `open` / `io.open` to default text mode to UTF-8, covering `pathlib.read_text` / `write_text`. Embedding the runtime yourself? Pass `encoding="utf-8"` explicitly, or set `PyConfig.utf8_mode = 1` before `Py_InitializeFromConfig`. |
 
 ---
 
@@ -848,7 +852,7 @@ First public iOS builds of each. Once added, `import torch`, `import transformer
 
 The `safetensors` shim is bidirectional: both `load_file` and `save_file` work, so `model.save_pretrained()` and `peft.save_pretrained()` write valid `.safetensors` files that load back bit-identical (verified via roundtrip test with fp16/bf16/fp32/int64/bool tensors).
 
-**Not yet bundled** (require C extensions we haven't cross-compiled): `datasets` (needs `pyarrow` + `pandas`), `sentencepiece` (needed only for Llama/T5/BART tokenizers — Qwen/GPT-2/most modern HF models work without it), `protobuf`, `evaluate`. Workaround for `datasets`: write a tiny `torch.utils.data.Dataset` subclass yourself.
+**Now bundled** (added since the first release, all device-verified): `datasets` 4.0.0, `evaluate` 0.4.6, `sentencepiece` (the Llama/T5/BART tokenizers), `protobuf` 5.29.6, `pyarrow` 15.0.2 (minimal build — Arrow IPC works, no `.parquet`), and `torch.utils.tensorboard.SummaryWriter`. See the [Machine Learning stack](#machine-learning-stack-bundled) list above for per-library caveats. What's still out is only what iOS physically can't do: CUDA kernels (`bitsandbytes`, `flash-attn`, `xformers`), JIT (`triton`, `torch.compile`), and fork-based multiprocessing (`DataLoader(num_workers>0)`, `deepspeed`, `fairscale`).
 
 ### GPU acceleration for PyTorch (Metal bridge)
 
@@ -1073,7 +1077,6 @@ Transformers also bundles huggingface_hub, filelock, safetensors
 CodeBench ships a patched `pip` that installs pure-Python wheels on-device into the per-workspace site-packages. **Two categories**:
 
 ✅ **Pure-Python — typically installs fine via `pip install <name>`:**
-- `evaluate` — HF metrics (BLEU / ROUGE / accuracy / etc.)
 - `diffusers` — Stable Diffusion / etc. (note: inference may be slow; better via ExecuTorch)
 - `trl` — RLHF / DPO trainers built on transformers + accelerate (both bundled)
 - `wandb-core` Python parts — but no network sync without internet
@@ -1084,10 +1087,6 @@ CodeBench ships a patched `pip` that installs pure-Python wheels on-device into 
 
 | Package | Reason | Workaround |
 |---|---|---|
-| **`datasets`** | needs `pyarrow` (Apache Arrow C++); `pandas` itself is now bundled | Subclass `torch.utils.data.Dataset` (5-10 lines) |
-| **`pyarrow`** | Apache Arrow C++ core | None — write your own loader using `json` / `csv` stdlib modules |
-| **`sentencepiece`** | C++ subword tokenizer | Only needed for Llama / T5 / BART tokenizer formats; GPT-2 / Qwen / Mistral / Phi use BPE and work without it |
-| **`protobuf`** | C-based binary serialization | Use JSON / msgpack where possible |
 | **`bitsandbytes`** | CUDA-only quantization kernels | Use llama.cpp GGUF Q4/Q8 quantization for inference |
 | **`flash-attn`**, **`xformers`** | CUDA-only attention kernels | Bridge's `F.scaled_dot_product_attention` patch IS GPU-accelerated |
 | **`triton`** | LLVM JIT codegen | iOS forbids JIT; no equivalent |
