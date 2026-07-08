@@ -42,7 +42,7 @@ The `app_packages/site-packages/` bundle ships **~180 Python packages** — ever
 - **TensorBoard** `SummaryWriter` (2.19.0) — `add_scalar/histogram/…` write real event files offline (the *viewer* server needs grpcio → not bundled; copy the logs off-device to view)
 - `torch.frombuffer` for byte-buffer→tensor (used by the safetensors / numpy shims)
 
-❌ **Doesn't work (with workarounds where they exist):**
+❌ **Doesn't work — the only remaining gaps, all genuine iOS hardware/OS limits (workarounds where they exist):**
 
 | Op / feature | Why broken | Workaround |
 |---|---|---|
@@ -52,7 +52,6 @@ The `app_packages/site-packages/` bundle ships **~180 Python packages** — ever
 | `torch.compile` | Needs Triton JIT, iOS forbids JIT | Eager mode + GPU bridge |
 | `torch.from_numpy()`, `tensor.numpy()` | Built with `USE_NUMPY=0` | **Auto-patched** in sitecustomize — drop-in pure-Python equivalents using `torch.frombuffer` |
 | `DataLoader(num_workers > 0)` | Worker processes use `fork()` | Set `num_workers=0` (only iPad limitation that needs code awareness) |
-
 | `bitsandbytes`, `flash-attn`, `xformers` | CUDA-only / Triton-only | Skip; GPU bridge handles attention |
 
 #### What works / doesn't — transformers
@@ -69,8 +68,11 @@ The `app_packages/site-packages/` bundle ships **~180 Python packages** — ever
 - **SentencePiece tokenizers** (`sentencepiece` C++ **is** cross-compiled + bundled) — Llama / T5 / BART / Gemma / DeBERTa slow tokenizers work, not just BPE ones
 - **`datasets`** (4.0.0) — `load_dataset("json"/"csv", data_files=…)` from local files, `Dataset.from_dict/from_pandas`, `.map` / `.filter` / `.train_test_split`, `.arrow` cache (device-verified). **`.parquet` files are NOT supported** — the bundled pyarrow was built without the Parquet C++ component; a `pyarrow.parquet` shim lets datasets import + all non-parquet paths work, and raises a clear error on parquet I/O. (Real parquet needs pyarrow rebuilt with `ARROW_PARQUET=ON`.)
 - **`evaluate`** (0.4.6) — imports + local metric compute; `evaluate.load("…")` downloads the metric script (needs network)
+- **TensorBoard logging** — `Trainer(..., report_to="tensorboard")` / `SummaryWriter` write real event files offline (see the torch grid above)
 
-❌ **Doesn't work:**
+The former software gaps — `sentencepiece`, `datasets`, `evaluate`, TensorBoard, `protobuf` — are all **closed** (bundled + device-verified, listed above). What's left is only what iOS physically can't do:
+
+❌ **Doesn't work — all CUDA / JIT / multi-device limits with no iOS equivalent:**
 
 | Op / feature | Why | Workaround |
 |---|---|---|
