@@ -135,7 +135,7 @@ public enum BlenderLib {
     /// Expected sizes of the decompressed binaries. Hard-coded so we can
     /// cheaply detect partial / corrupted files without re-decompressing.
     /// Re-run `scripts/repack-bpy-so.swift` and update these if bpy is rebuilt.
-    private static let expectedModuleSize: UInt64 = 232_093_520
+    private static let expectedModuleSize: UInt64 = 232_915_824
     private static let expectedUsdSize: UInt64 = 68_866_848
 
     /// LZMA decompression via `Compression.framework` (zero added deps — the
