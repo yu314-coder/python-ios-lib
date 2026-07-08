@@ -106,6 +106,9 @@ for the cross-library iOS patches and feature tests.
 - [**PyTorch**](torch.md) — Full `import torch` on iPad. 95/95 numerical + training asserts
 - [**transformers**](transformers.md) — HuggingFace models: BERT, GPT-2, train + generate on-device
 - [**tokenizers**](tokenizers.md) — First public iOS build of HuggingFace's Rust tokenizers
+- [safetensors](safetensors.md) — Pure-Python read + write shim
+- [flash-attn](flash-attn.md) · [xformers](xformers.md) — SDPA-backed attention shims (GPU via the Metal bridge)
+- [datasets](datasets.md) · [evaluate](evaluate.md) · [sentencepiece](sentencepiece.md) · [tensorboard](tensorboard.md) — training-data stack (bundled; local ops, per-doc gaps)
 - [scikit-learn](sklearn.md) — 40 modules, 85%+ of common ML workflows
 
 ### Scientific

@@ -43,17 +43,23 @@ The `app_packages/site-packages/` bundle ships **~180 Python packages** — ever
 - `torch.frombuffer` for byte-buffer→tensor (used by the safetensors / numpy shims)
 - **`flash_attn` + `xformers` API shims** — `flash_attn_func` / `flash_attn_varlen_func` / `bert_padding` and `xformers.ops.memory_efficient_attention` are implemented on `F.scaled_dot_product_attention` (GPU via the Metal bridge), so code that hard-imports either package runs unchanged. Matches flash-attn ≥2.1 semantics (bottom-right causal alignment, GQA/MQA kv-head repeat, varlen). Not implemented: `window_size` sliding attention, ALiBi slopes, `return_attn_probs`.
 
-❌ **Doesn't work — the only remaining gaps, all genuine iOS hardware/OS limits (workarounds where they exist):**
+🟡 **Filled by a shim — imports and runs (the CUDA path is gone, the *result* isn't):**
 
-| Op / feature | Why broken | Workaround |
+| Op / feature | The shim |
+|---|---|
+| `torch.from_numpy()`, `tensor.numpy()` | Auto-patched in sitecustomize — drop-in pure-Python equivalents over `torch.frombuffer` (copy, not zero-copy) |
+| `flash-attn`, `xformers` | SDPA-backed API shims — `flash_attn_func` / `flash_attn_varlen_func` / `bert_padding` and `xformers.ops.memory_efficient_attention` import and run attention on GPU via the Metal bridge ([docs](docs/flash-attn.md)) |
+
+❌ **Genuinely doesn't work — iOS hardware/OS limits, no software fix:**
+
+| Op / feature | Why | Workaround |
 |---|---|---|
-| `torch.cuda.*` | No CUDA on iOS | None — use the Metal bridge for matmul-heavy ops |
-| `torch.backends.mps` | MPS backend not in this build | Metal bridge replaces it |
-| `torch.distributed`, `torch.multiprocessing` | iOS forbids `fork()` | Single-process training only |
+| `torch.cuda.*` | No CUDA on iOS | Metal bridge for matmul-heavy ops |
+| `torch.backends.mps` | MPS backend not compiled into this build | Metal bridge replaces it (a `USE_MPS=1` torch rebuild is the future lift) |
+| `torch.distributed`, `torch.multiprocessing` | iOS forbids `fork()` | Single-process only |
 | `torch.compile` | Needs Triton JIT, iOS forbids JIT | Eager mode + GPU bridge |
-| `torch.from_numpy()`, `tensor.numpy()` | Built with `USE_NUMPY=0` | **Auto-patched** in sitecustomize — drop-in pure-Python equivalents using `torch.frombuffer` |
-| `DataLoader(num_workers > 0)` | Worker processes use `fork()` | Set `num_workers=0` (only iPad limitation that needs code awareness) |
-| `flash-attn`, `xformers` (real kernels) | CUDA / Triton-only | **API shims bundled** — both packages import and their attention functions run on GPU via SDPA + the Metal bridge (see ✅ above) |
+| `DataLoader(num_workers > 0)` | Worker processes use `fork()` | `num_workers=0` (the one limit needing code awareness) |
+| `bitsandbytes` | CUDA-only 8/4-bit kernels; no Metal equivalent | llama.cpp GGUF Q4/Q8 for quantized inference |
 | `bitsandbytes` | CUDA-only 8/4-bit kernels; no Metal equivalent — a shim would dequantize and lose the memory saving | Use llama.cpp GGUF Q4/Q8 for quantized inference |
 
 #### What works / doesn't — transformers
@@ -75,13 +81,18 @@ The `app_packages/site-packages/` bundle ships **~180 Python packages** — ever
 
 The former software gaps — `sentencepiece`, `datasets`, `evaluate`, TensorBoard, `protobuf` — are all **closed** (bundled + device-verified, listed above). What's left is only what iOS physically can't do:
 
-❌ **Doesn't work — all CUDA / JIT / multi-device limits with no iOS equivalent:**
+🟡 **Filled by a shim / auto-remap — requesting it no longer crashes:**
+
+| Op / feature | The shim |
+|---|---|
+| `attn_implementation="flash_attention_2"` | Auto-remapped by sitecustomize → `sdpa` (torch ≥ 2.1.1) or `eager` (bundled 2.1.0); `flash_attn` / `xformers` importable as SDPA shims — see the torch grid |
+
+❌ **Genuinely doesn't work — all CUDA / multi-device limits with no iOS equivalent:**
 
 | Op / feature | Why | Workaround |
 |---|---|---|
-| `FlashAttention2` (real CUDA kernels) | No CUDA; no Triton | **Auto-remapped** — requesting it no longer crashes (→ sdpa on torch ≥ 2.1.1, → eager on the bundled 2.1.0); `flash_attn` import shim bundled and runs SDPA on GPU directly |
 | `DeepSpeed`, `FSDP` | Multi-device / multi-process | Single-device; not applicable to iPad |
-| `BitsAndBytes` quantization | CUDA-only | Use llama.cpp's GGUF quantization for inference instead |
+| `BitsAndBytes` quantization | CUDA-only | llama.cpp GGUF quantization for inference instead |
 | Multi-GPU training | iOS = one device | N/A |
 
 ### Scientific Computing
@@ -1140,7 +1151,9 @@ notes, limitations, troubleshooting, and build provenance.
 | **PyTorch** (14 MB LZMA blob → 99 MB dylib at runtime) | [docs/torch.md](docs/torch.md) |
 | **transformers** | [docs/transformers.md](docs/transformers.md) |
 | **tokenizers** (Rust via PyO3) | [docs/tokenizers.md](docs/tokenizers.md) |
-| **safetensors** | [docs/safetensors.md](docs/safetensors.md) |
+| **safetensors** (pure-Python shim) | [docs/safetensors.md](docs/safetensors.md) |
+| **flash-attn** / **xformers** (SDPA-backed attention shims) | [docs/flash-attn.md](docs/flash-attn.md) · [docs/xformers.md](docs/xformers.md) |
+| **datasets** / **evaluate** / **sentencepiece** / **tensorboard** (bundled) | [datasets](docs/datasets.md) · [evaluate](docs/evaluate.md) · [sentencepiece](docs/sentencepiece.md) · [tensorboard](docs/tensorboard.md) |
 | **huggingface_hub** | [docs/huggingface-hub.md](docs/huggingface-hub.md) |
 
 ### Visualization

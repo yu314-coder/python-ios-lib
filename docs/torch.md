@@ -203,6 +203,26 @@ Two paths route torch ops to the Apple GPU in this build — both **App-Store-sa
 
 `torchmetal` is the controllable path (`enable()` / `disable()`, tunable thresholds); the auto bridge is transparent. They overlap — prefer `torchmetal` when you want explicit control.
 
+## Attention shims
+
+`flash_attn` and `xformers` are CUDA/Triton-only and can never run on iOS, but their attention contract maps 1:1 onto `F.scaled_dot_product_attention` — which the Metal bridge GPU-accelerates. Both are bundled as pure-Python shims so code (and libraries like diffusers) that hard-import them run unchanged instead of raising `ImportError`.
+
+| Import | Shim provides | Notes |
+|---|---|---|
+| `flash_attn` | `flash_attn_func`, `flash_attn_varlen_func`, `flash_attn.bert_padding` (`index_first_axis` / `pad_input` / `unpad_input`) | flash-attn ≥ 2.1 semantics — **bottom-right** causal alignment when `seqlen_q != seqlen_k` (a 1-token decode step attends to the whole KV cache), GQA/MQA kv-head repeat, per-sequence varlen |
+| `xformers` | `xformers.ops.memory_efficient_attention`, `LowerTriangularMask` | BMHK + 3-D BMK layouts |
+
+Not implemented (CUDA-specific, no iOS meaning): `window_size` sliding attention, ALiBi slopes, `return_attn_probs=True` — these raise an informative error. Device-verified numerically correct against a naive reference (causal decode / GQA / softmax_scale / varlen).
+
+For HuggingFace, `attn_implementation="flash_attention_2"` is auto-remapped by sitecustomize (→ `sdpa` on torch ≥ 2.1.1, → `eager` on the bundled 2.1.0a0, since transformers gates its SDPA path on torch ≥ 2.1.1 for pytorch#112577) — so unchanged HF scripts that request FA2 run instead of crashing.
+
+```python
+from flash_attn import flash_attn_func            # imports — no ImportError
+import torch
+q = k = v = torch.randn(1, 128, 8, 64)            # (batch, seqlen, heads, dim)
+out = flash_attn_func(q, k, v, causal=True)       # runs on GPU via SDPA + Metal bridge
+```
+
 ## Standalone example
 
 ```python
@@ -252,7 +272,8 @@ model.load_state_dict(state)
 - **`torch.distributed`** and **`torch.multiprocessing`** import fine but fail at runtime.
 - **`libtorch_python.dylib` is 99 MB** — ships via Git LFS. Without `git lfs install`, the dylib arrives as a 134-byte pointer file and `import torch` crashes at load.
 - **`torch.from_numpy` / `tensor.numpy()`** are auto-patched in `sitecustomize.py`. Both copy (not zero-copy).
-- **`bitsandbytes`, `flash-attn`, `xformers`**: CUDA-only — skip; the Metal bridge handles attention via SDPA.
+- **`flash-attn` / `xformers`**: real CUDA/Triton kernels don't exist here, but both packages are bundled as **SDPA-backed API shims** — they import and run attention on the GPU via the Metal bridge (see [Attention shims](#attention-shims)).
+- **`bitsandbytes`**: CUDA-only 8/4-bit kernels, no Metal equivalent — a shim would dequantize and lose the memory saving. Use `llama.cpp` GGUF Q4/Q8 for quantized inference.
 - **Soft memory ceiling: ~3 GB working set**. iOS jetsam kills the app around ~60% of physical RAM. Print `psutil.Process().memory_info().rss / 1024**2` during heavy work.
 
 ## Pairing with the HF stack

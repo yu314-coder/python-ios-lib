@@ -208,20 +208,27 @@ for batch_text, batch_label in your_dataset:
 - `peft.get_peft_model()` + LoRA / IA3 / prefix-tuning (PEFT is bundled separately)
 - Mixed precision: `bf16=True` or `fp16=True` in `TrainingArguments`, or `torch_dtype=torch.float16` at load
 - Verified model families: BERT, GPT-2, T5, BART, Llama, Qwen, Mistral, Phi, DistilBERT, Whisper
+- **SentencePiece tokenizers** — `sentencepiece` C++ is cross-compiled + bundled, so the SP-only slow tokenizers (Llama-1, T5, BART, mBART, Gemma, DeBERTa-v2) work, not just BPE ones
+- **`datasets` 4.0.0** — local `from_dict` / `from_pandas` / `map` / `filter` / `train_test_split` / `load_dataset("json"|"csv")`; Arrow IPC cache ([datasets.md](datasets.md); `.parquet` caveat there)
+- **`evaluate` 0.4.6** — imports + local metric compute; `evaluate.load("accuracy")` downloads the metric script once, then runs offline ([evaluate.md](evaluate.md))
+- **TensorBoard logging** — `Trainer(..., report_to="tensorboard")` and `SummaryWriter` write real event files offline ([tensorboard.md](tensorboard.md); viewer server not bundled)
+- **`attn_implementation="flash_attention_2"`** — auto-remapped by sitecustomize (→ `sdpa` on torch ≥ 2.1.1, → `eager` on the bundled 2.1.0), so requesting FA2 no longer raises; `flash_attn` / `xformers` are also importable as SDPA-backed shims (see [torch.md](torch.md#attention-shims))
 
 ### What doesn't / has caveats
 
+Everything below is a genuine iOS hardware/OS limit — the former *software* gaps (`datasets`, `evaluate`, `sentencepiece`, TensorBoard) are now closed and listed under [What works](#what-works-on-ipad) above.
+
 | Op / feature | Status | Workaround |
 |---|---|---|
-| `datasets.load_dataset(...)` | `datasets` not bundled (needs `pyarrow` + `pandas`) | Subclass `torch.utils.data.Dataset` — 5-10 lines |
-| `DataLoader(num_workers>0)` | iOS forbids `fork()` | `num_workers=0` only |
-| `torch.compile` / FlashAttention2 | No Triton, no `flash_attn` package | Falls back to PyTorch SDPA — which IS GPU-accelerated via the Metal bridge |
-| `bitsandbytes` 4/8-bit / AWQ / AQLM / GPTQ / EETQ | CUDA-only | Use GGUF + `llama.cpp` for quantized inference |
-| `DeepSpeed`, `FSDP`, `torch.distributed.*` | Multi-process | N/A (single device) |
-| Sentencepiece-only tokenizers | `sentencepiece` C++ not cross-compiled | BPE-based models (GPT-2 / Qwen / Mistral / Phi) work; pure-SP tokenizers (Llama-1, T5, BART, mBART) blocked |
+| `DataLoader(num_workers>0)` | iOS forbids `fork()` — workers are processes | `num_workers=0` only |
+| `torch.compile` | No Triton, no on-device JIT | Falls back to eager (matmuls still Metal-bridged) |
+| `FlashAttention2` (real CUDA kernels) | No CUDA; no Triton | **Auto-remapped** → `sdpa` (torch ≥ 2.1.1) or `eager` (bundled 2.1.0); `flash_attn` / `xformers` importable as SDPA shims — requesting FA2 no longer crashes |
+| `bitsandbytes` 4/8-bit / AWQ / AQLM / GPTQ / EETQ | CUDA-only kernels, no Metal equivalent | Use GGUF + `llama.cpp` for quantized inference |
+| `DeepSpeed`, `FSDP`, `torch.distributed.*` | Multi-process / multi-device | N/A (single device) |
 | `device_map="auto"` | One device only | Pass `torch_dtype=torch.float16` to reduce memory instead |
-| `evaluate.load(...)` | `evaluate` not bundled | Compute metrics inline |
-| TensorBoard writer | No background server / UI | Use `_cb_training.TrainingMonitor` for terminal output |
+| `datasets` `.parquet` files | Bundled pyarrow 15 has no Parquet C++ component | Convert to JSON/CSV/Arrow; or rebuild pyarrow with `ARROW_PARQUET=ON` |
+| `evaluate.load(...)` first call | Downloads the metric script | Needs network once; runs offline after |
+| TensorBoard *viewer* | No `grpcio` / background server on device | `SummaryWriter` still writes event files — copy them off-device to view |
 | `interpreter_login()` | Opens system browser | Use `huggingface_hub.HfFolder.save_token("hf_...")` instead |
 
 ### Memory tips
