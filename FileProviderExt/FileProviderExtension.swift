@@ -1,170 +1,238 @@
 import FileProvider
 import UniformTypeIdentifiers
 
-/// CodeBench's File Provider — **replicated** `NSFileProviderReplicatedExtension`
-/// (iOS 16+), exposing the App Group Documents as a top-level Files Location.
+/// CodeBench's File Provider — **legacy** `NSFileProviderExtension` (the iOS-11
+/// model), exposing the App Group Documents as a top-level Files Location.
 ///
-/// ## Why replicated (again), on iOS 26
-/// On iOS 26 the *legacy* `NSFileProviderExtension` crashes the moment the Files
-/// app connects to it — an Apple bug in `xpc_connection_copy_bundle_id`
-/// (`EXC_GUARD`), confirmed from a device/sim crash report, entirely in system
-/// code. The **replicated** model uses the modern File Provider XPC path, does
-/// NOT hit that bug, and demonstrably *ran and listed files* on iOS 26. Its only
-/// problem before was "Paused", which was caused by the old whole-tree working
-/// set OOM-ing the extension — now fixed: `WorkspaceEnumerator` is shallow +
-/// paged, so there's nothing to crash and back off from.
-final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
+/// ## Why legacy (the iSH model), not replicated
+/// The replicated (`NSFileProviderReplicatedExtension`) model puts the system's
+/// sync engine between Files and our local folder. There is no server here —
+/// yet the engine still maintained a replica, re-synced it on every signal, and
+/// whenever the app was actively writing (any Python run) it ground away until
+/// iOS backed the domain off: the Location showed a perpetual sync badge /
+/// "Sync Paused" and stopped loading. iSH ships the legacy model for the same
+/// use case (a local filesystem), has none of that UI, and demonstrably works
+/// on current iOS — so this now mirrors iSH: identifiers map to real paths,
+/// `startProvidingItem` copies the file into the provider's document storage,
+/// `itemChanged` copies edits back. No sync engine, nothing to pause.
+final class FileProviderExtension: NSFileProviderExtension {
 
-    private let domain: NSFileProviderDomain
     private let fm = FileManager.default
 
-    required init(domain: NSFileProviderDomain) {
-        self.domain = domain
+    override init() {
         super.init()
         AppPaths.ensureWorkspace()
-        AppPaths.fpLog("ext.init(replicated) appGroup=\(AppPaths.appGroupAvailable) root=\(AppPaths.fileProviderRootURL.path)")
+        AppPaths.fpLog("ext.init(legacy) appGroup=\(AppPaths.appGroupAvailable) root=\(AppPaths.fileProviderRootURL.path)")
     }
 
-    func invalidate() {}
+    // MARK: - Identifier ↔ real URL (App Group) ↔ storage URL
 
-    // MARK: - Metadata
-
-    func item(for identifier: NSFileProviderItemIdentifier,
-              request: NSFileProviderRequest,
-              completionHandler: @escaping (NSFileProviderItem?, Error?) -> Void) -> Progress {
-        if identifier == .rootContainer { AppPaths.ensureWorkspace() }   // root must always resolve
-        if let item = WorkspaceItem(identifier: identifier) {
-            completionHandler(item, nil)
-        } else {
-            AppPaths.fpLog("ext.item MISS \(identifier == .rootContainer ? "<root>" : identifier.rawValue)")
-            completionHandler(nil, NSFileProviderError(.noSuchItem))
-        }
-        return Progress()
-    }
-
-    // MARK: - Content download (local: hand the system a private temp copy)
-
-    func fetchContents(for itemIdentifier: NSFileProviderItemIdentifier,
-                       version requestedVersion: NSFileProviderItemVersion?,
-                       request: NSFileProviderRequest,
-                       completionHandler: @escaping (URL?, NSFileProviderItem?, Error?) -> Void) -> Progress {
-        guard let item = WorkspaceItem(identifier: itemIdentifier) else {
-            completionHandler(nil, nil, NSFileProviderError(.noSuchItem))
-            return Progress()
-        }
-        let tmpDir = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
-        let tmp = tmpDir.appendingPathComponent(item.filename)
-        do {
-            try fm.createDirectory(at: tmpDir, withIntermediateDirectories: true)
-            try fm.copyItem(at: item.url, to: tmp)
-            completionHandler(tmp, item, nil)
-        } catch {
-            completionHandler(nil, nil, error)
-        }
-        return Progress()
-    }
-
-    // MARK: - Create
-
-    func createItem(basedOn itemTemplate: NSFileProviderItem,
-                    fields: NSFileProviderItemFields,
-                    contents url: URL?,
-                    options: NSFileProviderCreateItemOptions = [],
-                    request: NSFileProviderRequest,
-                    completionHandler: @escaping (NSFileProviderItem?, NSFileProviderItemFields, Bool, Error?) -> Void) -> Progress {
-        guard let parentURL = containerURL(itemTemplate.parentItemIdentifier) else {
-            completionHandler(nil, [], false, NSFileProviderError(.noSuchItem))
-            return Progress()
-        }
-        let dest = parentURL.appendingPathComponent(itemTemplate.filename)
-        do {
-            let isFolder = itemTemplate.contentType == .folder
-                || (itemTemplate.contentType?.conforms(to: .folder) ?? false)
-            if isFolder {
-                try fm.createDirectory(at: dest, withIntermediateDirectories: true)
-            } else if let src = url {
-                if fm.fileExists(atPath: dest.path) { try? fm.removeItem(at: dest) }
-                try fm.copyItem(at: src, to: dest)
-            } else {
-                fm.createFile(atPath: dest.path, contents: Data())
-            }
-            completionHandler(WorkspaceItem(url: dest), [], false, nil)
-        } catch {
-            completionHandler(nil, [], false, error)
-        }
-        return Progress()
-    }
-
-    // MARK: - Modify (rename / move / write contents)
-
-    func modifyItem(_ item: NSFileProviderItem,
-                    baseVersion version: NSFileProviderItemVersion,
-                    changedFields: NSFileProviderItemFields,
-                    contents newContents: URL?,
-                    options: NSFileProviderModifyItemOptions = [],
-                    request: NSFileProviderRequest,
-                    completionHandler: @escaping (NSFileProviderItem?, NSFileProviderItemFields, Bool, Error?) -> Void) -> Progress {
-        let raw = item.itemIdentifier == .rootContainer ? AppPaths.rootIdentifier : item.itemIdentifier.rawValue
-        guard var currentURL = AppPaths.url(forIdentifier: raw), !isProtected(currentURL) else {
-            completionHandler(nil, [], false, NSFileProviderError(.noSuchItem))
-            return Progress()
-        }
-        do {
-            if changedFields.contains(.filename) || changedFields.contains(.parentItemIdentifier) {
-                let parentURL = containerURL(item.parentItemIdentifier) ?? currentURL.deletingLastPathComponent()
-                let dest = parentURL.appendingPathComponent(item.filename)
-                if dest.standardizedFileURL.path != currentURL.standardizedFileURL.path {
-                    if fm.fileExists(atPath: dest.path) { try? fm.removeItem(at: dest) }
-                    try fm.moveItem(at: currentURL, to: dest)
-                    currentURL = dest
-                }
-            }
-            if changedFields.contains(.contents), let src = newContents {
-                if fm.fileExists(atPath: currentURL.path) { try? fm.removeItem(at: currentURL) }
-                try fm.copyItem(at: src, to: currentURL)
-            }
-            completionHandler(WorkspaceItem(url: currentURL), [], false, nil)
-        } catch {
-            completionHandler(nil, [], false, error)
-        }
-        return Progress()
-    }
-
-    // MARK: - Delete
-
-    func deleteItem(identifier: NSFileProviderItemIdentifier,
-                    baseVersion version: NSFileProviderItemVersion,
-                    options: NSFileProviderDeleteItemOptions = [],
-                    request: NSFileProviderRequest,
-                    completionHandler: @escaping (Error?) -> Void) -> Progress {
+    /// The real file/folder in the App Group for an identifier.
+    private func realURL(for identifier: NSFileProviderItemIdentifier) -> URL? {
         let raw = identifier == .rootContainer ? AppPaths.rootIdentifier : identifier.rawValue
-        guard let url = AppPaths.url(forIdentifier: raw), !isProtected(url) else {
+        return AppPaths.url(forIdentifier: raw)
+    }
+
+    /// Where materialized copies live: `<storage>/<b64url(id)>/<filename>`.
+    /// The per-item directory (like iSH) keeps names collision-free and makes
+    /// the reverse mapping trivial.
+    private var storageRoot: URL {
+        NSFileProviderManager.default.documentStorageURL
+    }
+
+    private static func encodeID(_ raw: String) -> String {
+        Data(raw.utf8).base64EncodedString()
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "=", with: "")
+    }
+
+    private static func decodeID(_ dirName: String) -> String? {
+        var b64 = dirName
+            .replacingOccurrences(of: "_", with: "/")
+            .replacingOccurrences(of: "-", with: "+")
+        while b64.count % 4 != 0 { b64 += "=" }
+        guard let d = Data(base64Encoded: b64) else { return nil }
+        return String(data: d, encoding: .utf8)
+    }
+
+    override func item(for identifier: NSFileProviderItemIdentifier) throws -> NSFileProviderItem {
+        if identifier == .rootContainer { AppPaths.ensureWorkspace() }
+        guard let item = WorkspaceItem(identifier: identifier) else {
+            throw NSFileProviderError(.noSuchItem)
+        }
+        return item
+    }
+
+    override func urlForItem(withPersistentIdentifier identifier: NSFileProviderItemIdentifier) -> URL? {
+        guard let item = try? item(for: identifier) else { return nil }
+        // Folders aren't materialized in the legacy model.
+        if item.contentType == .folder { return nil }
+        return storageRoot
+            .appendingPathComponent(Self.encodeID(identifier.rawValue), isDirectory: true)
+            .appendingPathComponent(item.filename)
+    }
+
+    override func persistentIdentifierForItem(at url: URL) -> NSFileProviderItemIdentifier? {
+        let dirName = url.deletingLastPathComponent().lastPathComponent
+        guard let raw = Self.decodeID(dirName) else { return nil }
+        return raw == AppPaths.rootIdentifier ? .rootContainer : NSFileProviderItemIdentifier(raw)
+    }
+
+    // MARK: - Placeholders + content
+
+    override func providePlaceholder(at url: URL, completionHandler: @escaping (Error?) -> Void) {
+        guard let identifier = persistentIdentifierForItem(at: url),
+              let item = try? item(for: identifier) else {
             completionHandler(NSFileProviderError(.noSuchItem))
-            return Progress()
+            return
         }
         do {
-            try fm.removeItem(at: url)
+            try fm.createDirectory(at: url.deletingLastPathComponent(),
+                                   withIntermediateDirectories: true)
+            try NSFileProviderManager.writePlaceholder(
+                at: NSFileProviderManager.placeholderURL(for: url),
+                withMetadata: item)
             completionHandler(nil)
         } catch {
             completionHandler(error)
         }
-        return Progress()
+    }
+
+    override func startProvidingItem(at url: URL, completionHandler: @escaping (Error?) -> Void) {
+        guard let identifier = persistentIdentifierForItem(at: url),
+              let real = realURL(for: identifier),
+              fm.fileExists(atPath: real.path) else {
+            completionHandler(NSFileProviderError(.noSuchItem))
+            return
+        }
+        do {
+            try fm.createDirectory(at: url.deletingLastPathComponent(),
+                                   withIntermediateDirectories: true)
+            // Refresh a stale copy: replace when the real file is newer or sizes differ.
+            if fm.fileExists(atPath: url.path) {
+                let a = try? fm.attributesOfItem(atPath: url.path)
+                let b = try? fm.attributesOfItem(atPath: real.path)
+                let copyM = (a?[.modificationDate] as? Date) ?? .distantPast
+                let realM = (b?[.modificationDate] as? Date) ?? .distantPast
+                let same = copyM >= realM
+                    && (a?[.size] as? NSNumber) == (b?[.size] as? NSNumber)
+                if !same { try fm.removeItem(at: url); try fm.copyItem(at: real, to: url) }
+            } else {
+                try fm.copyItem(at: real, to: url)
+            }
+            completionHandler(nil)
+        } catch {
+            completionHandler(error)
+        }
+    }
+
+    override func itemChanged(at url: URL) {
+        // The user edited the materialized copy in another app → write it back.
+        guard let identifier = persistentIdentifierForItem(at: url),
+              let real = realURL(for: identifier) else { return }
+        do {
+            if fm.fileExists(atPath: real.path) { try fm.removeItem(at: real) }
+            try fm.copyItem(at: url, to: real)
+            AppPaths.fpLog("ext.itemChanged wrote back \(real.lastPathComponent)")
+        } catch {
+            AppPaths.fpLog("ext.itemChanged FAILED \(real.lastPathComponent): \(error.localizedDescription)")
+        }
+    }
+
+    override func stopProvidingItem(at url: URL) {
+        // Persist any pending edit, drop the copy, and leave a placeholder.
+        itemChanged(at: url)
+        try? fm.removeItem(at: url)
+        providePlaceholder(at: url) { _ in }
+    }
+
+    // MARK: - Actions (Files toolbar/context menu)
+
+    override func createDirectory(withName directoryName: String,
+                                  inParentItemIdentifier parentItemIdentifier: NSFileProviderItemIdentifier,
+                                  completionHandler: @escaping (NSFileProviderItem?, Error?) -> Void) {
+        guard let parent = realURL(for: parentItemIdentifier) else {
+            completionHandler(nil, NSFileProviderError(.noSuchItem)); return
+        }
+        let dest = parent.appendingPathComponent(directoryName, isDirectory: true)
+        do {
+            try fm.createDirectory(at: dest, withIntermediateDirectories: true)
+            completionHandler(WorkspaceItem(url: dest), nil)
+        } catch { completionHandler(nil, error) }
+    }
+
+    override func importDocument(at fileURL: URL,
+                                 toParentItemIdentifier parentItemIdentifier: NSFileProviderItemIdentifier,
+                                 completionHandler: @escaping (NSFileProviderItem?, Error?) -> Void) {
+        guard let parent = realURL(for: parentItemIdentifier) else {
+            completionHandler(nil, NSFileProviderError(.noSuchItem)); return
+        }
+        let stop = fileURL.startAccessingSecurityScopedResource()
+        defer { if stop { fileURL.stopAccessingSecurityScopedResource() } }
+        var dest = parent.appendingPathComponent(fileURL.lastPathComponent)
+        // De-dupe "name.ext" → "name 2.ext" like Files does.
+        var n = 2
+        let base = dest.deletingPathExtension().lastPathComponent
+        let ext = dest.pathExtension
+        while fm.fileExists(atPath: dest.path) {
+            let name = ext.isEmpty ? "\(base) \(n)" : "\(base) \(n).\(ext)"
+            dest = parent.appendingPathComponent(name)
+            n += 1
+        }
+        do {
+            try fm.copyItem(at: fileURL, to: dest)
+            completionHandler(WorkspaceItem(url: dest), nil)
+        } catch { completionHandler(nil, error) }
+    }
+
+    override func renameItem(withIdentifier itemIdentifier: NSFileProviderItemIdentifier,
+                             toName itemName: String,
+                             completionHandler: @escaping (NSFileProviderItem?, Error?) -> Void) {
+        guard let src = realURL(for: itemIdentifier), !isProtected(src) else {
+            completionHandler(nil, NSFileProviderError(.noSuchItem)); return
+        }
+        let dest = src.deletingLastPathComponent().appendingPathComponent(itemName)
+        do {
+            try fm.moveItem(at: src, to: dest)
+            completionHandler(WorkspaceItem(url: dest), nil)
+        } catch { completionHandler(nil, error) }
+    }
+
+    override func reparentItem(withIdentifier itemIdentifier: NSFileProviderItemIdentifier,
+                               toParentItemWithIdentifier parentItemIdentifier: NSFileProviderItemIdentifier,
+                               newName: String?,
+                               completionHandler: @escaping (NSFileProviderItem?, Error?) -> Void) {
+        guard let src = realURL(for: itemIdentifier), !isProtected(src),
+              let parent = realURL(for: parentItemIdentifier) else {
+            completionHandler(nil, NSFileProviderError(.noSuchItem)); return
+        }
+        let dest = parent.appendingPathComponent(newName ?? src.lastPathComponent)
+        do {
+            try fm.moveItem(at: src, to: dest)
+            completionHandler(WorkspaceItem(url: dest), nil)
+        } catch { completionHandler(nil, error) }
+    }
+
+    override func deleteItem(withIdentifier itemIdentifier: NSFileProviderItemIdentifier,
+                             completionHandler: @escaping (Error?) -> Void) {
+        guard let url = realURL(for: itemIdentifier), !isProtected(url) else {
+            completionHandler(NSFileProviderError(.noSuchItem)); return
+        }
+        do {
+            try fm.removeItem(at: url)
+            completionHandler(nil)
+        } catch { completionHandler(error) }
     }
 
     // MARK: - Enumeration
 
-    func enumerator(for containerItemIdentifier: NSFileProviderItemIdentifier,
-                    request: NSFileProviderRequest) throws -> NSFileProviderEnumerator {
+    override func enumerator(for containerItemIdentifier: NSFileProviderItemIdentifier) throws -> NSFileProviderEnumerator {
         AppPaths.fpLog("ext.enumerator \(containerItemIdentifier == .rootContainer ? "<root>" : containerItemIdentifier.rawValue)")
         return WorkspaceEnumerator(identifier: containerItemIdentifier)
     }
 
     // MARK: - Helpers
-
-    private func containerURL(_ identifier: NSFileProviderItemIdentifier) -> URL? {
-        let raw = identifier == .rootContainer ? AppPaths.rootIdentifier : identifier.rawValue
-        return AppPaths.url(forIdentifier: raw)
-    }
 
     /// The structural folders (root, Workspace, ToolOutputs, Imported,
     /// site-packages) must not be deletable/renamable via Files.

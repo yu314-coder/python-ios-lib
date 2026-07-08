@@ -52,6 +52,11 @@ final class WorkspaceEnumerator: NSObject, NSFileProviderEnumerator {
         "conversations.json",  // AI history — rewritten on every message; would churn the Documents anchor
         "Library", "File Provider Storage", ".fp_diag", ".fp_snapshots",
         ".com.apple.mobile_container_manager.metadata.plist",
+        // The live run-output streams (ToolOutputs) — appended to continuously
+        // for the whole duration of every Python run. Folding them into the
+        // anchor/deltas re-synced the domain every ~1.2 s while any script ran,
+        // which is exactly when iOS backs the provider off ("Sync Paused").
+        "_stream_stdout.txt", "_stream_stderr.txt",
     ]
 
     /// Top-level entries HIDDEN from the Location root. The Location is rooted at
@@ -128,7 +133,8 @@ final class WorkspaceEnumerator: NSObject, NSFileProviderEnumerator {
             observer.finishEnumerating(upTo: Self.encodeOffset(end))      // more pages to come
         } else {
             WorkspaceSnapshot.save(container: identifier,
-                                   ids: all.map { AppPaths.identifier(forURL: $0) })
+                                   entries: all.map { (AppPaths.identifier(forURL: $0),
+                                                       Self.signature(of: $0)) })
             observer.finishEnumerating(upTo: nil)                         // done
         }
     }
@@ -139,23 +145,53 @@ final class WorkspaceEnumerator: NSObject, NSFileProviderEnumerator {
             observer.finishEnumeratingChanges(upTo: anchor, moreComing: false)
             return
         }
+        // Fast path: nothing user-visible changed since the caller's anchor →
+        // finish without reporting a single item. The app signals every ~1.2 s
+        // during an active Python run; the old code re-reported EVERY child as
+        // updated on EVERY pass, and files being actively written got a fresh
+        // contentVersion each time — the sync engine ground away until iOS
+        // backed the domain off ("Sync Paused" whenever the app was in use).
+        let current = NSFileProviderSyncAnchor(WorkspaceSnapshot.anchor(container: identifier))
+        if current.rawValue == anchor.rawValue {
+            observer.finishEnumeratingChanges(upTo: current, moreComing: false)
+            return
+        }
         let all = childURLs()
-        let currentIds = all.map { AppPaths.identifier(forURL: $0) }
-        // Report updates in bounded batches so a big folder can't spike memory.
+        let previous = WorkspaceSnapshot.signatures(container: identifier)
+        var currentEntries: [(id: String, sig: String)] = []
+        currentEntries.reserveCapacity(all.count)
+        // Only report items that are new or whose mtime/size actually changed —
+        // never the volatile internals (live streams, logs), whose churn is
+        // invisible to the user but re-syncs the world.
+        var changed: [WorkspaceItem] = []
+        for u in all {
+            let id = AppPaths.identifier(forURL: u)
+            let sig = Self.signature(of: u)
+            currentEntries.append((id, sig))
+            if Self.anchorVolatile.contains(u.lastPathComponent) { continue }
+            if previous[id] != sig { changed.append(WorkspaceItem(url: u)) }
+        }
+        // Bounded batches so a big folder can't spike memory.
         var i = 0
-        while i < all.count {
-            let end = min(i + Self.pageSize, all.count)
-            observer.didUpdate(all[i..<end].map { WorkspaceItem(url: $0) })
+        while i < changed.count {
+            let end = min(i + Self.pageSize, changed.count)
+            observer.didUpdate(Array(changed[i..<end]))
             i = end
         }
-        let deleted = WorkspaceSnapshot.deletions(container: identifier, current: currentIds)
+        let deleted = WorkspaceSnapshot.deletions(container: identifier,
+                                                  current: currentEntries.map { $0.id })
         if !deleted.isEmpty {
             observer.didDeleteItems(withIdentifiers: deleted.map { NSFileProviderItemIdentifier($0) })
         }
-        WorkspaceSnapshot.save(container: identifier, ids: currentIds)
-        observer.finishEnumeratingChanges(
-            upTo: NSFileProviderSyncAnchor(WorkspaceSnapshot.anchor(container: identifier)),
-            moreComing: false)
+        WorkspaceSnapshot.save(container: identifier, entries: currentEntries)
+        observer.finishEnumeratingChanges(upTo: current, moreComing: false)
+    }
+
+    /// mtime+size signature — same derivation as `WorkspaceItem.itemVersion`,
+    /// so "signature changed" ⇔ "the sync engine would see a new version".
+    private static func signature(of url: URL) -> String {
+        let v = try? url.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey])
+        return "\(v?.contentModificationDate?.timeIntervalSince1970 ?? 0)-\(v?.fileSize ?? 0)"
     }
 
     func currentSyncAnchor(completionHandler: @escaping (NSFileProviderSyncAnchor?) -> Void) {
@@ -181,16 +217,35 @@ enum WorkspaceSnapshot {
         return dir.appendingPathComponent(key(container).replacingOccurrences(of: "/", with: "_") + ".txt")
     }
 
-    static func save(container: NSFileProviderItemIdentifier, ids: [String]) {
+    /// One line per child: `id<TAB>mtime-size`. Old snapshots (id-only lines)
+    /// still parse — their signature reads as "", so each item reports changed
+    /// exactly once and the snapshot converges to the new format.
+    static func save(container: NSFileProviderItemIdentifier, entries: [(id: String, sig: String)]) {
         guard let u = storeURL(container) else { return }
-        try? Data(ids.sorted().joined(separator: "\n").utf8).write(to: u)
+        let body = entries.sorted { $0.id < $1.id }
+            .map { "\($0.id)\t\($0.sig)" }
+            .joined(separator: "\n")
+        try? Data(body.utf8).write(to: u)
+    }
+
+    /// `id → mtime-size` from the previous pass (empty sig for old-format lines).
+    static func signatures(container: NSFileProviderItemIdentifier) -> [String: String] {
+        guard let u = storeURL(container),
+              let prev = try? String(contentsOf: u, encoding: .utf8) else { return [:] }
+        var out: [String: String] = [:]
+        for line in prev.split(separator: "\n") {
+            if let tab = line.firstIndex(of: "\t") {
+                out[String(line[..<tab])] = String(line[line.index(after: tab)...])
+            } else {
+                out[String(line)] = ""
+            }
+        }
+        return out
     }
 
     static func deletions(container: NSFileProviderItemIdentifier, current: [String]) -> [String] {
-        guard let u = storeURL(container),
-              let prev = try? String(contentsOf: u, encoding: .utf8) else { return [] }
-        let prevSet = Set(prev.split(separator: "\n").map(String.init))
-        return Array(prevSet.subtracting(current))
+        let prevIds = Set(signatures(container: container).keys)
+        return Array(prevIds.subtracting(current))
     }
 
     /// Cheap, content-based digest of the **direct children** of the relevant

@@ -40,7 +40,7 @@ public enum AppPaths {
     /// Location's root layout changes, so the system rebuilds a clean replica
     /// instead of reconciling a stale one. Superseded ids are listed in
     /// `FileProviderRegistration.legacyDomainIDs` and removed on launch.
-    public static let fileProviderDomainID = "CodeBenchDocs"
+    public static let fileProviderDomainID = "CodeBenchDocs2"   // v2: fresh replica for the delta-enumerator (the old replica accumulated endless-resync state)
 
     /// The shared App Group container, or nil when the entitlement isn't
     /// present (capability not added yet / running an old build).
