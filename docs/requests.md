@@ -180,8 +180,8 @@ r = requests.get("https://internal.api/me",
 - **No HTTP/2 / HTTP/3.** urllib3 1.26.x base defaults to HTTP/1.1.
   For HTTP/2 you'd need `httpx` + `h2` — neither is bundled here.
 - **No async.** This is the synchronous `requests`; for `async / await`
-  use `aiohttp` (would need to be `pip install`ed) or write a thin
-  wrapper around urllib3's connection pool.
+  use the bundled `aiohttp` 3.14.1 (real C-extension build — see
+  [aiohttp.md](aiohttp.md)).
 - **No event-loop integration.** Calls block the calling thread. Run
   inside `DispatchQueue.global().async { … }` or a Python thread to
   keep the UI responsive.

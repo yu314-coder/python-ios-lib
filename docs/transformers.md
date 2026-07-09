@@ -209,7 +209,7 @@ for batch_text, batch_label in your_dataset:
 - Mixed precision: `bf16=True` or `fp16=True` in `TrainingArguments`, or `torch_dtype=torch.float16` at load
 - Verified model families: BERT, GPT-2, T5, BART, Llama, Qwen, Mistral, Phi, DistilBERT, Whisper
 - **SentencePiece tokenizers** — `sentencepiece` C++ is cross-compiled + bundled, so the SP-only slow tokenizers (Llama-1, T5, BART, mBART, Gemma, DeBERTa-v2) work, not just BPE ones
-- **`datasets` 4.0.0** — local `from_dict` / `from_pandas` / `map` / `filter` / `train_test_split` / `load_dataset("json"|"csv")`; Arrow IPC cache ([datasets.md](datasets.md); `.parquet` caveat there)
+- **`datasets` 4.0.0** — local `from_dict` / `from_pandas` / `map` / `filter` / `train_test_split` / `load_dataset("json"|"csv")`; Arrow IPC cache + `.parquet` (pyarrow rebuilt with Parquet — [datasets.md](datasets.md))
 - **`evaluate` 0.4.6** — imports + local metric compute; `evaluate.load("accuracy")` downloads the metric script once, then runs offline ([evaluate.md](evaluate.md))
 - **TensorBoard logging** — `Trainer(..., report_to="tensorboard")` and `SummaryWriter` write real event files offline ([tensorboard.md](tensorboard.md); viewer server not bundled)
 - **`attn_implementation="flash_attention_2"`** — auto-remapped by sitecustomize (→ `sdpa` on torch ≥ 2.1.1, → `eager` on the bundled 2.1.0), so requesting FA2 no longer raises; `flash_attn` / `xformers` are also importable as SDPA-backed shims (see [torch.md](torch.md#attention-shims))
@@ -226,7 +226,6 @@ Everything below is a genuine iOS hardware/OS limit — the former *software* ga
 | `bitsandbytes` 4/8-bit / AWQ / AQLM / GPTQ / EETQ | CUDA-only kernels, no Metal equivalent | Use GGUF + `llama.cpp` for quantized inference |
 | `DeepSpeed`, `FSDP`, `torch.distributed.*` | Multi-process / multi-device | N/A (single device) |
 | `device_map="auto"` | One device only | Pass `torch_dtype=torch.float16` to reduce memory instead |
-| `datasets` `.parquet` files | Bundled pyarrow 15 has no Parquet C++ component | Convert to JSON/CSV/Arrow; or rebuild pyarrow with `ARROW_PARQUET=ON` |
 | `evaluate.load(...)` first call | Downloads the metric script | Needs network once; runs offline after |
 | TensorBoard *viewer* | No `grpcio` / background server on device | `SummaryWriter` still writes event files — copy them off-device to view |
 | `interpreter_login()` | Opens system browser | Use `huggingface_hub.HfFolder.save_token("hf_...")` instead |

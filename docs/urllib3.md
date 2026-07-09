@@ -193,7 +193,7 @@ http = urllib3.PoolManager(ssl_minimum_version=TLSVersion.TLSv1_3)
 | Custom retry strategy with backoff | `urllib3` (Retry object is more granular) |
 | Connection pooling for many hosts | `urllib3` (PoolManager is the primitive) |
 | HTTP/2 | `urllib3.http2.inject_into_urllib3()` (with `h2` installed) |
-| Async | Neither — both sync. Use `aiohttp` (pure Python, works on iOS) |
+| Async | Neither — both sync. Use the bundled `aiohttp` 3.14.1 (C-extension build — [aiohttp.md](aiohttp.md)) |
 | SOCKS5 proxy | `urllib3.contrib.socks.SOCKSProxyManager` (needs PySocks) |
 
 ---

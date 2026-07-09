@@ -17,9 +17,8 @@ API, at import). 4.0.0 needs only `pyarrow>=15` and runs fine on the bundled
 
 | Feature | Status | Workaround |
 |---|---|---|
-| `.parquet` read/write | **Not supported** — bundled pyarrow 15 was built without the Parquet C++ component (no `_parquet` extension, no libparquet) | Convert to JSON / CSV / Arrow; a `pyarrow.parquet` import shim lets `datasets` import and raises a clear error only on actual parquet I/O. Real parquet needs pyarrow rebuilt with `-DARROW_PARQUET=ON` |
-| `pyarrow.dataset` (partitioned/folder builders) | Shimmed (`pyarrow._dataset` absent in the minimal build) | Non-parquet builders work; folder-of-parquet does not |
-| `load_dataset("<hub-id>")` | Needs network to fetch the Hub dataset | Download on a desktop, ship the files, `load_dataset("json", data_files=...)` |
+| `.parquet` read/write | ✅ **Works** (since 2026-07) — pyarrow was rebuilt with the Parquet C++ component (`_parquet` / `_dataset` exts + snappy/zstd/lz4); `load_dataset("parquet", data_files=...)` and the folder builders run for real. See [pyarrow.md](pyarrow.md) | — |
+| `load_dataset("<hub-id>")` | Needs network to fetch the Hub dataset | Download on a desktop, ship the files, `load_dataset("json"/"parquet", data_files=...)` |
 | Multiprocessed `.map(num_proc>1)` | iOS forbids `fork()` | Default single-process `.map()` |
 
 ## iOS-specific fix

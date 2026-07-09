@@ -74,7 +74,7 @@ The `app_packages/site-packages/` bundle ships **~180 Python packages** — ever
 - Mixed precision: `bf16=True` or `fp16=True` in `TrainingArguments`
 - **Model families verified:** BERT, GPT-2, T5, BART, Llama, Qwen, Mistral, Phi
 - **SentencePiece tokenizers** (`sentencepiece` C++ **is** cross-compiled + bundled) — Llama / T5 / BART / Gemma / DeBERTa slow tokenizers work, not just BPE ones
-- **`datasets`** (4.0.0) — `load_dataset("json"/"csv", data_files=…)` from local files, `Dataset.from_dict/from_pandas`, `.map` / `.filter` / `.train_test_split`, `.arrow` cache (device-verified). **`.parquet` files are NOT supported** — the bundled pyarrow was built without the Parquet C++ component; a `pyarrow.parquet` shim lets datasets import + all non-parquet paths work, and raises a clear error on parquet I/O. (Real parquet needs pyarrow rebuilt with `ARROW_PARQUET=ON`.)
+- **`datasets`** (4.0.0) — `load_dataset("json"/"csv", data_files=…)` from local files, `Dataset.from_dict/from_pandas`, `.map` / `.filter` / `.train_test_split`, `.arrow` cache (device-verified). **`.parquet` works too** — pyarrow was rebuilt with the Parquet C++ component (`_parquet`/`_dataset` + snappy/zstd/lz4), so `load_dataset("parquet", ...)`, `pq.read_table/write_table`, and `pd.read_parquet` all run on-device ([docs/pyarrow.md](docs/pyarrow.md)).
 - **`evaluate`** (0.4.6) — imports + local metric compute; `evaluate.load("…")` downloads the metric script (needs network)
 - **TensorBoard logging** — `Trainer(..., report_to="tensorboard")` / `SummaryWriter` write real event files offline (see the torch grid above)
 - **`attn_implementation="flash_attention_2"` doesn't crash** — sitecustomize remaps it to `"sdpa"` where transformers allows it, else `"eager"` (transformers gates its sdpa path on torch ≥ 2.1.1 — pytorch#112577 — and the bundled torch is 2.1.0, so on-device FA2 requests land on eager: the same implementation every verified model already uses, matmuls GPU-bridged). A one-line notice is printed. Code that imports `flash_attn` / `xformers` directly gets the bundled SDPA-backed shims, which are NOT gated — they call `F.scaled_dot_product_attention` directly and are device-verified numerically correct.
@@ -868,7 +868,7 @@ First public iOS builds of each. Once added, `import torch`, `import transformer
 
 The `safetensors` shim is bidirectional: both `load_file` and `save_file` work, so `model.save_pretrained()` and `peft.save_pretrained()` write valid `.safetensors` files that load back bit-identical (verified via roundtrip test with fp16/bf16/fp32/int64/bool tensors).
 
-**Now bundled** (added since the first release, all device-verified): `datasets` 4.0.0, `evaluate` 0.4.6, `sentencepiece` (the Llama/T5/BART tokenizers), `protobuf` 5.29.6, `pyarrow` 15.0.2 (minimal build — Arrow IPC works, no `.parquet`), and `torch.utils.tensorboard.SummaryWriter`. See the [Machine Learning stack](#machine-learning-stack-bundled) list above for per-library caveats. What's still out is only what iOS physically can't do: CUDA kernels (`bitsandbytes`; `flash-attn`/`xformers` get SDPA-backed API shims so they import + run on GPU), JIT (`triton`, `torch.compile`), and fork-based multiprocessing (`DataLoader(num_workers>0)`, `deepspeed`, `fairscale`).
+**Now bundled** (added since the first release, all device-verified): `datasets` 4.0.0, `evaluate` 0.4.6, `sentencepiece` (the Llama/T5/BART tokenizers), `protobuf` 5.29.6, `pyarrow` 15.0.2 (rebuilt WITH Parquet + Dataset — `.parquet` works), and `torch.utils.tensorboard.SummaryWriter`. See the [Machine Learning stack](#machine-learning-stack-bundled) list above for per-library caveats. What's still out is only what iOS physically can't do: CUDA kernels (`bitsandbytes`; `flash-attn`/`xformers` get SDPA-backed API shims so they import + run on GPU), JIT (`triton`, `torch.compile`), and fork-based multiprocessing (`DataLoader(num_workers>0)`, `deepspeed`, `fairscale`).
 
 ### GPU acceleration for PyTorch (Metal bridge)
 
@@ -1143,6 +1143,8 @@ notes, limitations, troubleshooting, and build provenance.
 | **mpmath** | [docs/mpmath.md](docs/mpmath.md) |
 | **NetworkX** | [docs/networkx.md](docs/networkx.md) |
 | **scikit-learn** | [docs/sklearn.md](docs/sklearn.md) |
+| **pandas** (native 2.2.3) | [docs/pandas.md](docs/pandas.md) |
+| **pyarrow** (Arrow 15 + Parquet/Dataset) | [docs/pyarrow.md](docs/pyarrow.md) |
 
 ### Machine learning
 
@@ -1165,6 +1167,7 @@ notes, limitations, troubleshooting, and build provenance.
 | **Plotly** | [docs/plotly.md](docs/plotly.md) |
 | **manim** | [docs/manim.md](docs/manim.md) |
 | **manim deps** (pathops + mapbox_earcut + isosurfaces) | [docs/manim-deps.md](docs/manim-deps.md) |
+| **OpenCV (cv2)** (curated native — no dnn/highgui/videoio) | [docs/opencv.md](docs/opencv.md) |
 | **manimpango** | [docs/manimpango.md](docs/manimpango.md) |
 
 ### 3D content creation
@@ -1189,6 +1192,7 @@ notes, limitations, troubleshooting, and build provenance.
 |---|---|
 | **requests** | [docs/requests.md](docs/requests.md) |
 | **urllib3** | [docs/urllib3.md](docs/urllib3.md) |
+| **aiohttp** (async client + server, C-extension build) | [docs/aiohttp.md](docs/aiohttp.md) |
 | **BeautifulSoup4** | [docs/beautifulsoup.md](docs/beautifulsoup.md) |
 | **certifi** (CA bundle for HTTPS) | [docs/certifi.md](docs/certifi.md) |
 | **charset_normalizer** | [docs/charset-normalizer.md](docs/charset-normalizer.md) |

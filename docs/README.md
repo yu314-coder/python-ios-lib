@@ -62,6 +62,7 @@ All four share the same Monaco-based code editor (WKWebView) with IntelliSense (
 | Library | Version | Type | Description |
 |---------|---------|------|-------------|
 | **requests** | — | Pure Python | HTTP client: GET, POST, sessions, auth, JSON |
+| [**aiohttp**](aiohttp.md) | 3.14.1 | Native (C ext) | Async HTTP client + server; real Cython accelerators (llhttp parser) |
 | **BeautifulSoup4** | 4.14.3 | Pure Python | HTML/XML parsing and scraping |
 | **NetworkX** | 3.6.1 | Pure Python | Graph theory: 200+ algorithms, generators |
 | **jsonschema** | 4.26.0 | Pure Python | JSON Schema validation (Draft 7) |
@@ -115,10 +116,12 @@ for the cross-library iOS patches and feature tests.
 - [NumPy](numpy.md) — Arrays, linear algebra, FFT, random
 - [SciPy](scipy-ios.md) — 18+ submodules: optimize, integrate, signal, stats, ...
 - [SymPy](sympy.md) — Computer algebra system
+- [pandas](pandas.md) · [pyarrow](pyarrow.md) — DataFrames + Arrow 15 with Parquet/Dataset (`.parquet` works)
 
 ### Visualization & Media
 - [matplotlib](matplotlib.md) — 64 modules, Plotly backend
 - [**manim**](manim.md) — 145+ mobjects, 73 animations, full rendering pipeline
+- [OpenCV (cv2)](opencv.md) — curated native 4.10.0 (no dnn/highgui/videoio)
 - **Media & Rendering** — [PyAV](av-pyav.md) · [FFmpeg](ffmpeg-pyav.md) · [Cairo](cairographics.md) · [Pillow](pillow.md) · [ManimPango](manimpango.md) · [LaTeX](offlinai-latex.md)
 
 ### Interpreters

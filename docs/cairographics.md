@@ -183,12 +183,14 @@ before importing manim.
   **lower fps** and **CPU-side parallelism** (free-threaded Python).
   CairoMetal is a real, general-purpose GPU cairo — just not a manim
   accelerator.
-- **No PDF / PostScript backend.** The `cairo-pdf.h` and `cairo-ps.h`
-  headers are absent — PDF output goes through `pdftex` / SwiftLaTeX
-  in this project, not Cairo's PDF surface.
-- **No SVG backend in pycairo.** Cairo's SVG surface is not built
-  into this static archive. Use `svgwrite` or render via Cairo →
-  raster → external SVG path tools (manim takes the rasterize path).
+- **PDF / PostScript / SVG backends ARE built in.** (An earlier revision
+  of this doc said they were absent — stale.) `cairo-pdf.h` / `cairo-ps.h` /
+  `cairo-svg.h` ship in `cairo/include/`, `libcairo.a` exports
+  `cairo_pdf_surface_create` / `cairo_ps_surface_create` /
+  `cairo_svg_surface_create`, and pycairo's `PDFSurface` / `PSSurface` /
+  `SVGSurface` work on-device (see [pycairo.md](pycairo.md)). The project
+  still routes LaTeX-grade PDF through `pdftex` / SwiftLaTeX because that's
+  typesetting, not because Cairo can't write PDFs.
 - **Threaded rendering NOT safe.** Cairo is officially thread-safe per
   *surface* but not across surfaces; manim happens to render serially
   and that's intentional. Don't share a `cairo.Context` across Python
