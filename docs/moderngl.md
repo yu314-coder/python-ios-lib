@@ -1,16 +1,49 @@
 # moderngl + moderngl_window + screeninfo
 
-**Versions:** moderngl 5.12.0 (+`torch_ios_stub`) + moderngl_window 2.4.6 + screeninfo 0.8.1
-**Type:** All three are **pure-Python iOS stubs** (no GPU context outside the host app)
+**Versions:** moderngl 5.12.0 (+`metal_ios`) + moderngl_window 2.4.6 + screeninfo 0.8.1
+**Type:** moderngl core is a **Metal-backed implementation** (via Blender's gpu
+module); moderngl_window + screeninfo remain stubs (no windowing on iOS)
 **SPM target:** Bundled as part of `Manim` (transitive dep)
-**Total modules:** moderngl 1, moderngl_window 4, screeninfo 9
 
-OpenGL bindings (`moderngl`), a windowing/event helper
-(`moderngl_window`), and a display detection library (`screeninfo`).
-Bundled because manim's experimental OpenGL renderer asks for them at
-import time. iOS doesn't expose OpenGL or windowing to embedded Python,
-so all three are stubs — they import cleanly so manim's fallback
-paths work, but you won't get real GPU rendering through them.
+**2026-07 upgrade:** moderngl used to be a pure raising-stub ("iOS has no
+OpenGL"). The core API now *works on the Apple GPU*: the bundled Blender ships
+an offscreen **Metal** backend with a runtime **GLSL→MSL cross-compiler**
+(`gpu.init()` / `GPUShader` / `GPUOffScreen` — device-verified), and
+`moderngl/_mgl_metal.py` adapts moderngl's object model onto it. Standalone
+contexts, buffers, vertex+fragment programs (real GLSL 330 in — Metal out),
+uniforms, VAOs with index buffers, framebuffer clear/render/read, and
+RGBA8/RGBA32F textures all execute on-device.
+
+```python
+import moderngl, struct
+ctx  = moderngl.create_standalone_context()      # offscreen Metal context
+prog = ctx.program(
+    vertex_shader="""#version 330
+        in vec2 in_vert;
+        void main() { gl_Position = vec4(in_vert, 0.0, 1.0); }""",
+    fragment_shader="""#version 330
+        out vec4 fragColor; uniform vec3 u_color;
+        void main() { fragColor = vec4(u_color, 1.0); }""")
+prog["u_color"].value = (0.0, 1.0, 0.0)
+vbo = ctx.buffer(struct.pack("<6f", -1,-1, 3,-1, -1,3))
+vao = ctx.vertex_array(prog, [(vbo, "2f", "in_vert")])
+fbo = ctx.simple_framebuffer((256, 256)); fbo.use(); fbo.clear(0,0,0,1)
+vao.render(moderngl.TRIANGLES)                   # runs on the Apple GPU
+pixels = fbo.read(components=4)                  # bytes, GL bottom-up rows
+```
+
+### Still not supported (clear errors, not crashes)
+
+| Feature | Why |
+|---|---|
+| Geometry / tessellation / compute shaders | Blender's raw-shader path is vertex+fragment |
+| Transform feedback, `Query` / `Scope` | No GL equivalents exposed |
+| `TextureArray` / `Texture3D` / `TextureCube` | Not wired (2-D RGBA8/RGBA32F only) |
+| `moderngl_window` windowing / event loop | No windows on iOS — offscreen only |
+| manim's OpenGL renderer | Needs far more of the API + a window; manim stays on the Cairo renderer (which is also the faster path on iOS — see manim.md) |
+
+First use note: `import bpy` initialises Blender (~seconds, big import) —
+the context is created lazily on `create_standalone_context()`.
 
 ---
 

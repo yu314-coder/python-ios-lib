@@ -1232,7 +1232,7 @@ notes, limitations, troubleshooting, and build provenance.
 | Library | Doc |
 |---|---|
 | **psutil + filelock + watchdog** (combined) | [docs/process-and-io.md](docs/process-and-io.md) |
-| **moderngl + moderngl_window + screeninfo** (all stubbed on iOS) | [docs/moderngl.md](docs/moderngl.md) |
+| **moderngl** (Metal-backed core via Blender gpu — real GPU rendering) + moderngl_window/screeninfo stubs | [docs/moderngl.md](docs/moderngl.md) |
 
 ### C interop / language utilities
 
