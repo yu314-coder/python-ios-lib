@@ -53,68 +53,28 @@ the context is created lazily on `create_standalone_context()`.
 
 | Module | What it does |
 |---|---|
-| `moderngl.__init__` | The entire stub — class names, draw-mode constants, `create_context` raising-stub, `__getattr__` permissive fallback |
+| `moderngl.__init__` | Public surface — re-exports the working classes/constants from `_mgl_metal`, keeps raising-stubs + `__getattr__` fallback for the uncovered API |
+| `moderngl._mgl_metal` | The Metal backend — adapts Context / Buffer / Program / VertexArray / Framebuffer / Texture onto Blender's `gpu` module (GLSL→MSL, `GPUOffScreen`) |
 
-That's it — one file. The bundled `moderngl` is fully self-contained
-in `moderngl/__init__.py` (~80 LOC).
+### How the GLSL gets to the GPU
 
-### What's stubbed
+`ctx.program(vertex_shader=…, fragment_shader=…)` strips the `#version` /
+`layout(…)` lines and hands the source to `gpu.types.GPUShader`, whose
+runtime cross-compiler emits **MSL** (the same machinery Eevee uses on this
+build). Uniforms are deferred and applied at draw; `sampler2D` uniforms bind
+`Texture.use(unit)` bindings by name. Framebuffer reads come back as bytes
+in OpenGL bottom-up row order, matching real moderngl.
 
-```python
-import moderngl
-print(moderngl.__version__)             # '5.12.0+torch_ios_stub'
-
-# Class names that import cleanly:
-moderngl.Context, moderngl.Program, moderngl.Framebuffer, moderngl.Texture,
-moderngl.Buffer, moderngl.VertexArray, moderngl.Renderbuffer, moderngl.Uniform,
-moderngl.Attribute, moderngl.Scope, moderngl.Query, moderngl.Sampler,
-moderngl.ComputeShader, moderngl.TextureArray, moderngl.Texture3D,
-moderngl.TextureCube, moderngl.Error
-
-# GL constants present:
-moderngl.POINTS, LINES, LINE_LOOP, LINE_STRIP, TRIANGLES, TRIANGLE_STRIP,
-TRIANGLE_FAN, LINES_ADJACENCY, …
-moderngl.BLEND, DEPTH_TEST, CULL_FACE, NEAREST, LINEAR, CLAMP_TO_EDGE, REPEAT
-```
-
-Any unknown attribute (`moderngl.SomethingNew`) routes through
-`__getattr__` to return the same `_NotImplementedStub` class — so
-code that does `class MyShader(moderngl.SomethingNew): ...` at module
-load doesn't crash. Instantiation raises:
-
-```python
-ctx = moderngl.create_context()
-# → NotImplementedError: moderngl.create_context: iOS has no OpenGL
-```
-
-### Why stubbed (not implemented)
-
-iOS supports OpenGL ES via `EAGLContext`, but:
-1. The embedded Python interpreter doesn't have its own thread/runloop
-   binding for EAGLContext setup.
-2. The host app's UIKit owns the GL context; sharing it across the
-   Python-Swift bridge is non-trivial.
-3. moderngl's preferred backend is desktop OpenGL 4.1+, not GLES.
-4. Apple deprecated OpenGL on iOS in iOS 12 — the right answer is
-   Metal, which moderngl doesn't speak.
-
-### Code example (the only thing that works)
-
-```python
-import moderngl
-print(moderngl.__version__)
-# '5.12.0+torch_ios_stub'
-
-# Type access works (for code that just uses moderngl as type annotations)
-def render_pass(ctx: moderngl.Context, prog: moderngl.Program) -> None:
-    ...
-```
+Any unknown attribute (`moderngl.SomethingNew`) still routes through
+`__getattr__` to a raising class — import-time compatibility for code
+that references the uncovered API is preserved.
 
 ### iOS GPU alternatives
 
-- **Metal** (Swift) — the right answer for native iOS GPU work
-- **CoreGraphics** — for 2D vector work, use Apple's CG (or pycairo, bundled)
-- **manim's Cairo renderer** — works without moderngl; `manim.config.renderer = "cairo"` (default)
+- **This module** for offscreen shader rendering from Python
+- **bpy's `gpu` module** directly (the machinery underneath)
+- **manim's Cairo renderer** — manim stays on Cairo; the GL renderer needs
+  far more of the API + a window, and Cairo is the faster path on iOS anyway
 
 ---
 
