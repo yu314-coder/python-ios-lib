@@ -290,11 +290,18 @@ than accumulates, which makes 4K and 8K memory-safe:
   render resolution or scene length. Full-resolution frames still stream
   straight to the mp4 via `SceneFileWriter` and are never accumulated.
   (The GIF is a lightweight preview; the mp4 is the full-quality output.)
-- **Resolution-tiered RAM pre-flight.** Before rendering, peak need is
-  estimated by resolution (≈ 3 GB for 8K, ≈ 2 GB for 4K, less below) and
-  the render is refused *gracefully* — with a "lower the quality" message
-  — only if the device genuinely lacks the free RAM. This replaced the
-  old hard 4K cap.
+- **No resolution limit; a RAM estimate that only warns.** Every quality up
+  to 8K renders regardless of free memory. Peak need is still estimated by
+  resolution (≈ 3 GB for 8K, ≈ 2 GB for 4K, less below), but a shortfall now
+  prints a *warning* and proceeds — it no longer refuses. The estimate is a
+  generous upper bound on a **transient** per-frame working set (frames stream
+  to ffmpeg and are freed each frame), so refusing on it blocked renders that
+  would have completed. This replaced first the old hard 4K cap, and then the
+  refusing pre-flight. The real safety net is the memory watchdog: if free
+  memory actually falls below 150 MB mid-render it force-kills the render
+  **workload** — injecting `SystemExit` into the render/encoder threads and
+  force-closing the PyAV containers to release the VideoToolbox IOSurface
+  pool — so a doomed render fails cleanly instead of jetsam-killing the app.
 - **Return freed pages to the OS.** `PYTHONMALLOC=malloc` plus
   `malloc_zone_pressure_relief(NULL, 0)` between animations, so released
   memory actually leaves `phys_footprint` (what jetsam measures) instead
