@@ -329,6 +329,54 @@ rasterization can't move the needle — use **lower fps** for real speedups.
 (manim's own OpenGL renderer remains unusable on iOS — `moderngl` is a stub.)
 See `cairo(metal)/` and `docs/cairographics.md`.
 
+### Unicode math glyphs in `Text()` (fonts)
+
+`Text()` renders through Pango, which needs a font that actually contains the
+codepoint. KaTeX's fonts are keyed to **LaTeX command slots, not Unicode math
+codepoints**, so a user typing math characters directly used to get silent
+drops — the glyph simply wasn't drawn:
+
+| Codepoint | Example | Present in the KaTeX set? |
+|---|---|---|
+| U+211D and the letterlike block | `ℝ ℂ ℕ ℤ ℚ` | no |
+| U+2080–2089 / U+2070–2079 | `₁ ₂ ₖ ᵖ ⁱ` | no |
+| U+1D400–1D7FF math alphanumerics | `𝑝 𝐀 𝔸` | no |
+
+The visible symptom was partial text: in `{Δ₁, Δ₂}` the **Δ rendered but the
+subscript digits vanished** (Δ exists in `KaTeX_Main`; `₁` does not), and in
+`{xᵢ ∈ ℝᵖ}` the `∈` rendered while `ℝ` and `ᵖ` disappeared. LaTeX forms such as
+`p_i` were never affected, because LaTeX *positions an ASCII digit* rather than
+using U+2081.
+
+Two complementary OFL faces in `Frameworks/katex/fonts/` close the gap — neither
+is sufficient alone:
+
+- **`NotoSansMath-Regular.ttf`** — math alphanumerics, operators, letterlike
+- **`NotoSans-Regular.ttf`** — sub/superscript digits, letterlike
+
+**Host apps must append them to the fontconfig `<prefer>` list, and append them
+LAST**, after any CJK fallbacks:
+
+```xml
+<alias><family>sans-serif</family><prefer>
+  <family>KaTeX_Main</family>
+  <family>Noto Sans SC</family><family>Noto Sans JP</family><family>Noto Sans KR</family>
+  <family>Noto Sans Math</family><family>Noto Sans</family>   <!-- last -->
+</prefer></alias>
+```
+
+Order matters: fontconfig selects whichever family *has* the requested glyph and
+uses list order only to break ties. Trailing position therefore still resolves
+the missing codepoints while leaving the default face for ordinary Latin text
+unchanged. Placing them earlier flips the default and silently restyles every
+existing render.
+
+Worth knowing when debugging: **`KaTeX_Main` is not the effective default** even
+though it is listed first — its charset is too narrow for fontconfig to score it
+on a generic `sans-serif` request, so a broader face (Noto Sans SC in the
+CodeBench bundle) wins. Verify any change with
+`FONTCONFIG_FILE=… fc-match "sans-serif:charset=211d"`.
+
 ### Multi-core / parallel CPU rendering
 
 The per-frame cost that scales with resolution is cairo's software pixel
