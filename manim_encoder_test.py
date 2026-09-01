@@ -40,12 +40,23 @@ def check(label, ok, detail=""):
         print(f"  FAIL  {label}  {detail}")
 
 
-print("== the encoder is chosen by asking, not by assuming ==")
 try:
-    from manim.utils.ios_encoder import videotoolbox_codec, hardware_h264_available
+    from manim.utils.ios_encoder import (
+        videotoolbox_codec, hardware_h264_available, hardware_hevc_available,
+        capability_report,
+    )
 except Exception as exc:                                   # pragma: no cover
     print(f"  FAIL  import manim.utils.ios_encoder  {type(exc).__name__}: {exc}")
     raise SystemExit(1)
+
+# The ceiling belongs to the chip, so the only way to know a given iPad's or
+# iPhone's is to ask it there. Printed first, because on a new device this
+# table is the answer to "can this thing do 8K".
+print("== what this device's media engine will encode ==")
+print(capability_report())
+print()
+
+print("== the encoder is chosen by asking, not by assuming ==")
 
 # 1080p is inside every Apple media engine's H.264 range.
 codec, tag = videotoolbox_codec(1920, 1080)
@@ -61,6 +72,15 @@ for w, h in [(3840, 2160), (5120, 2880), (7680, 4320)]:
           codec == expected, f"chose {codec}")
     check(f"{w}x{h}: HEVC is tagged, H.264 is not",
           (tag == "hvc1") if codec.startswith("hevc") else (tag is None), str(tag))
+
+# Picking an encoder with no hardware path would swap one codec that cannot
+# open for another, and lose the reason why on the way.
+for w, h in [(3840, 2160), (7680, 4320)]:
+    codec, _ = videotoolbox_codec(w, h)
+    has_hw = (hardware_hevc_available(w, h) if codec.startswith("hevc")
+              else hardware_h264_available(w, h))
+    check(f"{w}x{h}: the chosen encoder has a hardware path, or falls back",
+          has_hw or codec == "h264_videotoolbox", f"{codec} with no hardware")
 
 print("\n== a file written that way is playable ==")
 try:
@@ -145,6 +165,31 @@ else:
             os.remove(path)
         except OSError:
             pass
+
+print("\n== the frame queue is bounded by bytes, not by frame count ==")
+# A fixed count of 32 was written for 1080p and holds ~256 MB; the same 32
+# frames at 8K is 4.25 GB, so the cap that existed to prevent a jetsam kill
+# was causing one.
+_BUDGET = 256 * 1024 * 1024
+
+
+def queued_frames(w, h):
+    return max(2, min(32, _BUDGET // (w * h * 4)))
+
+
+for label, w, h in [("1080p", 1920, 1080), ("4K UHD", 3840, 2160), ("8K UHD", 7680, 4320)]:
+    n = queued_frames(w, h)
+    held = n * w * h * 4
+    check(f"{label} queue holds at most the budget",
+          held <= _BUDGET + (w * h * 4),
+          f"{n} frames = {held / 1e6:.0f} MB")
+check("1080p still queues the 32 it always did", queued_frames(1920, 1080) == 32,
+      str(queued_frames(1920, 1080)))
+check("8K queues few enough to fit in an iPad's share of RAM",
+      queued_frames(7680, 4320) * 7680 * 4320 * 4 < 400e6,
+      f"{queued_frames(7680, 4320) * 7680 * 4320 * 4 / 1e6:.0f} MB")
+check("but never fewer than two, so render and encode still overlap",
+      queued_frames(7680, 4320) >= 2, str(queued_frames(7680, 4320)))
 
 print(f"\n{PASSED} passed, {FAILED} failed")
 raise SystemExit(1 if FAILED else 0)
