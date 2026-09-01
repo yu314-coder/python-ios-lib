@@ -309,6 +309,31 @@ than accumulates, which makes 4K and 8K memory-safe:
 - **Quality presets extended.** Selectable quality now runs
   480p / 720p / 1080p / 1440p / **4K** / **8K** (index 5 is a custom
   7680×4320 preset with an explicit frame rate).
+- **The codec is chosen by asking VideoToolbox, not by assuming H.264.**
+  ffmpeg's `h264_videotoolbox` binds Apple's *hardware* H.264 encoder and
+  nothing else — there is no slow path. Above the size that encoder supports,
+  `avcodec_open2("h264_videotoolbox")` fails outright and the render dropped to
+  software `mpeg4`. Where the ceiling sits is a property of the media engine,
+  not the OS, so it is probed at run time
+  (`manim/utils/ios_encoder.py`, via VideoToolbox through `ctypes`):
+
+  | device | H.264 hardware | HEVC hardware |
+  |---|---|---|
+  | M4 Mac mini, M3 iPad Air | up to 4096×2304 | up to 8192×4320 |
+  | iPhone 17 Pro Max | reported working at 8K | — |
+
+  Anything H.264 cannot take goes to `hevc_videotoolbox`, which every Apple
+  silicon media engine encodes to 8K. Measured on an M4 Mac mini: 8K H.264
+  fails to open at all; 8K HEVC runs at ~7 fps in hardware, and 4K HEVC is
+  *faster* than 4K H.264 (24 fps vs 17 fps).
+
+  Two tagging details, both of which silently produced an unplayable file:
+  HEVC in an mp4 must be tagged `hvc1` — ffmpeg's default `hev1` is legal and
+  AVFoundation reports it as neither playable nor decodable — and the tag has
+  to be re-applied when `combine_files` copies the partials, since
+  `add_stream_from_template` does not carry it. The copy stream also reports
+  its codec as `libx265` rather than `hevc`, so the check matches the family.
+  Covered by `manim_encoder_test.py`.
 - **Frame rate (FPS) is honored.** The Settings FPS selector applies to
   every quality. manim's quality preset *resets* `frame_rate` to its built-in
   default (15 / 30 / 60), so the chosen fps is re-applied **after** the preset
@@ -458,7 +483,9 @@ manim/mobject/geometry/line.py        — subdivide curves disabled
 manim/mobject/svg/svg_mobject.py      — cache off, rasterized embed
 manim/mobject/text/tex_mobject.py     — PNG-fallback path
 manim/mobject/text/numbers.py         — debug counter
-manim/scene/scene_file_writer.py      — h264_videotoolbox; save_image guard
+manim/scene/scene_file_writer.py      — VideoToolbox codec choice by resolution
+                                       (h264/hevc) + hvc1 tagging; save_image guard
+manim/utils/ios_encoder.py           — NEW: runtime VideoToolbox capability probe
 manim/cli/checkhealth/checks.py       — iOS-aware health checks
 manim/utils/ipython_magic.py          — non-Jupyter cleanups
 manim/utils/color/core.py             — color parsing edge cases
@@ -478,7 +505,10 @@ Don't `git checkout` these files casually — see `~/.claude/projects/-Volumes-D
   may need adding to `tex_template.tex` manually.
 - Long scenes (> 30 s @ 1080p) hit jetsam if not chunked into sections.
 - 4K / 8K now render memory-safe (GIF buffer bounded, frames stream to
-  the mp4 instead of accumulating — see *High-resolution rendering*), but
-  they stay CPU-bound and slow. Scenes with > ~5000 simultaneous
-  VMobjects can still approach the jetsam ceiling regardless of
+  the mp4 instead of accumulating — see *High-resolution rendering*), and
+  the *encode* is hardware at every resolution now that the codec is chosen
+  by capability rather than fixed to H.264. Rendering itself stays CPU-bound
+  and slow: cairo rasterizes every frame on the CPU, so 8K is ~16× the
+  per-frame cost of 1080p whatever the encoder does. Scenes with > ~5000
+  simultaneous VMobjects can still approach the jetsam ceiling regardless of
   resolution — that limit is structural (see issue #1).
