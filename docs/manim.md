@@ -302,26 +302,42 @@ than accumulates, which makes 4K and 8K memory-safe:
   **workload** — injecting `SystemExit` into the render/encoder threads and
   force-closing the PyAV containers to release the VideoToolbox IOSurface
   pool — so a doomed render fails cleanly instead of jetsam-killing the app.
-- **Frame-queue depth is tunable.** The encoder queue is bounded by *bytes*,
-  not by a frame count: thirty-two frames is ~256 MB at 1080p but 4.25 GB at
-  8K, so the cap that existed to prevent a jetsam kill was causing one. The
-  budget is what stays fixed and the depth follows from the resolution —
-  1080p queues 32, 4K queues 8, 8K queues 2. Two variables override it:
+- **The render tunables are editable, from code or the environment.** They
+  live on one object, `manim.utils.ios_encoder.settings`, so a developer
+  changes them without editing the vendored manim:
 
-  | variable | effect |
-  |---|---|
-  | `OFFLINAI_MANIM_QUEUE_MB` | the budget in MB (default 256) |
-  | `OFFLINAI_MANIM_QUEUE_FRAMES` | an exact depth, ignoring the budget; `0` is unbounded |
+  ```python
+  from manim.utils.ios_encoder import settings
+  settings.frame_queue_budget_mb = 1024        # more overlap, more memory
+  settings.video_codec = "hevc_videotoolbox"   # skip the capability probe
+  ```
 
-  Deeper overlaps rendering and encoding more and costs memory; shallower is
-  the reverse. Two clamps make the budget an approximation rather than a
-  promise, in opposite directions: a small budget at 8K still holds two frames
-  (below that the renderer and encoder stop overlapping entirely), and a large
-  one at 1080p still stops at thirty-two (past that the encoder is the
-  bottleneck and more queue buys latency, not throughput). The `[manim] frame
-  queue:` line names which bound applied, so a knob that appears to do nothing
-  can be seen to be explaining itself. A non-numeric or negative value is
-  ignored with a note — a typo should not end a long render.
+  | field | environment | default | what it does |
+  |---|---|---|---|
+  | `frame_queue_budget_mb` | `OFFLINAI_MANIM_QUEUE_MB` | 256 | memory the encoder queue may hold |
+  | `frame_queue_frames` | `OFFLINAI_MANIM_QUEUE_FRAMES` | — | an exact depth, ignoring the budget; `0` is unbounded |
+  | `frame_queue_min` | `OFFLINAI_MANIM_QUEUE_MIN` | 2 | below this the renderer and encoder stop overlapping |
+  | `frame_queue_max` | `OFFLINAI_MANIM_QUEUE_MAX` | 32 | past this the encoder is the bottleneck |
+  | `video_codec` | `OFFLINAI_MANIM_CODEC` | — | force an encoder instead of probing |
+
+  Each field is seeded from its variable at import, so the environment sets
+  defaults and code assigned afterwards wins — later simply happens later.
+  Nothing is read until a render starts, so a scene file can set them at
+  module level. `OFFLINAI_MANIM_SOFTWARE_ENCODER=1` still works; it is read
+  once here and sets `video_codec = "mpeg4"`.
+
+  The queue is bounded by *bytes* rather than a frame count because thirty-two
+  frames is ~256 MB at 1080p but 4.25 GB at 8K — the cap that existed to
+  prevent a jetsam kill was causing one. With the default budget: 1080p queues
+  32, 4K queues 8, 8K queues 2.
+
+  The two clamps make the budget an approximation rather than a promise, and
+  in opposite directions: a small budget at 8K still holds the floor, a large
+  one at 1080p still stops at the ceiling. `frame_queue_depth()` returns the
+  reason alongside the number and the `[manim] frame queue:` line prints it,
+  so a setting that is being overruled can be seen to be overruled rather than
+  looking inert. Both clamps are themselves fields, for a device that wants
+  different ones.
 
 - **Return freed pages to the OS.** `PYTHONMALLOC=malloc` plus
   `malloc_zone_pressure_relief(NULL, 0)` between animations, so released
@@ -506,7 +522,8 @@ manim/mobject/text/tex_mobject.py     — PNG-fallback path
 manim/mobject/text/numbers.py         — debug counter
 manim/scene/scene_file_writer.py      — VideoToolbox codec choice by resolution
                                        (h264/hevc) + hvc1 tagging; save_image guard
-manim/utils/ios_encoder.py           — NEW: runtime VideoToolbox capability probe
+manim/utils/ios_encoder.py           — NEW: VideoToolbox capability probe +
+                                       RenderSettings (queue depth, codec)
 manim/cli/checkhealth/checks.py       — iOS-aware health checks
 manim/utils/ipython_magic.py          — non-Jupyter cleanups
 manim/utils/color/core.py             — color parsing edge cases

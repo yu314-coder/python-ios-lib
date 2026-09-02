@@ -191,45 +191,61 @@ check("8K queues few enough to fit in an iPad's share of RAM",
 check("but never fewer than two, so render and encode still overlap",
       queued_frames(7680, 4320) >= 2, str(queued_frames(7680, 4320)))
 
-print("\n== the depth can be tuned, and says when it could not honour you ==")
-# The knobs, evaluated the same way scene_file_writer does.
+print("\n== the depth is editable from a developer's own code ==")
+# Exercising the real settings object, not a copy of its arithmetic — a test
+# that reimplements what it is testing passes whatever the shipped code does.
+from manim.utils.ios_encoder import settings
 
+_saved = {name: getattr(settings, name) for name in settings.__slots__}
+try:
+    settings.frame_queue_budget_mb = 1024
+    depth, why = settings.frame_queue_depth(7680, 4320)
+    check("a bigger budget deepens the 8K queue", depth == 8, f"{depth} ({why})")
 
-def tuned(width, height, env):
-    def env_int(name, default=None):
-        raw = env.get(name, "")
-        if not raw:
-            return default
-        try:
-            value = int(raw)
-        except ValueError:
-            return default
-        return default if value < 0 else value
+    settings.frame_queue_budget_mb = 64
+    depth, why = settings.frame_queue_depth(7680, 4320)
+    check("a budget too small for the floor still gets the floor",
+          depth == settings.frame_queue_min, f"{depth} ({why})")
+    check("and says which bound applied", "floor" in why, why)
 
-    frame_bytes = max(width * height * 4, 1)
-    budget = env_int("OFFLINAI_MANIM_QUEUE_MB", 256) * 1024 * 1024
-    forced = env_int("OFFLINAI_MANIM_QUEUE_FRAMES")
-    if forced is not None:
-        return forced
-    return max(2, min(32, budget // frame_bytes))
+    settings.frame_queue_budget_mb = 4096
+    depth, why = settings.frame_queue_depth(1920, 1080)
+    check("a budget past the ceiling stops there",
+          depth == settings.frame_queue_max, f"{depth} ({why})")
+    check("and says so too", "ceiling" in why, why)
 
+    settings.frame_queue_max = 128
+    depth, _ = settings.frame_queue_depth(1920, 1080)
+    check("the ceiling itself can be raised", depth == 128, str(depth))
 
-check("a bigger budget deepens the 8K queue",
-      tuned(7680, 4320, {"OFFLINAI_MANIM_QUEUE_MB": "1024"}) == 8,
-      str(tuned(7680, 4320, {"OFFLINAI_MANIM_QUEUE_MB": "1024"})))
-check("an explicit frame count overrides the budget",
-      tuned(7680, 4320, {"OFFLINAI_MANIM_QUEUE_MB": "64",
-                         "OFFLINAI_MANIM_QUEUE_FRAMES": "10"}) == 10)
-check("zero frames means unbounded, as on desktop",
-      tuned(7680, 4320, {"OFFLINAI_MANIM_QUEUE_FRAMES": "0"}) == 0)
-check("a budget too small for two frames still gets two",
-      tuned(7680, 4320, {"OFFLINAI_MANIM_QUEUE_MB": "64"}) == 2)
-check("a budget beyond the ceiling stops at 32",
-      tuned(1920, 1080, {"OFFLINAI_MANIM_QUEUE_MB": "4096"}) == 32)
-check("a value that is not a number falls back to the default",
-      tuned(7680, 4320, {"OFFLINAI_MANIM_QUEUE_MB": "lots"}) == 2)
-check("a negative value falls back too",
-      tuned(1920, 1080, {"OFFLINAI_MANIM_QUEUE_MB": "-8"}) == 32)
+    settings.frame_queue_frames = 6
+    depth, why = settings.frame_queue_depth(7680, 4320)
+    check("an exact depth overrides the budget", depth == 6, f"{depth} ({why})")
+
+    settings.frame_queue_frames = 0
+    depth, _ = settings.frame_queue_depth(7680, 4320)
+    check("zero means unbounded, as on desktop", depth == 0, str(depth))
+
+    settings.frame_queue_frames = None
+    settings.video_codec = "hevc_videotoolbox"
+    codec, tag = settings.codec_for(1920, 1080)
+    check("a forced codec overrides the probe",
+          (codec, tag) == ("hevc_videotoolbox", "hvc1"), f"{codec} {tag}")
+
+    settings.video_codec = "mpeg4"
+    codec, tag = settings.codec_for(7680, 4320)
+    check("and a software codec is tagged as nothing",
+          (codec, tag) == ("mpeg4", None), f"{codec} {tag}")
+
+    settings.video_codec = None
+    check("clearing it returns to asking the hardware",
+          settings.codec_for(1920, 1080)[0] == "h264_videotoolbox")
+finally:
+    for name, value in _saved.items():
+        setattr(settings, name, value)
+
+check("the settings restore cleanly",
+      all(getattr(settings, n) == v for n, v in _saved.items()))
 
 print(f"\n{PASSED} passed, {FAILED} failed")
 raise SystemExit(1 if FAILED else 0)
