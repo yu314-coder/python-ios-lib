@@ -302,6 +302,39 @@ than accumulates, which makes 4K and 8K memory-safe:
   **workload** — injecting `SystemExit` into the render/encoder threads and
   force-closing the PyAV containers to release the VideoToolbox IOSurface
   pool — so a doomed render fails cleanly instead of jetsam-killing the app.
+- **App developers configure the render from Swift.** The memory a render may
+  hold is a property of the app and the device, not of the animation, so it is
+  decided by whoever embeds the package rather than by whoever writes the
+  scene. `ManimLib.renderConfiguration` (Sources/Manim/ManimRenderConfiguration.swift):
+
+  ```swift
+  import Manim
+
+  // At app startup, before the interpreter imports manim.
+  var render = ManimLib.RenderConfiguration()
+  render.frameQueueDepth = 8        // fixed depth; 1 or more, 0 is unbounded
+  render.videoCodec = .hevc         // or leave nil to ask the hardware
+  ManimLib.renderConfiguration = render
+  ```
+
+  | property | default | what it does |
+  |---|---|---|
+  | `frameQueueDepth: Int?` | `nil` | a fixed depth, ignoring the budget; `nil` derives it from the budget |
+  | `frameQueueBudgetMB: Int` | 256 | memory the queue may hold |
+  | `frameQueueMinimum: Int` | 2 | the fewest frames a budget may work out to |
+  | `frameQueueMaximum: Int` | 32 | the most; raise it if you have measured otherwise |
+  | `videoCodec: VideoCodec?` | `nil` | `.h264` / `.hevc` / `.mpeg4`, or ask the hardware |
+
+  `frameQueueDepth(forWidth:height:)` and `frameQueueBytes(forWidth:height:)`
+  answer what a configuration works out to at a given size, so an app can show
+  the cost before a render rather than discover it during one.
+
+  Assigning applies the configuration by setting the environment the Python
+  side reads at import, so it has to happen **before the interpreter imports
+  manim** — at startup, beside the other bootstrap calls. The same values are
+  reachable from Python as `manim.utils.ios_encoder.settings`, which is the
+  script author's door onto them, not the app developer's.
+
 - **The render tunables are editable, from code or the environment.** They
   live on one object, `manim.utils.ios_encoder.settings`, so a developer
   changes them without editing the vendored manim:
@@ -524,6 +557,10 @@ manim/scene/scene_file_writer.py      — VideoToolbox codec choice by resolutio
                                        (h264/hevc) + hvc1 tagging; save_image guard
 manim/utils/ios_encoder.py           — NEW: VideoToolbox capability probe +
                                        RenderSettings (queue depth, codec)
+
+Swift, for apps embedding the package:
+Sources/Manim/ManimRenderConfiguration.swift
+                                     — NEW: ManimLib.renderConfiguration
 manim/cli/checkhealth/checks.py       — iOS-aware health checks
 manim/utils/ipython_magic.py          — non-Jupyter cleanups
 manim/utils/color/core.py             — color parsing edge cases
