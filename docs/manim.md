@@ -302,6 +302,27 @@ than accumulates, which makes 4K and 8K memory-safe:
   **workload** — injecting `SystemExit` into the render/encoder threads and
   force-closing the PyAV containers to release the VideoToolbox IOSurface
   pool — so a doomed render fails cleanly instead of jetsam-killing the app.
+- **Frame-queue depth is tunable.** The encoder queue is bounded by *bytes*,
+  not by a frame count: thirty-two frames is ~256 MB at 1080p but 4.25 GB at
+  8K, so the cap that existed to prevent a jetsam kill was causing one. The
+  budget is what stays fixed and the depth follows from the resolution —
+  1080p queues 32, 4K queues 8, 8K queues 2. Two variables override it:
+
+  | variable | effect |
+  |---|---|
+  | `OFFLINAI_MANIM_QUEUE_MB` | the budget in MB (default 256) |
+  | `OFFLINAI_MANIM_QUEUE_FRAMES` | an exact depth, ignoring the budget; `0` is unbounded |
+
+  Deeper overlaps rendering and encoding more and costs memory; shallower is
+  the reverse. Two clamps make the budget an approximation rather than a
+  promise, in opposite directions: a small budget at 8K still holds two frames
+  (below that the renderer and encoder stop overlapping entirely), and a large
+  one at 1080p still stops at thirty-two (past that the encoder is the
+  bottleneck and more queue buys latency, not throughput). The `[manim] frame
+  queue:` line names which bound applied, so a knob that appears to do nothing
+  can be seen to be explaining itself. A non-numeric or negative value is
+  ignored with a note — a typo should not end a long render.
+
 - **Return freed pages to the OS.** `PYTHONMALLOC=malloc` plus
   `malloc_zone_pressure_relief(NULL, 0)` between animations, so released
   memory actually leaves `phys_footprint` (what jetsam measures) instead

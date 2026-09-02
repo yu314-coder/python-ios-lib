@@ -191,5 +191,45 @@ check("8K queues few enough to fit in an iPad's share of RAM",
 check("but never fewer than two, so render and encode still overlap",
       queued_frames(7680, 4320) >= 2, str(queued_frames(7680, 4320)))
 
+print("\n== the depth can be tuned, and says when it could not honour you ==")
+# The knobs, evaluated the same way scene_file_writer does.
+
+
+def tuned(width, height, env):
+    def env_int(name, default=None):
+        raw = env.get(name, "")
+        if not raw:
+            return default
+        try:
+            value = int(raw)
+        except ValueError:
+            return default
+        return default if value < 0 else value
+
+    frame_bytes = max(width * height * 4, 1)
+    budget = env_int("OFFLINAI_MANIM_QUEUE_MB", 256) * 1024 * 1024
+    forced = env_int("OFFLINAI_MANIM_QUEUE_FRAMES")
+    if forced is not None:
+        return forced
+    return max(2, min(32, budget // frame_bytes))
+
+
+check("a bigger budget deepens the 8K queue",
+      tuned(7680, 4320, {"OFFLINAI_MANIM_QUEUE_MB": "1024"}) == 8,
+      str(tuned(7680, 4320, {"OFFLINAI_MANIM_QUEUE_MB": "1024"})))
+check("an explicit frame count overrides the budget",
+      tuned(7680, 4320, {"OFFLINAI_MANIM_QUEUE_MB": "64",
+                         "OFFLINAI_MANIM_QUEUE_FRAMES": "10"}) == 10)
+check("zero frames means unbounded, as on desktop",
+      tuned(7680, 4320, {"OFFLINAI_MANIM_QUEUE_FRAMES": "0"}) == 0)
+check("a budget too small for two frames still gets two",
+      tuned(7680, 4320, {"OFFLINAI_MANIM_QUEUE_MB": "64"}) == 2)
+check("a budget beyond the ceiling stops at 32",
+      tuned(1920, 1080, {"OFFLINAI_MANIM_QUEUE_MB": "4096"}) == 32)
+check("a value that is not a number falls back to the default",
+      tuned(7680, 4320, {"OFFLINAI_MANIM_QUEUE_MB": "lots"}) == 2)
+check("a negative value falls back too",
+      tuned(1920, 1080, {"OFFLINAI_MANIM_QUEUE_MB": "-8"}) == 32)
+
 print(f"\n{PASSED} passed, {FAILED} failed")
 raise SystemExit(1 if FAILED else 0)
