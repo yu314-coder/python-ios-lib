@@ -21,6 +21,18 @@ class Axes3D:
     This class exists so that `from mpl_toolkits.mplot3d import Axes3D`
     works and `Axes3D(fig)` returns a usable 3D axes object.
     """
+
+    #: The projection registry keys on this.
+    #:
+    #: `matplotlib/projections/__init__.py` imports this class and registers it
+    #: with `projection_registry.register(Axes3D)`, whose first act is to read
+    #: `projection.name`. Without it `import matplotlib` raises AttributeError
+    #: before any consumer code runs — matplotlib importing its own object and
+    #: reading a field that object did not define. The `__getattr__` below
+    #: cannot cover it: that is looked up on *instances*, and the registry
+    #: reads the class.
+    name = '3d'
+
     def __new__(cls, fig=None, *args, **kwargs):
         try:
             from matplotlib import pyplot as plt

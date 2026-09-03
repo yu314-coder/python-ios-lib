@@ -245,7 +245,47 @@ finally:
         setattr(settings, name, value)
 
 check("the settings restore cleanly",
-      all(getattr(settings, n) == v for n, v in _saved.items()))
+      all(getattr(settings, n) == v for n, v in _saved.items()
+          if not n.startswith("_")))
+
+print("\n== a host app configuring after startup is not silently ignored ==")
+# os.environ is filled once, when `os` is imported. A host app calling setenv()
+# after Py_Initialize — which is what ManimLib.renderConfiguration does, and
+# what a per-render encoder toggle does — changes the real environment and
+# nothing os.environ can see. Seeding once at import lost every such setting.
+import ctypes as _ct
+
+_libc = _ct.CDLL(None)
+_libc.setenv.argtypes = [_ct.c_char_p, _ct.c_char_p, _ct.c_int]
+_saved2 = {name: getattr(settings, name) for name in settings.__slots__
+           if not name.startswith("_")}
+try:
+    _libc.setenv(b"OFFLINAI_MANIM_QUEUE_FRAMES", b"6", 1)
+    check("os.environ cannot see a post-startup setenv",
+          os.environ.get("OFFLINAI_MANIM_QUEUE_FRAMES") != "6",
+          "os.environ saw it, so this platform behaves differently")
+    settings.refresh()
+    depth, _ = settings.frame_queue_depth(7680, 4320)
+    check("refresh() does see it", depth == 6, str(depth))
+
+    _libc.setenv(b"OFFLINAI_MANIM_SOFTWARE_ENCODER", b"1", 1)
+    settings.refresh()
+    check("and the software-encoder toggle reaches Python too",
+          settings.codec_for(1920, 1080)[0] == "mpeg4",
+          settings.codec_for(1920, 1080)[0])
+
+    # A script that set a value itself must not have it taken away.
+    settings.frame_queue_frames = 3
+    _libc.setenv(b"OFFLINAI_MANIM_QUEUE_FRAMES", b"99", 1)
+    settings.refresh()
+    check("a value set from Python survives a refresh",
+          settings.frame_queue_depth(7680, 4320)[0] == 3,
+          str(settings.frame_queue_depth(7680, 4320)[0]))
+finally:
+    _libc.setenv(b"OFFLINAI_MANIM_QUEUE_FRAMES", b"", 1)
+    _libc.setenv(b"OFFLINAI_MANIM_SOFTWARE_ENCODER", b"", 1)
+    for name, value in _saved2.items():
+        setattr(settings, name, value)
 
 print(f"\n{PASSED} passed, {FAILED} failed")
 raise SystemExit(1 if FAILED else 0)

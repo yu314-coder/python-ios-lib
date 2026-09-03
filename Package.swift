@@ -108,7 +108,8 @@ let package = Package(
         // ── Requires Plotly ──
         // Matplotlib now also pulls Dateutil (matplotlib/dates.py hard
         // dep) so date-axis plots work for SwiftPM consumers.
-        .library(name: "Matplotlib", targets: ["Matplotlib", "Plotly", "Dateutil"]),
+        .library(name: "Matplotlib", targets: ["Matplotlib", "Plotly", "Dateutil",
+                                               "Pyparsing", "Kiwisolver", "Contourpy"]),
 
         // python-dateutil — standalone product for consumers that want
         // just the date utilities without the whole matplotlib stack.
@@ -715,6 +716,13 @@ let package = Package(
         // pyparsing — grammar parsing (periodictable dep). Pure Python.
         .target(name: "Pyparsing", path: "Sources/Pyparsing", resources: [.copy("pyparsing"),
             .copy("pyparsing-3.3.2.dist-info")]),
+        // kiwisolver and contourpy are matplotlib import-time dependencies —
+        // matplotlib/__init__.py reaches for both before any consumer code
+        // runs, so a Matplotlib product without them cannot import at all.
+        .target(name: "Kiwisolver", path: "Sources/Kiwisolver", resources: [.copy("kiwisolver"),
+            .copy("kiwisolver-1.5.0.dist-info")]),
+        .target(name: "Contourpy", dependencies: ["NumPy"], path: "Sources/Contourpy", resources: [.copy("contourpy"),
+            .copy("contourpy-1.3.3.dist-info")]),
         // periodictable — chemistry element/isotope data. Pure Python (+ NumPy).
         .target(name: "Periodictable", dependencies: ["NumPy", "Pyparsing"], path: "Sources/Periodictable", resources: [.copy("periodictable"),
             .copy("periodictable-2.1.0.dist-info")]),
@@ -770,8 +778,16 @@ let package = Package(
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
         // matplotlib — Plotly backend (64 modules). Needs: Plotly
-        .target(name: "Matplotlib", dependencies: ["Plotly", "Dateutil"], path: "Sources/Matplotlib", resources: [.copy("matplotlib"),
-            .copy("matplotlib-3.9.0.dist-info"),
+        // pyparsing, kiwisolver and contourpy are all imported by matplotlib
+        // at import time. They were absent, so linking Matplotlib on its own
+        // produced a matplotlib that raised ModuleNotFoundError on first use
+        // and every consumer had to discover and bundle the three by hand.
+        .target(name: "Matplotlib", dependencies: ["Plotly", "Dateutil", "Pyparsing", "Kiwisolver", "Contourpy"], path: "Sources/Matplotlib", resources: [.copy("matplotlib"),
+            // The code is a symlink to the 3.11.0 tree in app_packages; the
+            // dist-info shipped beside it said 3.9.0, so `importlib.metadata`
+            // and anything doing a version check saw a matplotlib that has not
+            // been in this repo for some time.
+            .copy("matplotlib-3.11.0.dist-info"),
             .copy("narwhals-1.16.0.dist-info"),
             .copy("packaging-26.0.dist-info"),
             .copy("narwhals"),

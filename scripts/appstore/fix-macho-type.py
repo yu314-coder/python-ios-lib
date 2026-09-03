@@ -288,6 +288,29 @@ def main(argv):
         print("  failures (first 5):")
         for p in id_failures:
             print(f"    {p}")
+
+    # A step that could not do its job must not report success.
+    #
+    # Per-file trouble was collected into the summary and the process still
+    # exited 0, so the build carried on and Apple found the un-flipped
+    # MH_BUNDLE binaries instead — ITMS-90124, twice, once the source tree
+    # happened to be read-only. A binary left as a bundle is a rejected upload
+    # later; better a failed build now.
+    #
+    # 'error: …' from patch_one, 'fat_error: …' from patch_fat, and
+    # 'unsupported_filetype_N' from a header this script does not understand —
+    # all three mean a binary was left as it was found.
+    errored = {k: v for k, v in counts.items()
+               if 'error' in k or k.startswith('unsupported_filetype')}
+    if errored or id_failed:
+        print("  ")
+        for k in sorted(errored):
+            print(f"  !! {errored[k]} file(s): {k}")
+        if id_failed:
+            print(f"  !! {id_failed} file(s) could not be given an LC_ID_DYLIB")
+        print("  These binaries will be rejected at upload (ITMS-90124) or "
+              "refused by dyld at load. Failing the build instead.")
+        return 1
     return 0
 
 

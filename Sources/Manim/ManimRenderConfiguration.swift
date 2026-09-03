@@ -119,6 +119,9 @@ extension ManimLib {
         /// Called for you by `ManimLib.renderConfiguration`; exposed because
         /// an app that manages its own environment may want to apply a
         /// configuration without holding it in the shared property.
+        ///
+        /// The Python side reads these through libc rather than `os.environ`,
+        /// so applying after the interpreter has started works.
         public func apply() {
             func put(_ name: String, _ value: String?) {
                 if let value {
@@ -137,9 +140,18 @@ extension ManimLib {
 
     /// The configuration a render will use. Assigning applies it.
     ///
-    /// Set this before the interpreter imports manim — the Python side reads
-    /// the environment once, at import. Assigning afterwards changes nothing
-    /// about a render already under way.
+    /// Safe to set at any point before a render starts, including after the
+    /// interpreter is running — which is the normal shape, since an app
+    /// usually starts Python long before the user picks a quality.
+    ///
+    /// This was not always true. Applying writes the process environment, and
+    /// Python's `os.environ` is a snapshot taken when `os` was imported, so a
+    /// `setenv` after `Py_Initialize` was invisible to it and the whole API
+    /// was a silent no-op for any app that configured late. The Python side
+    /// re-reads the live environment through libc at the start of each render.
+    /// A value set from Python takes precedence over one set here.
+    ///
+    /// Changing it will not affect a render already under way.
     ///
     ///     ManimLib.renderConfiguration.frameQueueDepth = 8
     ///

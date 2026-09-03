@@ -329,11 +329,17 @@ than accumulates, which makes 4K and 8K memory-safe:
   answer what a configuration works out to at a given size, so an app can show
   the cost before a render rather than discover it during one.
 
-  Assigning applies the configuration by setting the environment the Python
-  side reads at import, so it has to happen **before the interpreter imports
-  manim** — at startup, beside the other bootstrap calls. The same values are
-  reachable from Python as `manim.utils.ios_encoder.settings`, which is the
-  script author's door onto them, not the app developer's.
+  Assigning applies the configuration by setting the process environment, and
+  it works at any point before a render starts — including after the
+  interpreter is running, which is the normal shape since an app usually
+  starts Python long before the user picks a quality. Python's `os.environ` is
+  a snapshot taken when `os` was imported, so the Python side reads these
+  through libc instead and re-reads them at the start of each render;
+  `OFFLINAI_MANIM_SOFTWARE_ENCODER` reaches Python the same way, which it did
+  not when it was read from `os.environ` once at import. A value assigned from
+  Python wins over one set here. The same values are reachable from Python as
+  `manim.utils.ios_encoder.settings`, which is the script author's door onto
+  them, not the app developer's.
 
 - **The render tunables are editable, from code or the environment.** They
   live on one object, `manim.utils.ios_encoder.settings`, so a developer
