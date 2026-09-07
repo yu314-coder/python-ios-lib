@@ -383,8 +383,35 @@ than accumulates, which makes 4K and 8K memory-safe:
   memory actually leaves `phys_footprint` (what jetsam measures) instead
   of sitting in CPython's allocator pool.
 - **Quality presets extended.** Selectable quality now runs
-  480p / 720p / 1080p / 1440p / **4K** / **8K** (index 5 is a custom
-  7680×4320 preset with an explicit frame rate).
+  480p / 720p / 1080p / 1440p / **4K** / **8K** / **12K** / **14K**.
+  Indices 0–4 are manim's built-in presets; 5–7 are custom resolutions with an
+  explicit frame rate, defined once in `_CUSTOM_RES` and read by both the
+  initial config and the pre-render re-apply, so the two cannot drift:
+
+  | index | preset | pixels | shorter side | encoder |
+  |---|---|---|---|---|
+  | 5 | 8K UHD | 7680×4320 | 4320 | hardware HEVC |
+  | 6 | 12K | 11520×6480 | 6480 | hardware HEVC |
+  | 7 | 14K | 14336×8064 | 8064 | hardware HEVC |
+
+  16K UHD is deliberately absent: its shorter side is 8640, past the encoder's
+  8192, so it would fall back to software mpeg4 and crawl. Higher resolutions
+  are still reachable by setting `config.pixel_width` directly — the presets
+  are a convenience, not a limit.
+
+  **The queue is the memory cost at these sizes.** A frame is 133 MB of RGBA at
+  8K, 299 MB at 12K and 462 MB at 14K, and the queue's floor of two frames
+  outranks the 256 MB budget well before 12K:
+
+  | | per frame | queued | held |
+  |---|---|---|---|
+  | 8K | 133 MB | 2 | 265 MB |
+  | 12K | 299 MB | 2 | 597 MB |
+  | 14K | 462 MB | 2 | **925 MB** |
+
+  That is on top of the render's own working set. On a memory-tight device,
+  `settings.frame_queue_min = 1` halves it, at the cost of the renderer and
+  the encoder no longer overlapping.
 - **The codec is chosen by asking VideoToolbox, not by assuming H.264.**
   ffmpeg's `h264_videotoolbox` binds Apple's *hardware* H.264 encoder and
   nothing else — there is no slow path. Above the size that encoder supports,
