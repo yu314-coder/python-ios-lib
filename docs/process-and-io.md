@@ -46,4 +46,4 @@ obs.start()
 
 - [docs/huggingface-hub.md](huggingface-hub.md) — heavy filelock user (downloader deduplication)
 - [docs/transformers.md](transformers.md) — pulls in all three indirectly
-- [docs/webview.md](webview.md) — uses watchdog's `PollingObserver` for live-preview refresh
+- [docs/webview.md](pywebview.md) — uses watchdog's `PollingObserver` for live-preview refresh

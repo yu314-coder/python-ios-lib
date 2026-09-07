@@ -276,7 +276,7 @@ killed by jetsam on long scenes.
   on each VMobject — keeps the point count ~40% lower for math glyphs.
 - `use_svg_cache=False` default on `SVGMobject`.
 
-### High-resolution (4K / 8K) rendering
+### High-resolution rendering (4K, 8K and past it)
 
 Earlier the bundled config refused anything above 1080p outright: the
 animated-GIF assembly buffer held every full-resolution frame as a PIL
@@ -389,27 +389,23 @@ than accumulates, which makes 4K and 8K memory-safe:
   ffmpeg's `h264_videotoolbox` binds Apple's *hardware* H.264 encoder and
   nothing else — there is no slow path. Above the size that encoder supports,
   `avcodec_open2("h264_videotoolbox")` fails outright and the render dropped to
-  software `mpeg4`. Where the ceiling sits is a property of the media engine,
-  not the OS, so it is probed at run time
-  (`manim/utils/ios_encoder.py`, via VideoToolbox through `ctypes`):
+  software `mpeg4`. Anything H.264 cannot take goes to `hevc_videotoolbox`
+  instead, which every Apple silicon media engine encodes far higher.
 
-  | device | H.264 hardware | HEVC hardware |
-  |---|---|---|
-  | M4 Mac mini, M3 iPad Air | up to 4096×2304 | up to 8192×4320 |
-  | iPhone 17 Pro Max | reported working at 8K | — |
+  Measured on an M4 Mac mini with VideoToolbox directly, then confirmed by real
+  encodes through PyAV:
 
-  Anything H.264 cannot take goes to `hevc_videotoolbox`, which every Apple
-  silicon media engine encodes to 8K. Measured on an M4 Mac mini: 8K H.264
-  fails to open at all; 8K HEVC runs at ~7 fps in hardware, and 4K HEVC is
-  *faster* than 4K H.264 (24 fps vs 17 fps).
+  | resolution | H.264 | HEVC | 3 frames |
+  |---|---|---|---|
+  | 4K UHD 3840×2160 | hardware | hardware | 0.69 s / **0.50 s** |
+  | 8K UHD 7680×4320 | **cannot open** | hardware | — / **0.48 s** |
+  | 12K 11520×6480 | cannot open | hardware | — / 0.94 s |
+  | 14K 14336×8064 | cannot open | hardware | — / 1.46 s |
+  | 16K UHD 15360×8640 | cannot open | **cannot open** | falls back to mpeg4 |
 
-  Two tagging details, both of which silently produced an unplayable file:
-  HEVC in an mp4 must be tagged `hvc1` — ffmpeg's default `hev1` is legal and
-  AVFoundation reports it as neither playable nor decodable — and the tag has
-  to be re-applied when `combine_files` copies the partials, since
-  `add_stream_from_template` does not carry it. The copy stream also reports
-  its codec as `libx265` rather than `hevc`, so the check matches the family.
-  Covered by `manim_encoder_test.py`.
+  HEVC is *faster than H.264 even at 4K* on this chip, so the switch costs
+  nothing where both work.
+
 - **Frame rate (FPS) is honored.** The Settings FPS selector applies to
   every quality. manim's quality preset *resets* `frame_rate` to its built-in
   default (15 / 30 / 60), so the chosen fps is re-applied **after** the preset
@@ -419,13 +415,50 @@ than accumulates, which makes 4K and 8K memory-safe:
   per-frame cost scales with frame count. The `manim quality idx=… fps=…` log
   line shows the fps actually applied.
 
-Rendering stays on cairo's CPU rasterizer by default; only the H.264 *encode*
-uses the GPU (`h264_videotoolbox`). An **experimental Metal cairo backend
+### Where the ceiling actually is
+
+The limit is **not** total pixels and **not** the longer side. Bisected one
+size per process, so a resource-exhaustion artefact could not masquerade as
+a limit:
+
+> **Hardware HEVC requires the _shorter_ side to be ≤ 8192.**
+> The longer side reaches at least 20480.
+
+| | shorter side | result |
+|---|---|---|
+| 16384 × 8192 | 8192 | hardware |
+| 16384 × **8193** | 8193 | fails — one pixel over |
+| 20480 × 8192 | 8192 | hardware |
+| 8193 × 8193 | 8193 | fails |
+
+So 168 megapixels encodes (20480×8192) and 67 does not (8193×8193), decided
+entirely by the shorter side. For 16:9 that puts the ceiling at about **14336×8064**;
+**16K UHD (15360×8640) misses it by 448 pixels of height**, not by pixel
+count — it is 132.7 Mpx against 14K's 115.6 Mpx, and a 132.1 Mpx frame at
+16386×8064 encodes fine because its height stays under 8192. Reported from an
+iPad Pro M5, and consistent with the rule measured on M4.
+
+A device whose encoder reaches further keeps the benefit automatically: the
+ceiling is probed at run time, never written down. Nothing here is a table
+the code consults.
+
+### The two tagging traps
+
+Both produced a *finished* render that the device which made it could not
+open. HEVC in an mp4 must be tagged `hvc1` — ffmpeg's default `hev1` is legal
+and AVFoundation reports it as neither playable nor decodable — and the tag
+has to be re-applied when `combine_files` copies the partials, since
+`add_stream_from_template` does not carry it. The copy stream also reports
+its codec as `libx265` rather than `hevc`, so a `== "hevc"` check never
+fires. Covered by `manim_encoder_test.py`.
+
+Rendering stays on cairo's CPU rasterizer by default; only the *encode* uses
+the GPU (`h264_videotoolbox`, or `hevc_videotoolbox` above the H.264 ceiling). An **experimental Metal cairo backend
 (CairoMetal)** can be toggled on (**Settings → Manim → GPU rendering**) — it
 renders correctly on the GPU but does **not** speed manim up: profiling a 4K
 render shows the cairo fill is only ~5% of the time, while ~67% is manim's
 per-frame Python animation engine (mobject interpolation), ~12% CPU
-path-building, and ~11% the already-hardware H.264 encode. So GPU
+path-building, and ~11% the already-hardware video encode. So GPU
 rasterization can't move the needle — use **lower fps** for real speedups.
 (manim's own OpenGL renderer remains unusable on iOS — `moderngl` is a stub.)
 See `cairo(metal)/` and `docs/cairographics.md`.

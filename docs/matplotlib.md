@@ -183,6 +183,39 @@ LaTeX needed. (`usetex=True`, which shells out to a real `latex` binary, is
 
 ---
 
+## Consuming it from SwiftPM
+
+The `Matplotlib` product ships the real 3.11 tree — `Sources/Matplotlib/matplotlib`
+is a symlink to `app_packages/site-packages/matplotlib`, so there is one copy of
+the code, not two.
+
+Three things about the packaging are worth knowing, because each was broken and
+each failed in a way that looked like something else:
+
+- **The import-time dependencies are part of the product.** matplotlib imports
+  `pyparsing`, `kiwisolver` and `contourpy` while it is still importing itself.
+  `Pyparsing` existed as a target but was not a dependency; `Kiwisolver` and
+  `Contourpy` had no targets at all. Linking `Matplotlib` alone therefore gave
+  a matplotlib that raised `ModuleNotFoundError` on first use, and every
+  consumer had to work out which three packages were missing and vendor them by
+  hand. All three are now targets, dependencies and product members.
+
+- **`mpl_toolkits` is a shim, and it is the one place the trees really do
+  differ.** `Sources/Matplotlib/mpl_toolkits/mplot3d` is a single compatibility
+  file, while `app_packages` carries the real six. The app bundles the real one;
+  SwiftPM consumers get the shim. That mix is what made `import matplotlib`
+  fail outright: real matplotlib's `projections/__init__.py` registers
+  `mpl_toolkits.mplot3d.Axes3D` and reads `projection.name`, and the shim class
+  defined no class-level `name`. An `__getattr__` further down that file cannot
+  cover it — that is looked up on instances, and the registry reads the class.
+  The shim now declares `name = '3d'`.
+
+- **The dist-info has to travel with the code.** The shipped metadata said
+  3.9.0 long after the code became 3.11.0, so `importlib.metadata.version` and
+  anything version-gating saw a matplotlib that had not been in the repo for
+  months. It is a symlink to the real 3.11.0 dist-info now, which cannot drift
+  again.
+
 ## What's absent on iOS (inherent)
 
 | Missing | Why | Workaround |

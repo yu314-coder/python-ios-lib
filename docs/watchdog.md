@@ -119,11 +119,11 @@ obs.start()
 
 - **Hot-reload:** re-import a Python module when the user edits it
 - **Asset sync:** regenerate a cache when a config file changes
-- **Live preview:** refresh a chart when its data file is rewritten (this is how CodeBench's editor live-reloads HTML in the preview pane — see [webview.md](webview.md))
+- **Live preview:** refresh a chart when its data file is rewritten (this is how CodeBench's editor live-reloads HTML in the preview pane — see [webview.md](pywebview.md))
 
 ## See also
 
 - [docs/psutil.md](psutil.md) — pairs for diagnostics ("which thread last touched this file")
 - [docs/filelock.md](filelock.md) — pairs to serialise writes the watcher observes
 - [docs/process-and-io.md](process-and-io.md) — old combined doc, now a TOC
-- [docs/webview.md](webview.md) — CodeBench's live-preview pane consumer
+- [docs/webview.md](pywebview.md) — CodeBench's live-preview pane consumer

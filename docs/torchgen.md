@@ -122,5 +122,5 @@ For everything else, prefer the runtime APIs in `torch.*`.
 
 ## See also
 
-- [docs/pytorch.md](pytorch.md) — the runtime `torch` package this generator targets
+- [docs/pytorch.md](torch.md) — the runtime `torch` package this generator targets
 - [docs/small-utils.md](small-utils.md) — index of other rarely-imported transitive deps

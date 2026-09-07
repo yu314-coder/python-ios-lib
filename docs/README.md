@@ -41,7 +41,7 @@ All four share the same Monaco-based code editor (WKWebView) with IntelliSense (
 
 | Library | Version | Type | Description |
 |---------|---------|------|-------------|
-| **matplotlib** | 3.9.0 | Plotly shim (64 modules) | Drop-in pyplot → interactive Plotly HTML |
+| **matplotlib** | 3.11.0 | Real C build (arm64) | Full matplotlib incl. `ft2font`/`_path`/`_qhull`; plotly showcase backend optional |
 | **Plotly** | 6.6.0 | Pure Python | Interactive charts, 3D plots, maps |
 | **manim** | 0.20.1 | Modified for iOS | 145+ mobjects, 73 animations, 40+ rate functions, H.264 video |
 
@@ -119,7 +119,7 @@ for the cross-library iOS patches and feature tests.
 - [pandas](pandas.md) · [pyarrow](pyarrow.md) — DataFrames + Arrow 15 with Parquet/Dataset (`.parquet` works)
 
 ### Visualization & Media
-- [matplotlib](matplotlib.md) — 64 modules, Plotly backend
+- [matplotlib](matplotlib.md) — real 3.11 C build; plotly showcase backend optional
 - [**manim**](manim.md) — 145+ mobjects, 73 animations, full rendering pipeline
 - [OpenCV (cv2)](opencv.md) — curated native 4.10.0 (no dnn/highgui/videoio)
 - **Media & Rendering** — [PyAV](av-pyav.md) · [FFmpeg](ffmpeg-pyav.md) · [Cairo](cairographics.md) · [Pillow](pillow.md) · [ManimPango](manimpango.md) · [LaTeX](offlinai-latex.md)

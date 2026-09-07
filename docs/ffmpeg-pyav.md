@@ -173,7 +173,9 @@ anything ≥720p.
 manim's `SceneFileWriter` uses PyAV under the hood for video output.
 The iOS-patched build:
 
-- Defaults to `h264_videotoolbox` codec
+- Defaults to `h264_videotoolbox`, switching to `hevc_videotoolbox` above the
+  device's hardware H.264 ceiling (4096×2304 on M3/M4) — H.264's VideoToolbox
+  wrapper is hardware-only and fails to open rather than falling back
 - Sets `realtime=1` so frames flush quickly (avoids OOM on long renders)
 - Bounds the encoder's frame queue to 32 (the default unbounded queue
   blew the 8 GB jetsam limit for long manim scenes)

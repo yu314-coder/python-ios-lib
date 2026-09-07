@@ -138,6 +138,9 @@ import av, numpy as np
 
 out = av.open('/path/Documents/out.mp4', mode='w')
 stream = out.add_stream('h264_videotoolbox', rate=30)   # iOS HW encoder
+# Above ~4K, ask for HEVC instead — h264_videotoolbox cannot open at all there:
+#   stream = out.add_stream('hevc_videotoolbox', rate=30)
+#   stream.codec_tag = 'hvc1'      # or AVFoundation will not play the result
 stream.width = 640
 stream.height = 480
 stream.pix_fmt = 'yuv420p'
@@ -172,8 +175,8 @@ string (`"FFmpeg 7.x (offlinai-ios)"`).
 
 | Codec | Decode | Encode | Notes |
 |---|---|---|---|
-| H.264 | yes (`h264`) | yes (`h264_videotoolbox`) | HW encoder via Apple VideoToolbox; `libx264` NOT bundled (GPL) |
-| H.265 / HEVC | yes (`hevc`) | yes (`hevc_videotoolbox`) | HW encoder |
+| H.264 | yes (`h264`) | yes (`h264_videotoolbox`) | HW encoder via Apple VideoToolbox; `libx264` NOT bundled (GPL). **Hardware-only — no software path.** Above the media engine's ceiling (4096×2304 on M3/M4) `avcodec_open2` fails outright rather than falling back |
+| H.265 / HEVC | yes (`hevc`) | yes (`hevc_videotoolbox`) | HW encoder, and the one to reach for above 4K. Hardware while the **shorter side is ≤ 8192** — roughly 14336×8064 in 16:9. In an mp4 it must be tagged `hvc1`; ffmpeg's default `hev1` is legal and AVFoundation will not play it |
 | AV1 | yes (`av1`, libdav1d) | no | Decode-only |
 | VP8 / VP9 | yes (`vp8`, `vp9`) | software | libvpx not bundled — encode falls back to internal |
 | MPEG-4 | yes | yes (`mpeg4` software) | Always-available software fallback for encode |
@@ -192,7 +195,8 @@ iOS HW encoders (`h264_videotoolbox`, `hevc_videotoolbox`) work for
 API on iOS — decode is done in software. For most decode workloads
 (< 1080p30) the CPU keeps up; 4K decode is slow.
 
-manim uses `h264_videotoolbox` automatically on iOS — see
+manim picks between `h264_videotoolbox` and `hevc_videotoolbox` at run time by
+asking VideoToolbox what the device can do at the render's resolution — see
 [manim.md](manim.md). Override with
 `OFFLINAI_MANIM_SOFTWARE_ENCODER=1` to force `mpeg4` software encoding
 (more deterministic memory profile for long scenes).

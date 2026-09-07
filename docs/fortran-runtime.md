@@ -245,4 +245,4 @@ ofort_destroy(interp);
 ## See also
 
 - `/Volumes/D/OfflinAi/fortran/README.md` — flang build instructions
-- [scipy.md](scipy.md) — how scipy's Fortran modules are exposed in Python
+- [scipy.md](scipy-ios.md) — how scipy's Fortran modules are exposed in Python

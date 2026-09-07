@@ -9,7 +9,7 @@ this file is just a table of contents.
 | Library | Version | What needs it | Doc |
 |---|---|---|---|
 | **cloup** | 3.0.5 | nicer Click CLIs | [cloup.md](cloup.md) |
-| **soupsieve** | 2.8 | CSS-selector engine for BeautifulSoup | [soupsieve.md](soupsieve.md) |
+| **soupsieve** | 2.8 | CSS-selector engine for BeautifulSoup | [soupsieve.md](beautifulsoup.md) |
 | **rpds-py** | 0.22.3 | persistent data structures for `referencing` / `jsonschema` | [rpds.md](rpds.md) |
 | **srt** | 3.5.3 | `.srt` subtitle parsing / writing | [srt.md](srt.md) |
 | **pylab** | (ships with matplotlib) | legacy MATLAB-style `pyplot + numpy` namespace | [pylab.md](pylab.md) |
