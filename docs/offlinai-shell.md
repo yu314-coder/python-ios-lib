@@ -102,6 +102,8 @@ Found via `grep -n "@builtin(" /Volumes/D/OfflinAi/app_packages/site-packages/of
 | `date` | 1640 | Current time, formatted |
 | `uptime` | 1646 | Shell uptime (since the `Shell` was constructed — iOS has no per-process accounting) |
 | `top` / `htop` | 5104–05 | Live process list via `psutil` |
+| `cpu-z` / `cpuz` | 6312–13 | The CPU: cores, caches, Arm features, then clock, FMA, memory and four workloads measured in native code; `graph` draws it — see [cpu-z and gpu-z](#cpu-z-and-gpu-z-offlinai_bench) |
+| `gpu-z` / `gpuz` | 6318–19 | The GPU as Metal reports it, then shader FMA, bandwidth, matrix multiply and blur timed by the GPU; `graph` draws it |
 | `history` | 1764 | Command history |
 | `sleep` | 7444 | Delay in seconds |
 | `time` | 7458 | Time a command |
@@ -293,6 +295,47 @@ evicts the entry-point module + every submodule of its top package from
 because module-level argparse parsers conflict on re-entry), then calls
 the entry-point function directly. Makes `pypistats recent numpy` work
 after `pip install pypistats` with no restart.
+
+### cpu-z and gpu-z (`offlinai_bench`)
+
+Both commands live in `offlinai_bench.py` and call native code compiled into
+the app through `ctypes.CDLL(None)` — C for the CPU (`CodeBench/Bench/*.c`),
+Metal for the GPU (`CodeBench/GPUBench.swift`) — so they measure the hardware,
+not the interpreter. ctypes releases the GIL for each call, so N threads keep
+N cores busy. A build without those symbols falls back to the older Python
+measurements.
+
+```
+cpu-z [graph [latency|bandwidth|fma]] [--core p|e] [-i] [-q] [--stress S]
+      [--out FORMAT|PATH] [--json [PATH]]
+gpu-z [graph] [-i] [-q] [--torch] [--out FORMAT|PATH] [--json [PATH]]
+```
+
+| Option | What it does |
+|---|---|
+| *(none)* | Information block, then the measurements and a score — `cpu-z` on the CPU-Z bench scale (an M4 performance core ≈ 815), `gpu-z` on the Geekbench 6 Metal scale (Mac mini M4 ≈ 57k). Both are estimates from CodeBench's own workloads |
+| `graph` | Draw it instead. `cpu-z`: memory latency under **random access** against block size (4 KB → 256 MB; a pointer chase in shuffled order, so the cache levels show as steps, with the core's L1/L2 sizes marked), STREAM-triad bandwidth against array size, FP32/FP64 FMA throughput against threads. `gpu-z`: MPS matrix-multiply TFLOPS against matrix size (fp32, fp16), bandwidth against buffer size, peak shader TFLOPS |
+| `graph latency` | One `cpu-z` graph only (`bandwidth`, `fma` likewise); latency alone is sampled at ×√2 steps |
+| `--out F` | `html` (default): a page with the key numbers as tiles and a plotly card per chart — hover values, zoom, light/dark with the system, plotly.js embedded so it works offline. `png`, `jpg`, `svg`, `pdf`: the same charts drawn by matplotlib. Or a file path with one of those extensions |
+| `--core p` / `--core e` | Keep `cpu-z` on the performance or the efficiency cores. A thread's QoS only steers the scheduler (a background-QoS thread still ran at 3.95 GHz on an M4), so `e` puts the app in Darwin's background band for the run — `setpriority(PRIO_DARWIN_PROCESS, 0, PRIO_DARWIN_BG)`, which keeps it on the efficiency cores (≈2.1 GHz there) — and clears it afterwards. iOS lets no app set a core's frequency, so there is no frequency sweep |
+| `--stress S` | Every core for S seconds, the work done each second (throttling shows as the device warms) |
+| `--torch` | `gpu-z` also times PyTorch's Metal bridge — what Python code gets, copies included |
+| `--json [P]` | Save the numbers as JSON |
+| `-i` / `-q` | Information only / shorter, noisier runs |
+
+Graphs and JSON go to `~/Documents/Workspace/Benchmarks/` — the
+**Benchmarks** folder in My work and the Files app, which list only what is
+under the Workspace — and the terminal prints the path. The app turns the
+`[plot saved] <path>` line that follows into "✓ Figure N ready" and opens the
+graph in its Result panel. The page keeps its own layout there: the preview
+fits a page with a plotly chart to the pane (html and body at 100% with no
+scrolling, every plotly div 100% high), so the page's stylesheet overrides
+those rules with more specific ones.
+
+The Metal entry points drain an autorelease pool per call and per command
+buffer. Python calls them on its own threads, which have none, so before
+that every command buffer — and the buffers it held — stayed alive: a few
+`gpu-z` runs pinned ≈600 MB of GPU memory.
 
 ### OSC wire-protocol markers
 
