@@ -44,6 +44,7 @@
 
 #import <Metal/Metal.h>
 #import <Foundation/Foundation.h>
+#include <unistd.h>
 /* IOSurface umbrella header differs by platform: macOS ships
  * <IOSurface/IOSurface.h>; iOS only exposes <IOSurface/IOSurfaceRef.h>. */
 #if __has_include(<IOSurface/IOSurface.h>)
@@ -385,6 +386,165 @@ cm_surface_t *cm_image_surface_create_for_data(unsigned char *data,
 }
 
 /*
+ * cm_image_surface_create_direct -- the caller's buffer is the surface.
+ *
+ * pycairo's create_for_data draws into the caller's memory; manim hands its
+ * frame (pixel_array) over this way and reads it back after every frame.  The
+ * old path drew into a separate transparent IOSurface layer and, on flush,
+ * blended that layer over the buffer on the CPU, pixel by pixel: ~2 ms a frame
+ * at 1080p and 4-9 ms at 4K, an extra full-frame IOSurface per surface, and a
+ * flush with nothing new drawn blended the previous layer in a second time.
+ *
+ * Here the colour texture is a linear texture over an MTLBuffer:
+ *   - zero-copy when `data` is page-aligned and `stride` meets the device's
+ *     linear-texture alignment (every manim frame of 1080p and up: large
+ *     allocations are page-aligned) -- frames LOAD the caller's pixels and the
+ *     MSAA resolve writes the result straight back into them;
+ *   - otherwise a staging buffer of the same size, copied in when a frame
+ *     begins and out when it completes.
+ * Frames always load (cm_frame_begin), so operators other than OVER see the
+ * real destination, as in cairo, and nothing is blended twice.
+ */
+cm_surface_t *cm_image_surface_create_direct(unsigned char *data, size_t len,
+                                             int width, int height, int stride)
+{
+    if (!data || width <= 0 || height <= 0) {
+        g_last_status = CM_STATUS_INVALID_FORMAT;
+        return NULL;
+    }
+    int min_stride = cm_format_stride_for_width(CM_FORMAT_ARGB32, width);
+    if (stride <= 0) stride = min_stride;
+    if (stride < min_stride || len < (size_t)stride * (size_t)height) {
+        g_last_status = CM_STATUS_INVALID_FORMAT;
+        return NULL;
+    }
+
+    cm_status_t dst = CM_STATUS_SUCCESS;
+    cm_device *dev = cm_shared_device(&dst);
+    if (!dev) { g_last_status = dst; return NULL; }
+
+    cm_surface_t *s = (cm_surface_t *)calloc(1, sizeof(*s));
+    if (!s) { g_last_status = CM_STATUS_NO_MEMORY; return NULL; }
+    s->dev        = dev;
+    s->kind       = CM_SURFACE_TYPE_IMAGE;
+    s->format     = CM_FORMAT_ARGB32;
+    s->width      = width;
+    s->height     = height;
+    s->stride     = (size_t)min_stride;
+    s->status     = CM_STATUS_SUCCESS;
+    s->refcount   = 1;
+    s->ext_data   = data;
+    s->ext_stride = (size_t)stride;
+    s->ext_len    = len;
+    s->direct     = true;
+    s->has_content = true;              /* the caller's pixels are the start   */
+
+    @autoreleasepool {
+        id<MTLDevice> mtl = cm_device_mtl_id(dev);
+        NSUInteger align = [mtl minimumLinearTextureAlignmentForPixelFormat:MTLPixelFormatBGRA8Unorm];
+        if (align == 0) align = 16;
+        size_t page = (size_t)getpagesize();
+        id<MTLBuffer> buf = nil;
+        size_t tex_stride = 0;
+
+        if (((uintptr_t)data % page) == 0 && ((size_t)stride % align) == 0) {
+            /* Whole pages: a large allocation (and only those are page-aligned)
+             * owns the pages it starts in, so rounding the length up stays
+             * inside it. */
+            size_t span = ((size_t)stride * (size_t)height + page - 1) / page * page;
+            buf = [mtl newBufferWithBytesNoCopy:data length:span
+                                        options:MTLResourceStorageModeShared
+                                    deallocator:nil];
+            if (buf) { tex_stride = (size_t)stride; s->ext_zero_copy = true; }
+        }
+        if (!buf) {
+            tex_stride = ((size_t)min_stride + align - 1) / align * align;
+            buf = [mtl newBufferWithLength:tex_stride * (size_t)height
+                                   options:MTLResourceStorageModeShared];
+            s->ext_zero_copy = false;
+        }
+        if (!buf) { g_last_status = CM_STATUS_NO_MEMORY; cm_surface_destroy(s); return NULL; }
+        s->ext_mtlbuf = (__bridge_retained void *)buf;
+        s->tex_stride = tex_stride;
+
+        MTLTextureDescriptor *cd =
+            [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatBGRA8Unorm
+                                                               width:width
+                                                              height:height
+                                                           mipmapped:NO];
+        cd.usage       = MTLTextureUsageRenderTarget | MTLTextureUsageShaderRead;
+        cd.storageMode = MTLStorageModeShared;
+        id<MTLTexture> color = [buf newTextureWithDescriptor:cd offset:0 bytesPerRow:tex_stride];
+        id<MTLTexture> rd    = [buf newTextureWithDescriptor:cd offset:0 bytesPerRow:tex_stride];
+        if (!color || !rd) { g_last_status = CM_STATUS_NO_MEMORY; cm_surface_destroy(s); return NULL; }
+        s->color_tex      = (__bridge_retained void *)color;
+        s->color_read_tex = (__bridge_retained void *)rd;
+        if (!cm_surface_alloc_msaa(s, mtl)) {
+            g_last_status = CM_STATUS_NO_MEMORY;
+            cm_surface_destroy(s);
+            return NULL;
+        }
+    }
+    g_last_status = CM_STATUS_SUCCESS;
+    return s;
+}
+
+/* Staging copies for a direct surface that is not zero-copy (see above). */
+void cm_surface_direct_copy_in(cm_surface_t *s)
+{
+    if (!s || !s->direct || s->ext_zero_copy || !s->ext_mtlbuf || !s->ext_data) return;
+    id<MTLBuffer> buf = (__bridge id<MTLBuffer>)s->ext_mtlbuf;
+    uint8_t *dst = (uint8_t *)buf.contents;
+    const uint8_t *src = (const uint8_t *)s->ext_data;
+    size_t row = (size_t)s->width * 4u;
+    for (int y = 0; y < s->height; ++y)
+        memcpy(dst + (size_t)y * s->tex_stride, src + (size_t)y * s->ext_stride, row);
+}
+
+void cm_surface_direct_copy_out(cm_surface_t *s)
+{
+    if (!s || !s->direct || s->ext_zero_copy || !s->ext_mtlbuf || !s->ext_data) return;
+    id<MTLBuffer> buf = (__bridge id<MTLBuffer>)s->ext_mtlbuf;
+    const uint8_t *src = (const uint8_t *)buf.contents;
+    uint8_t *dst = (uint8_t *)s->ext_data;
+    size_t row = (size_t)s->width * 4u;
+    for (int y = 0; y < s->height; ++y)
+        memcpy(dst + (size_t)y * s->ext_stride, src + (size_t)y * s->tex_stride, row);
+}
+
+/* A second texture object over the colour storage, built on first use: the
+ * frame's load pass samples it while the colour texture is the resolve
+ * target.  Each tile reads only its own pixels before its own resolve-store,
+ * so the two never race; separate objects keep the encoder's bookkeeping
+ * from seeing one texture bound both ways. */
+void *cm_surface_color_read_texture(cm_surface_t *s)
+{
+    if (!s || !s->color_tex) return NULL;
+    if (s->color_read_tex) return s->color_read_tex;
+    @autoreleasepool {
+        id<MTLTexture> color = (__bridge id<MTLTexture>)s->color_tex;
+        id<MTLTexture> rd = nil;
+        if (s->iosurface) {
+            MTLTextureDescriptor *cd =
+                [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:color.pixelFormat
+                                                                   width:color.width
+                                                                  height:color.height
+                                                               mipmapped:NO];
+            cd.usage       = MTLTextureUsageShaderRead;
+            cd.storageMode = MTLStorageModeShared;
+            rd = [color.device newTextureWithDescriptor:cd
+                                              iosurface:(IOSurfaceRef)s->iosurface
+                                                  plane:0];
+        } else {
+            rd = [color newTextureViewWithPixelFormat:color.pixelFormat];
+        }
+        if (!rd) return NULL;
+        s->color_read_tex = (__bridge_retained void *)rd;
+    }
+    return s->color_read_tex;
+}
+
+/*
  * cm_offscreen_surface_create -- INTERNAL non-IOSurface MSAA+resolve target for
  * push_group (consumed by cm_group.m).  Unlike a normal image surface, the
  * resolve destination is a PRIVATE MTLTexture (no IOSurface): the group result
@@ -456,6 +616,14 @@ void cm_surface_destroy(cm_surface_t *s)
      * textures before we release them: end + wait on any active draw frame. */
     cm_glue_end_frame_for_surface(s, /*wait=*/true);
     @autoreleasepool {
+        /* The last frame must have finished with the storage -- for a direct
+         * surface that storage is the caller's buffer, freed after we return. */
+        if (s->last_cmd) {
+            [(__bridge id<MTLCommandBuffer>)s->last_cmd waitUntilCompleted];
+            CFRelease(s->last_cmd); s->last_cmd = NULL;
+        }
+        if (s->color_read_tex) { CFRelease(s->color_read_tex); s->color_read_tex = NULL; }
+        if (s->ext_mtlbuf)     { CFRelease(s->ext_mtlbuf);     s->ext_mtlbuf = NULL; }
         /* Balance the __bridge_retained on each texture. */
         if (s->color_tex)      { CFRelease(s->color_tex);      s->color_tex = NULL; }
         if (s->msaa_color_tex) { CFRelease(s->msaa_color_tex); s->msaa_color_tex = NULL; }
@@ -531,11 +699,13 @@ void cm_surface_finish(cm_surface_t *s)
 
 void cm_surface_mark_dirty(cm_surface_t *s)
 {
+    if (s) s->has_content = true;
     (void)s;   /* coherence no-op on shared storage */
 }
 
 void cm_surface_mark_dirty_rectangle(cm_surface_t *s, int x, int y, int w, int h)
 {
+    if (s) s->has_content = true;
     (void)s; (void)x; (void)y; (void)w; (void)h;   /* coherence no-op */
 }
 
@@ -594,11 +764,19 @@ void *cm_surface_map_argb32(cm_surface_t *s, size_t *out_stride)
      * generic map (which follows mapped_parent + applies the sub-rect offset). */
     if (s && s->mapped_parent)
         return cm_surface_map(s, out_stride);
+    if (s && s->direct) {
+        /* The caller's buffer holds the pixels once the frame is flushed. */
+        cm_surface_flush(s);
+        s->has_content = true;
+        if (out_stride) *out_stride = s->ext_stride;
+        return s->ext_data;
+    }
     if (!s || !s->iosurface) {
         if (out_stride) *out_stride = 0;
         return NULL;
     }
     IOSurfaceRef io = (IOSurfaceRef)s->iosurface;
+    s->has_content = true;              /* the caller may write through it     */
 
     /* Make the latest GPU output coherent for CPU reads: end + wait on any
      * active draw frame (resolves MSAA into this IOSurface).  No-op if idle. */

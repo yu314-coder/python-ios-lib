@@ -149,8 +149,10 @@ static bool cm_emit_poly(cm_path *dst, const cm_dvec2 *poly, uint32_t n)
 
     uint32_t first = dst->pts_count;
     for (uint32_t i = 0; i < n; ++i) {
-        dst->pts[first + i].x = (float)poly[i].x;
-        dst->pts[first + i].y = (float)poly[i].y;
+        /* On cairo's 24.8 grid: its stroker builds every outline point in
+         * fixed point (the path point plus a rounded offset). */
+        dst->pts[first + i].x = (float)(nearbyint(poly[i].x * 256.0) / 256.0);
+        dst->pts[first + i].y = (float)(nearbyint(poly[i].y * 256.0) / 256.0);
     }
     dst->pts_count += n;
 
@@ -408,27 +410,55 @@ static bool cm_emit_dot(cm_path *dst, cm_dvec2 p, double hw, cm_line_cap_t cap,
  * closing segment is added separately).  Writes into the caller-provided
  * scratch array `out` (capacity >= contour point_count) and returns the count.
  */
+static cm_dvec2 cm_unit_or_zero(double x, double y)
+{
+    double L = sqrt(x * x + y * y);
+    return (L > 0.0) ? dv(x / L, y / L) : dv(0.0, 0.0);
+}
+
 static uint32_t cm_dedup_contour(const cm_path *src, const cm_contour *c,
-                                 cm_dvec2 *out)
+                                 cm_dvec2 *out, cm_dvec2 *tin, cm_dvec2 *tout)
 {
     const cm_vec2f *sp = src->pts + c->first_point;
+    /* The flattener's tangents, when they are in step with the points. */
+    const float *tp = (src->ptan && src->tan_count == src->pts_count)
+                    ? src->ptan + 4 * (size_t)c->first_point : NULL;
     uint32_t in = c->point_count;
     if (in == 0) return 0;
 
     uint32_t m = 0;
-    out[m++] = dv(sp[0].x, sp[0].y);
+    out[m] = dv(sp[0].x, sp[0].y);
+    tin[m]  = tp ? cm_unit_or_zero(tp[0], tp[1]) : dv(0.0, 0.0);
+    tout[m] = tp ? cm_unit_or_zero(tp[2], tp[3]) : dv(0.0, 0.0);
+    m++;
     const double eps2 = 1e-12;                  /* squared coincidence epsilon */
     for (uint32_t i = 1; i < in; ++i) {
         cm_dvec2 p = dv(sp[i].x, sp[i].y);
+        cm_dvec2 ti = tp ? cm_unit_or_zero(tp[4 * i], tp[4 * i + 1]) : dv(0.0, 0.0);
+        cm_dvec2 to = tp ? cm_unit_or_zero(tp[4 * i + 2], tp[4 * i + 3]) : dv(0.0, 0.0);
         cm_dvec2 d = dv_sub(p, out[m - 1]);
-        if (dv_dot(d, d) > eps2) out[m++] = p;
+        if (dv_dot(d, d) > eps2) {
+            out[m] = p; tin[m] = ti; tout[m] = to; m++;
+        } else if (to.x != 0.0 || to.y != 0.0) {
+            tout[m - 1] = to;                   /* the repeat's way out wins  */
+        }
     }
     /* For closed contours, a trailing point equal to the first is redundant. */
     if (c->closed && m > 1) {
         cm_dvec2 d = dv_sub(out[m - 1], out[0]);
-        if (dv_dot(d, d) <= eps2) m--;
+        if (dv_dot(d, d) <= eps2) {
+            if (tin[m - 1].x != 0.0 || tin[m - 1].y != 0.0) tin[0] = tin[m - 1];
+            m--;
+        }
     }
     return m;
+}
+
+/* A stroke face's offset, as cairo's compute_face makes it: half the width
+ * along the left normal, rounded to 24.8, the same both sides. */
+static cm_dvec2 cm_face_offset(cm_dvec2 dir, double hw)
+{
+    return dv(nearbyint(-dir.y * hw * 256.0) / 256.0, nearbyint(dir.x * hw * 256.0) / 256.0);
 }
 
 static cm_status_t cm_stroke_contour(const cm_path *src, const cm_contour *c,
@@ -438,16 +468,19 @@ static cm_status_t cm_stroke_contour(const cm_path *src, const cm_contour *c,
 {
     if (c->point_count == 0) return CM_STATUS_SUCCESS;
 
-    /* Dedup into a scratch buffer; small-on-stack with heap fallback. */
-    cm_dvec2  stackpts[256];
+    /* Dedup into scratch buffers (points + their tangents); small-on-stack
+     * with heap fallback. */
+    cm_dvec2  stackpts[3 * 256];
     cm_dvec2 *p = stackpts;
     cm_dvec2 *heap = NULL;
-    if (c->point_count > (uint32_t)(sizeof(stackpts) / sizeof(stackpts[0]))) {
-        heap = (cm_dvec2 *)malloc((size_t)c->point_count * sizeof(cm_dvec2));
+    if (c->point_count > 256u) {
+        heap = (cm_dvec2 *)malloc((size_t)c->point_count * 3 * sizeof(cm_dvec2));
         if (!heap) return CM_STATUS_NO_MEMORY;
         p = heap;
     }
-    uint32_t n = cm_dedup_contour(src, c, p);
+    cm_dvec2 *tin  = p + (heap ? c->point_count : 256u);
+    cm_dvec2 *tout = tin + (heap ? c->point_count : 256u);
+    uint32_t n = cm_dedup_contour(src, c, p, tin, tout);
 
     cm_status_t st = CM_STATUS_SUCCESS;
 
@@ -465,20 +498,124 @@ static cm_status_t cm_stroke_contour(const cm_path *src, const cm_contour *c,
     /* Number of straight segments. */
     uint32_t seg_count = closed ? n : (n - 1);
 
-    /* --- segment quads --------------------------------------------------- */
+    /* The direction each segment leaves its start with and arrives at its end
+     * with: the chord, except where the flattener knows the curve's tangent.
+     * cairo strokes a curve's points along those tangents and puts no join
+     * between them; a segment piece offset along its two end tangents meets
+     * its neighbour's exactly, and the join at such a point (between equal
+     * directions) is empty -- so curves come out as cairo's do instead of
+     * polyline + a join at every flattened vertex. */
+#define SEG_START(i) (((tout[i].x != 0.0 || tout[i].y != 0.0) && \
+                       dv_dot(tout[i], chord[i]) > 0.0) ? tout[i] : chord[i])
+#define SEG_END(i)   (((tin[(i + 1) % n].x != 0.0 || tin[(i + 1) % n].y != 0.0) && \
+                       dv_dot(tin[(i + 1) % n], chord[i]) > 0.0) ? tin[(i + 1) % n] : chord[i])
+    cm_dvec2  chord_stack[256];
+    cm_dvec2 *chord = chord_stack, *chord_heap = NULL;
+    if (seg_count > 256u) {
+        chord_heap = (cm_dvec2 *)malloc((size_t)seg_count * sizeof(cm_dvec2));
+        if (!chord_heap) { st = CM_STATUS_NO_MEMORY; goto done; }
+        chord = chord_heap;
+    }
     for (uint32_t i = 0; i < seg_count; ++i) {
-        cm_dvec2 a = p[i];
-        cm_dvec2 b = p[(i + 1) % n];           /* wrap for the closing segment */
-        cm_dvec2 e = dv_sub(b, a);
+        cm_dvec2 e = dv_sub(p[(i + 1) % n], p[i]);
         double L = dv_len(e);
-        if (L < 1e-9) continue;                /* already deduped, be safe     */
-        cm_dvec2 dir = dv_scale(e, 1.0 / L);
-        cm_dvec2 nrm = dv(-dir.y, dir.x);      /* left normal                  */
-        cm_dvec2 off = dv_scale(nrm, hw);
-        cm_dvec2 a0 = dv_add(a, off), a1 = dv_sub(a, off);
-        cm_dvec2 b0 = dv_add(b, off), b1 = dv_sub(b, off);
-        /* Quad ordered around the rectangle (a0,b0,b1,a1). */
-        if (!cm_emit_quad(dst, a0, b0, b1, a1)) { st = CM_STATUS_NO_MEMORY; goto done; }
+        chord[i] = (L < 1e-9) ? dv(0.0, 0.0) : dv_scale(e, 1.0 / L);
+    }
+
+    /* --- segment pieces -------------------------------------------------- */
+    /* Consecutive segments that meet at a curve point (same direction both
+     * ways, so no join) form one RUN, emitted as one polygon -- the +offset
+     * side out, the -offset side back -- as cairo's stroker builds its outline.
+     * One piece per segment put dozens of overlapping edges in every pixel row
+     * of a curve (the analytic cover walks them all); a run has two.  A segment
+     * whose tapered piece would fold over (a curve tighter than the half
+     * width) stands alone as a rectangle, closed onto its tangent faces with
+     * round wedges. */
+    {
+        bool *smooth = (bool *)calloc((size_t)n + 1, sizeof(bool));
+        bool *fold   = (bool *)calloc((size_t)seg_count + 1, sizeof(bool));
+        cm_dvec2 *poly = (cm_dvec2 *)malloc(((size_t)seg_count + 1) * 2 * sizeof(cm_dvec2));
+        if (!smooth || !fold || !poly) {
+            free(smooth); free(fold); free(poly);
+            st = CM_STATUS_NO_MEMORY; goto done;
+        }
+        for (uint32_t i = 0; i < seg_count; ++i) {
+            if (chord[i].x == 0.0 && chord[i].y == 0.0) { fold[i] = true; continue; }
+            cm_dvec2 oa = cm_face_offset(SEG_START(i), hw), ob = cm_face_offset(SEG_END(i), hw);
+            cm_dvec2 a = p[i], b = p[(i + 1) % n];
+            fold[i] = dv_dot(dv_sub(dv_add(b, ob), dv_add(a, oa)), chord[i]) <= 0.0 ||
+                      dv_dot(dv_sub(dv_sub(b, ob), dv_sub(a, oa)), chord[i]) <= 0.0;
+        }
+        /* Vertex k is smooth when segment k-1 arrives along the direction
+         * segment k leaves along (both unfolded). */
+        for (uint32_t k = 0; k < n; ++k) {
+            if (!closed && (k == 0 || k == n - 1)) continue;
+            uint32_t kp = (k == 0) ? seg_count - 1 : k - 1;
+            if (k >= seg_count && !closed) continue;
+            if (fold[kp] || fold[k % seg_count]) continue;
+            cm_dvec2 d0 = SEG_END(kp), d1 = SEG_START(k % seg_count);
+            smooth[k] = fabs(dv_cross(d0, d1)) < 1e-12 && dv_dot(d0, d1) > 0.0;
+        }
+
+        /* Where to start walking: a closed contour from a non-smooth vertex, so
+         * no run wraps across the start; a closed contour smooth all round is
+         * one cyclic run (two loops). */
+        uint32_t s0 = 0;
+        bool all_smooth = closed;
+        if (closed) {
+            all_smooth = true;
+            for (uint32_t k = 0; k < n; ++k) if (!smooth[k]) { s0 = k; all_smooth = false; break; }
+        }
+        if (all_smooth) {
+            uint32_t m = 0;
+            for (uint32_t i = 0; i < seg_count; ++i)
+                poly[m++] = dv_add(p[i], cm_face_offset(SEG_START(i), hw));
+            if (!cm_emit_poly(dst, poly, m)) { st = CM_STATUS_NO_MEMORY; }
+            m = 0;
+            for (uint32_t i = seg_count; i-- > 0;)
+                poly[m++] = dv_sub(p[i], cm_face_offset(SEG_START(i), hw));
+            if (st == CM_STATUS_SUCCESS && !cm_emit_poly(dst, poly, m)) st = CM_STATUS_NO_MEMORY;
+        } else {
+            uint32_t done_segs = 0, i = s0;
+            while (done_segs < seg_count && st == CM_STATUS_SUCCESS) {
+                if (fold[i]) {
+                    if (chord[i].x != 0.0 || chord[i].y != 0.0) {
+                        cm_dvec2 a = p[i], b = p[(i + 1) % n];
+                        cm_dvec2 oc = cm_face_offset(chord[i], hw);
+                        if (!cm_emit_join(dst, a, SEG_START(i), chord[i], hw, CM_LINE_JOIN_ROUND, miter_limit, tolerance) ||
+                            !cm_emit_join(dst, b, chord[i], SEG_END(i), hw, CM_LINE_JOIN_ROUND, miter_limit, tolerance) ||
+                            !cm_emit_quad(dst, dv_add(a, oc), dv_add(b, oc), dv_sub(b, oc), dv_sub(a, oc)))
+                            st = CM_STATUS_NO_MEMORY;
+                    }
+                    i = (i + 1) % seg_count; done_segs++;
+                    continue;
+                }
+                /* A run: segments i, i+1, ... while the vertex after each is smooth. */
+                uint32_t first = i, count = 0;
+                for (;;) {
+                    count++; done_segs++;
+                    uint32_t v = (i + 1) % n;              /* vertex after segment i */
+                    uint32_t nx = (i + 1) % seg_count;
+                    if (done_segs >= seg_count || !smooth[v] || fold[nx] || (!closed && v == n - 1)) break;
+                    i = nx;
+                }
+                uint32_t m = 0;
+                for (uint32_t k = 0; k <= count; ++k) {
+                    uint32_t sg = (first + (k < count ? k : count - 1)) % seg_count;
+                    cm_dvec2 d = (k < count) ? SEG_START(sg) : SEG_END(sg);
+                    poly[m++] = dv_add(p[(first + k) % n], cm_face_offset(d, hw));
+                }
+                for (uint32_t k = count + 1; k-- > 0;) {
+                    uint32_t sg = (first + (k < count ? k : count - 1)) % seg_count;
+                    cm_dvec2 d = (k < count) ? SEG_START(sg) : SEG_END(sg);
+                    poly[m++] = dv_sub(p[(first + k) % n], cm_face_offset(d, hw));
+                }
+                if (!cm_emit_poly(dst, poly, m)) st = CM_STATUS_NO_MEMORY;
+                i = (i + 1) % seg_count;
+            }
+        }
+        free(smooth); free(fold); free(poly);
+        if (st != CM_STATUS_SUCCESS) goto done;
     }
 
     /* --- joins ----------------------------------------------------------- */
@@ -494,12 +631,14 @@ static cm_status_t cm_stroke_contour(const cm_path *src, const cm_contour *c,
             uint32_t kp = (k == 0) ? (n - 1) : (k - 1);   /* previous vertex   */
             uint32_t kn = (k + 1) % n;                     /* next vertex      */
 
-            cm_dvec2 ein = dv_sub(p[k],  p[kp]);
-            cm_dvec2 eout = dv_sub(p[kn], p[k]);
-            double Li = dv_len(ein), Lo = dv_len(eout);
-            if (Li < 1e-9 || Lo < 1e-9) continue;
-            cm_dvec2 d0 = dv_scale(ein,  1.0 / Li);
-            cm_dvec2 d1 = dv_scale(eout, 1.0 / Lo);
+            (void)kn;
+            /* Segment kp arrives at p[k]; segment k leaves it. */
+            if ((chord[kp].x == 0.0 && chord[kp].y == 0.0) ||
+                (chord[k].x == 0.0 && chord[k].y == 0.0)) continue;
+            cm_dvec2 d0 = SEG_END(kp);
+            cm_dvec2 d1 = SEG_START(k);
+            /* A curve point (same tangent both ways) needs no join. */
+            if (fabs(dv_cross(d0, d1)) < 1e-12 && dv_dot(d0, d1) > 0.0) continue;
             if (!cm_emit_join(dst, p[k], d0, d1, hw, join, miter_limit, tolerance)) {
                 st = CM_STATUS_NO_MEMORY; goto done;
             }
@@ -508,27 +647,27 @@ static cm_status_t cm_stroke_contour(const cm_path *src, const cm_contour *c,
 
     /* --- caps (open contours only) --------------------------------------- */
     if (!closed) {
-        /* Start cap: outward direction points back from p[0] (i.e. -first seg). */
-        cm_dvec2 e0 = dv_sub(p[1], p[0]);
-        double L0 = dv_len(e0);
-        if (L0 >= 1e-9) {
-            cm_dvec2 out_start = dv_scale(e0, -1.0 / L0);
+        /* Start cap: outward direction points back from p[0]; end cap: the last
+         * segment's arriving direction (tangents where the path has them). */
+        if (chord[0].x != 0.0 || chord[0].y != 0.0) {
+            cm_dvec2 out_start = dv_scale(SEG_START(0), -1.0);
             if (!cm_emit_cap(dst, p[0], out_start, hw, cap, tolerance)) {
                 st = CM_STATUS_NO_MEMORY; goto done;
             }
         }
-        /* End cap: outward direction is the last segment's forward direction. */
-        cm_dvec2 e1 = dv_sub(p[n - 1], p[n - 2]);
-        double L1 = dv_len(e1);
-        if (L1 >= 1e-9) {
-            cm_dvec2 out_end = dv_scale(e1, 1.0 / L1);
+        uint32_t last = seg_count - 1;
+        if (chord[last].x != 0.0 || chord[last].y != 0.0) {
+            cm_dvec2 out_end = SEG_END(last);
             if (!cm_emit_cap(dst, p[n - 1], out_end, hw, cap, tolerance)) {
                 st = CM_STATUS_NO_MEMORY; goto done;
             }
         }
     }
+#undef SEG_START
+#undef SEG_END
 
 done:
+    free(chord_heap);
     free(heap);
     return st;
 }
@@ -741,15 +880,16 @@ static bool cm_dash_contour(const cm_path *src, const cm_contour *c,
 
     /* Dedup into a scratch buffer (zero-length segments carry no direction and
      * would emit empty steps), mirroring cm_stroke_contour. */
-    cm_dvec2  stackpts[256];
+    cm_dvec2  stackpts[3 * 256];
     cm_dvec2 *p = stackpts;
     cm_dvec2 *heap = NULL;
-    if (c->point_count > (uint32_t)(sizeof(stackpts) / sizeof(stackpts[0]))) {
-        heap = (cm_dvec2 *)malloc((size_t)c->point_count * sizeof(cm_dvec2));
+    if (c->point_count > 256u) {
+        heap = (cm_dvec2 *)malloc((size_t)c->point_count * 3 * sizeof(cm_dvec2));
         if (!heap) return false;
         p = heap;
     }
-    uint32_t n = cm_dedup_contour(src, c, p);
+    uint32_t cap = heap ? c->point_count : 256u;
+    uint32_t n = cm_dedup_contour(src, c, p, p + cap, p + 2 * cap);
 
     bool ok = true;
     if (n >= 2) {

@@ -134,6 +134,351 @@ static inline bool cm_fill_target_is_a8(const cm_context_t *ctx) {
 }
 
 // ===========================================================================
+// Analytic coverage (cairo's area antialiasing, for the common draws)
+// ===========================================================================
+//
+// The stencil-then-cover path antialiases with the frame's 4x MSAA: an edge
+// pixel can only be 0, 1/4, 1/2, 3/4 or 1 covered, up to ~60 levels away from
+// what cairo's image backend gives it (cairo measures the covered AREA).  For
+// the draws manim makes -- OVER, unclipped, default antialias, solid or
+// gradient paint, an ARGB32/RGB24 target -- this path measures the coverage
+// instead: the path's edges, binned by pixel row, go to the cm_fs_acov_* cover
+// fragments (shaders/fill.metal).  Anything else, or a pathological path
+// (more than CM_ACOV_MAX_ROW edges crossing one pixel row), keeps the stencil
+// path.  Which antialias settings take it: cm_fill_analytic_wanted.
+
+typedef struct {             // mirrors cm_acov_params in fill.metal (192 bytes)
+    int32_t row0, nrows, evenodd, nstops;
+    float   solid[4];        // premultiplied as cairo rounds it, /255
+    float   stop_x[8];
+    float   stop_c[8][4];
+} cm_acov_params;
+_Static_assert(sizeof(cm_acov_params) == 192, "cm_acov_params layout");
+
+/* cairo's colour -> pixman: a double channel becomes a 16-bit short,
+ * d * 65535 + 0.5 truncated (_cairo_color_double_to_short). */
+static inline uint32_t cm_acov_short(double d)
+{
+    if (d <= 0.0) return 0;
+    if (d >= 1.0) return 65535;
+    return (uint32_t)(d * 65535.0 + 0.5);
+}
+
+/* The solid source as pixman composites it: premultiplied shorts, then the
+ * top byte of each (a solid pixman image is a8r8g8b8). */
+static void cm_acov_solid(const cm_rgba *c, float out[4])
+{
+    double a = c->a;
+    out[0] = (float)(cm_acov_short(c->r * a) >> 8) / 255.0f;
+    out[1] = (float)(cm_acov_short(c->g * a) >> 8) / 255.0f;
+    out[2] = (float)(cm_acov_short(c->b * a) >> 8) / 255.0f;
+    out[3] = (float)(cm_acov_short(a) >> 8) / 255.0f;
+}
+
+/* A linear gradient's stops as pixman gets them: sorted (stable), offsets
+ * clamped to [0,1], colours as unpremultiplied shorts.  0 stops (more than
+ * the shader takes) leaves the gradient on the LUT. */
+static int cm_acov_stops(const cm_pattern_t *pat, cm_acov_params *P)
+{
+    uint32_t n = pat->stop_count;
+    if (n == 0 || n > 8) return 0;
+    cm_grad_stop st[8];
+    for (uint32_t i = 0; i < n; ++i) {
+        st[i] = pat->stops[i];
+        if (st[i].offset < 0.0) st[i].offset = 0.0;
+        if (st[i].offset > 1.0) st[i].offset = 1.0;
+    }
+    for (uint32_t i = 1; i < n; ++i) {
+        cm_grad_stop k = st[i];
+        int32_t j = (int32_t)i - 1;
+        while (j >= 0 && st[j].offset > k.offset) { st[j + 1] = st[j]; --j; }
+        st[j + 1] = k;
+    }
+    for (uint32_t i = 0; i < n; ++i) {
+        P->stop_x[i] = (float)st[i].offset;
+        P->stop_c[i][0] = cm_acov_short(st[i].color.r) / 65535.0f;
+        P->stop_c[i][1] = cm_acov_short(st[i].color.g) / 65535.0f;
+        P->stop_c[i][2] = cm_acov_short(st[i].color.b) / 65535.0f;
+        P->stop_c[i][3] = cm_acov_short(st[i].color.a) / 65535.0f;
+    }
+    return (int)n;
+}
+
+#define CM_ACOV_MAX_ROW 256
+
+/* Which draws measure their coverage.  It costs GPU time: on manim scenes a
+ * frame's GPU work grows ~4-7 ms at 1080p, which leaves a render about as
+ * fast as software cairo, where the stencil path is 1.5-4x faster.  So it is
+ * what cairo's antialias setting asks for: GOOD and BEST measure, DEFAULT and
+ * FAST take the 4x MSAA stencil path.  CM_ANALYTIC_AA=1 in the environment
+ * measures every draw (an app that wants cairo's pixels everywhere), =0 none.
+ *   g_cm_analytic: -1 unread, 0 none, 1 GOOD/BEST only, 2 every draw. */
+static int g_cm_analytic = -1;
+
+static int cm_fill_analytic_mode(void)
+{
+    if (g_cm_analytic < 0) {
+        const char *e = getenv("CM_ANALYTIC_AA");
+        g_cm_analytic = (e && e[0] == '0') ? 0 : (e && e[0] == '1') ? 2 : 1;
+    }
+    return g_cm_analytic;
+}
+
+static bool cm_fill_analytic_wanted(cm_antialias_t aa)
+{
+    int mode = cm_fill_analytic_mode();
+    if (mode == 2) return aa != CM_ANTIALIAS_NONE;
+    if (mode == 1) return aa == CM_ANTIALIAS_GOOD || aa == CM_ANTIALIAS_BEST;
+    return false;
+}
+
+/* Diagnostics (cairo_metal._set_analytic_aa): 0 none, 1 GOOD/BEST, 2 every
+ * draw -- so a benchmark can alternate the paths in one process. */
+void cm_debug_set_analytic_aa(int mode) { g_cm_analytic = mode < 0 ? 0 : mode > 2 ? 2 : mode; }
+
+/** Encode `path` with analytic coverage.  Returns false, having encoded
+ *  nothing, when the draw is not one this path takes (the caller then runs
+ *  the stencil path); true when it was handled (drawn, or nothing visible).
+ *
+ *  Three draws: the usual stencil fans (winding per sample); the EDGE SPANS
+ *  -- in each pixel row, the runs of pixels some edge passes through --
+ *  measured by cm_fs_acov_* and zeroing the stencil under them; then the
+ *  usual stencil-tested cover quad, at full coverage, for the pixels left
+ *  (wholly inside: no edge passes through them, so every sample agrees).  Only
+ *  edge pixels pay for the measurement; measuring every pixel of the path made
+ *  a frame's GPU time 2-4x the stencil path's. */
+static bool cm_fill_encode_analytic(cm_context_t *ctx, cm_frame *frame,
+                                    const cm_path *path, cm_fill_rule_t rule,
+                                    cm_device *dev, id<MTLRenderCommandEncoder> enc,
+                                    cm_status_t *out_status)
+{
+    *out_status = CM_STATUS_SUCCESS;
+    if (!cm_fill_analytic_wanted(ctx->antialias)) return false;
+    if (cm_frame_is_single_sample(frame)) return false;
+    if (ctx->op != CM_OPERATOR_OVER || ctx->clip != NULL) return false;
+    if (!ctx->surface) return false;
+    // Plain image surfaces only: a subsurface draws into its parent's backing
+    // through a scissored window, and a device offset shifts the pixels -- the
+    // stencil path keeps those.
+    if (ctx->surface->kind != CM_SURFACE_TYPE_IMAGE ||
+        ctx->surface->dev_off_x != 0.0 || ctx->surface->dev_off_y != 0.0) return false;
+    cm_format_t fmt = ctx->surface->format;
+    if (fmt != CM_FORMAT_ARGB32 && fmt != CM_FORMAT_RGB24) return false;
+    cm_paint_kind kind = ctx->source.kind;
+    if (kind != CM_PAINT_SOLID && kind != CM_PAINT_LINEAR && kind != CM_PAINT_RADIAL)
+        return false;
+    if (kind != CM_PAINT_SOLID && !ctx->source.pattern) return false;
+
+    id<MTLRenderPipelineState> ps_edge =
+        (__bridge id<MTLRenderPipelineState>)cm_device_acov_pipeline(dev, kind, false);
+    id<MTLRenderPipelineState> ps_full =
+        (__bridge id<MTLRenderPipelineState>)cm_device_acov_pipeline(dev, kind, true);
+    id<MTLRenderPipelineState> ps_stencil = (__bridge id<MTLRenderPipelineState>)
+        cm_device_pipeline(dev, rule == CM_FILL_RULE_EVEN_ODD ? CM_PIPE_STENCIL_EVENODD
+                                                               : CM_PIPE_STENCIL_NONZERO);
+    id<MTLDepthStencilState> ds_zero = (__bridge id<MTLDepthStencilState>)cm_device_dss_none(dev);
+    id<MTLDepthStencilState> ds_stencil = (__bridge id<MTLDepthStencilState>)
+        cm_device_depthstencil(dev, rule == CM_FILL_RULE_EVEN_ODD ? CM_DSS_STENCIL_WRITE_EVENODD
+                                                                   : CM_DSS_STENCIL_WRITE_NONZERO);
+    id<MTLDepthStencilState> ds_cover = (__bridge id<MTLDepthStencilState>)
+        cm_device_depthstencil(dev, rule == CM_FILL_RULE_EVEN_ODD ? CM_DSS_COVER_TEST_EVENODD
+                                                                   : CM_DSS_COVER_TEST_NONZERO);
+    if (!ps_edge || !ps_full || !ps_stencil || !ds_zero || !ds_stencil || !ds_cover) return false;
+
+    // ---- the visible rows / columns of the path's bounds -------------------
+    int W = ctx->surface->width, H = ctx->surface->height;
+    float minx, miny, maxx, maxy;
+    cm_path_bounds(path, &minx, &miny, &maxx, &maxy);
+    if (!(maxx > minx) || !(maxy > miny)) return true;          // no area
+    int row0 = (int)floorf(miny), row1 = (int)ceilf(maxy);
+    int col0 = (int)floorf(minx), col1 = (int)ceilf(maxx);
+    if (row0 < 0) row0 = 0;
+    if (col0 < 0) col0 = 0;
+    if (row1 > H) row1 = H;
+    if (col1 > W) col1 = W;
+    if (row1 <= row0 || col1 <= col0) return true;              // off-surface
+    if (col1 > 0xffff) return false;                            // span x packs in 16 bits
+    int nrows = row1 - row0;
+
+    uint32_t fan_vtx = cm_path_fan_vertex_count(path);
+    if (fan_vtx == 0) return true;
+
+    // ---- each row's edges, as packed float4s (fill.metal) ------------------
+    // A horizontal edge is listed in the row it lies in (unless it lies on a
+    // row boundary) so the pixels it crosses count as edge pixels; it never
+    // winds.
+    uint32_t *start = (uint32_t *)malloc((size_t)(nrows + 1) * sizeof(uint32_t));
+    if (!start) { *out_status = CM_STATUS_NO_MEMORY; return true; }
+    memset(start, 0, (size_t)(nrows + 1) * sizeof(uint32_t));
+    size_t total = 0;
+#define CM_ACOV_EACH_EDGE(...)                                                    \
+    for (uint32_t ci = 0; ci < path->contour_count; ++ci) {                       \
+        uint32_t n = path->contours[ci].point_count;                              \
+        if (n < 2) continue;                                                      \
+        const cm_vec2f *pt = path->pts + path->contours[ci].first_point;          \
+        for (uint32_t i = 0; i < n; ++i) {                                        \
+            cm_vec2f a = pt[i], b = pt[(i + 1) % n];   /* fills close contours */ \
+            if (a.x == b.x && a.y == b.y) continue;                               \
+            cm_vec2f t = a.y < b.y ? a : b, u = a.y < b.y ? b : a;                \
+            int ra, rb;                                                           \
+            if (a.y == b.y) {                                                     \
+                if (a.y == floorf(a.y)) continue;      /* on a row boundary */    \
+                ra = (int)floorf(a.y) - row0; rb = ra + 1;                        \
+            } else {                                                              \
+                ra = (int)floorf(t.y) - row0; rb = (int)ceilf(u.y) - row0;        \
+            }                                                                     \
+            if (ra < 0) ra = 0;                                                   \
+            if (rb > nrows) rb = nrows;                                           \
+            if (rb <= ra) continue;                                               \
+            __VA_ARGS__                                                           \
+        }                                                                         \
+    }
+    CM_ACOV_EACH_EDGE({ for (int r = ra; r < rb; ++r) start[r + 1]++; total += (size_t)(rb - ra); })
+    if (total == 0) { free(start); return true; }
+    for (int r = 0; r < nrows; ++r)
+        if (start[r + 1] > CM_ACOV_MAX_ROW) { free(start); return false; }  // stencil path
+    for (int r = 0; r < nrows; ++r) start[r + 1] += start[r];
+
+    void *edge_buf = NULL; uint32_t edge_off = 0;
+    float *edges = (float *)cm_frame_alloc_verts(frame, total * 4 * sizeof(float),
+                                                 &edge_buf, &edge_off);
+    // Each entry's pixel extent in its row, for the spans.
+    int32_t *ext = (int32_t *)malloc(total * 2 * sizeof(int32_t));
+    if (!edges || !ext) { free(start); free(ext); *out_status = CM_STATUS_NO_MEMORY; return true; }
+    // start[r] serves as row r's write cursor, then is shifted back.
+    CM_ACOV_EACH_EDGE({
+        bool flat = (a.y == b.y);
+        float lx = fminf(a.x, b.x);
+        float dxdy = flat ? fabsf(b.x - a.x) : (u.x - t.x) / (u.y - t.y);
+        for (int r = ra; r < rb; ++r) {
+            size_t k = start[r]++;
+            float *e = edges + 4 * k;
+            e[0] = flat ? lx : t.x; e[1] = a.y; e[2] = b.y; e[3] = dxdy;
+            float xa, xb;
+            if (flat) { xa = lx; xb = lx + dxdy; }
+            else {
+                float y0 = fmaxf(t.y, (float)(row0 + r)), y1 = fminf(u.y, (float)(row0 + r + 1));
+                xa = t.x + (y0 - t.y) * dxdy; xb = t.x + (y1 - t.y) * dxdy;
+            }
+            ext[2 * k]     = (int32_t)floorf(fminf(xa, xb));
+            ext[2 * k + 1] = (int32_t)ceilf(fmaxf(xa, xb));
+        }
+    })
+#undef CM_ACOV_EACH_EDGE
+    for (int r = nrows; r > 0; --r) start[r] = start[r - 1];
+    start[0] = 0;
+
+    // ---- edge spans: each row's edge extents, sorted and merged ------------
+    // Per row (first edge, count, first span, span count); spans packed x0 |
+    // x1 << 16.
+    void *rows_buf = NULL, *span_buf = NULL; uint32_t rows_off = 0, span_off = 0;
+    uint32_t *rows  = (uint32_t *)cm_frame_alloc_verts(frame, (size_t)nrows * 4 * sizeof(uint32_t),
+                                                       &rows_buf, &rows_off);
+    uint32_t *spans = (uint32_t *)cm_frame_alloc_verts(frame, total * sizeof(uint32_t),
+                                                       &span_buf, &span_off);
+    if (!rows || !spans) { free(start); free(ext); *out_status = CM_STATUS_NO_MEMORY; return true; }
+    uint32_t nspans = 0;
+    for (int r = 0; r < nrows; ++r) {
+        uint32_t b = start[r], e = start[r + 1];
+        rows[4 * r + 0] = b; rows[4 * r + 1] = e - b; rows[4 * r + 2] = nspans;
+        // insertion sort of the row's extents by their start
+        for (uint32_t i = b + 1; i < e; ++i) {
+            int32_t k0 = ext[2 * i], k1 = ext[2 * i + 1];
+            uint32_t j = i;
+            while (j > b && ext[2 * (j - 1)] > k0) {
+                ext[2 * j] = ext[2 * (j - 1)]; ext[2 * j + 1] = ext[2 * (j - 1) + 1]; --j;
+            }
+            ext[2 * j] = k0; ext[2 * j + 1] = k1;
+        }
+        int32_t cx0 = 0, cx1 = -1;
+        for (uint32_t i = b; i <= e; ++i) {
+            bool flush = (i == e) || (ext[2 * i] > cx1);
+            if (flush && cx1 > cx0) {
+                int32_t x0 = cx0 < col0 ? col0 : cx0, x1 = cx1 > col1 ? col1 : cx1;
+                if (x1 > x0) spans[nspans++] = (uint32_t)x0 | ((uint32_t)x1 << 16);
+            }
+            if (i == e) break;
+            if (flush) { cx0 = ext[2 * i]; cx1 = ext[2 * i + 1]; }
+            else if (ext[2 * i + 1] > cx1) cx1 = ext[2 * i + 1];
+        }
+        rows[4 * r + 3] = nspans - rows[4 * r + 2];
+    }
+    free(start); free(ext);
+
+    // ---- uniforms + paint ---------------------------------------------------
+    void *uni_buf = NULL; uint32_t uni_off = 0;
+    cm_uniforms *uf = (cm_uniforms *)cm_frame_alloc_uniforms(frame, sizeof(cm_uniforms),
+                                                             &uni_buf, &uni_off);
+    if (!uf) { *out_status = CM_STATUS_NO_MEMORY; return true; }
+    memset(uf, 0, sizeof(*uf));
+    cm_paint_fill_uniforms(&ctx->source, &ctx->ctm, uf);
+    cm_fill_set_to_clip(uf, W, H);
+    cm_fill_set_ctm_rows(uf, &ctx->ctm);
+    uf->operator = (int)ctx->op;
+
+    id<MTLTexture> lut = nil;
+    if (kind != CM_PAINT_SOLID) {
+        lut = (__bridge id<MTLTexture>)cm_paint_gradient_lut(dev, ctx->source.pattern);
+        if (!lut) return false;     // let the stencil path apply its fallback
+    }
+    cm_acov_params P;
+    memset(&P, 0, sizeof(P));
+    P.row0 = row0; P.nrows = nrows; P.evenodd = (rule == CM_FILL_RULE_EVEN_ODD) ? 1 : 0;
+    if (kind == CM_PAINT_SOLID) cm_acov_solid(&ctx->source.solid, P.solid);
+    else if (kind == CM_PAINT_LINEAR) P.nstops = cm_acov_stops(ctx->source.pattern, &P);
+
+    // ---- geometry: the fans and the interior cover's quad -------------------
+    void *fan_buf = NULL; uint32_t fan_off = 0;
+    cm_vec2f *fan = (cm_vec2f *)cm_frame_alloc_verts(frame, (size_t)fan_vtx * sizeof(cm_vec2f),
+                                                     &fan_buf, &fan_off);
+    void *quad_buf = NULL; uint32_t quad_off = 0;
+    cm_vec2f *quad = (cm_vec2f *)cm_frame_alloc_verts(frame, CM_COVER_QUAD_VERTS * sizeof(cm_vec2f),
+                                                      &quad_buf, &quad_off);
+    if (!fan || !quad) { *out_status = CM_STATUS_NO_MEMORY; return true; }
+    uint32_t written = 0;
+    for (uint32_t ci = 0; ci < path->contour_count; ++ci)
+        written += cm_path_emit_fan(path, ci, fan + written);
+    if (written > fan_vtx) { *out_status = CM_STATUS_NO_MEMORY; return true; }
+    cm_fill_fill_quad(quad, (float)col0, (float)row0, (float)col1, (float)row1);
+
+    // ---- 1: fans -> winding per sample (no colour) ---------------------------
+    [enc setCullMode:MTLCullModeNone];
+    [enc setFrontFacingWinding:MTLWindingCounterClockwise];
+    [enc setStencilReferenceValue:0];
+    [enc setRenderPipelineState:ps_stencil];
+    [enc setDepthStencilState:ds_stencil];
+    [enc setVertexBuffer:(__bridge id<MTLBuffer>)fan_buf offset:fan_off atIndex:CM_BUF_VERTS];
+    [enc setVertexBuffer:(__bridge id<MTLBuffer>)uni_buf offset:uni_off atIndex:CM_BUF_UNIFORMS];
+    if (written) [enc drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:written];
+
+    // ---- 2: edge pixels measured (the quad, spans looked up per pixel); the
+    //         stencil under them zeroed --------------------------------------
+    [enc setVertexBuffer:(__bridge id<MTLBuffer>)quad_buf offset:quad_off atIndex:CM_BUF_VERTS];
+    [enc setFragmentBuffer:(__bridge id<MTLBuffer>)uni_buf offset:uni_off atIndex:CM_BUF_UNIFORMS];
+    [enc setFragmentBytes:&P length:sizeof(P) atIndex:5];
+    if (lut) [enc setFragmentTexture:lut atIndex:CM_TEX_GRAD_LUT];
+    if (nspans) {
+        [enc setRenderPipelineState:ps_edge];
+        [enc setDepthStencilState:ds_zero];
+        [enc setFragmentBuffer:(__bridge id<MTLBuffer>)edge_buf offset:edge_off atIndex:2];
+        [enc setFragmentBuffer:(__bridge id<MTLBuffer>)rows_buf offset:rows_off atIndex:3];
+        [enc setFragmentBuffer:(__bridge id<MTLBuffer>)span_buf offset:span_off atIndex:4];
+        [enc drawPrimitives:MTLPrimitiveTypeTriangleStrip vertexStart:0
+                vertexCount:CM_COVER_QUAD_VERTS];
+    }
+
+    // ---- 3: the interior, through the stencil, at full coverage -------------
+    [enc setRenderPipelineState:ps_full];
+    [enc setDepthStencilState:ds_cover];
+    [enc drawPrimitives:MTLPrimitiveTypeTriangleStrip vertexStart:0
+            vertexCount:CM_COVER_QUAD_VERTS];
+
+    ctx->last_pipeline_group = kind;
+    ctx->status = CM_STATUS_SUCCESS;
+    return true;
+}
+
+// ===========================================================================
 // cm_fill_encode
 // ===========================================================================
 //
@@ -182,6 +527,15 @@ cm_fill_encode(cm_context_t *ctx, cm_frame *frame,
         (__bridge id<MTLRenderCommandEncoder>)cm_frame_encoder(frame);
     if (!enc) {
         return CM_STATUS_DEVICE_ERROR;
+    }
+
+    // The common draws take the analytic-coverage path (cairo's antialiasing).
+    {
+        cm_status_t ast = CM_STATUS_SUCCESS;
+        if (cm_fill_encode_analytic(ctx, frame, path, rule, dev, enc, &ast)) {
+            if (ast != CM_STATUS_SUCCESS) ctx->status = ast;
+            return ast;
+        }
     }
 
     // -----------------------------------------------------------------------

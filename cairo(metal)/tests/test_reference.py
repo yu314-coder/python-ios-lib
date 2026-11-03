@@ -7,7 +7,8 @@
 # buffers byte-for-byte. Interiors should match within premultiplied-alpha
 # rounding (+-1 LSB); anti-aliased EDGES legitimately differ because the two
 # use different rasterizers (libcairo's coverage AA vs our MSAA), so a few
-# units of MEAN diff on edged shapes is expected, not a bug.
+# units of MEAN diff on edged shapes is expected, not a bug.  ANTIALIAS_GOOD /
+# BEST draws measure coverage the way cairo does and land within a few units.
 #
 # Run on macOS with pycairo installed:
 #   CM_METALLIB=<cairo(metal)>/build/default.metallib \
@@ -94,6 +95,29 @@ def s_arc(C, c):
 def s_xform(C, c):
     c.translate(20, 12); c.scale(2, 2); c.set_source_rgba(1, 0, 0, 1); c.rectangle(0, 0, 12, 12); c.fill()
 
+# Regressions found against real cairo (2026-11-03).
+def s_color_grad(C, c):          # stop colours went R<->B (manim gradients)
+    g = C.LinearGradient(4, 0, 60, 0)
+    g.add_color_stop_rgba(0, 1, 0, 0, 1); g.add_color_stop_rgba(0.5, 1, 1, 0, 1); g.add_color_stop_rgba(1, 0, 0, 1, 1)
+    c.rectangle(0, 0, 64, 64); c.set_source(g); c.fill()
+def s_stroke_grad(C, c):         # stroke paint was placed with an identity CTM
+    c.set_matrix(C.Matrix(4, 0, 0, -4, 32, 32))
+    g = C.LinearGradient(-6, 0, 6, 0)
+    g.add_color_stop_rgba(0, 0, 1, 0, 1); g.add_color_stop_rgba(1, 1, 0, 1, 1)
+    c.move_to(-6, -2); c.line_to(6, 4); c.set_line_width(2); c.set_source(g); c.stroke()
+def s_after_flush(C, c):         # drawing after a flush wiped what was there
+    c.set_source_rgba(1, 0, 0, 1); c.rectangle(4, 4, 24, 24); c.fill()
+    c.get_target().flush()
+    c.set_source_rgba(0, 0, 1, 1); c.rectangle(36, 36, 24, 24); c.fill()
+def s_many(C, c):                # the ~1,800th draw of a frame raised "out of memory"
+    c.set_source_rgba(1, 1, 1, 1)
+    for i in range(2500):
+        c.rectangle(i % 50 + 7, (i // 50) % 50 + 7, 1, 1); c.fill()
+def s_arc_best(C, c):            # measured coverage (ANTIALIAS_BEST)
+    c.set_antialias(C.ANTIALIAS_BEST)
+    c.set_source_rgba(0, 0.6, 1, 1); c.arc(32.3, 31.7, 22.6, 0, 2 * math.pi); c.fill()
+    c.set_source_rgba(1, 1, 1, 1); c.set_line_width(2.5); c.arc(32.3, 31.7, 16.2, 0, 2 * math.pi); c.stroke()
+
 SCENES = [
     ("solid fill", s_solid), ("even-odd hole", s_evenodd),
     ("linear gradient", s_linear), ("radial gradient", s_radial),
@@ -101,6 +125,9 @@ SCENES = [
     ("operator SCREEN", s_screen), ("clip rectangle", s_clip_rect),
     ("clip circle", s_clip_circ), ("paint_with_alpha", s_alpha),
     ("arc fill", s_arc), ("transform t+s", s_xform),
+    ("colour gradient", s_color_grad), ("stroke gradient", s_stroke_grad),
+    ("draw after flush", s_after_flush), ("2500 draws/frame", s_many),
+    ("arc, ANTIALIAS_BEST", s_arc_best),
 ]
 
 print("=" * 60)

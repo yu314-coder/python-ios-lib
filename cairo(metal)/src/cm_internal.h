@@ -60,8 +60,8 @@ extern "C" {
 #define CM_MSAA_SAMPLE_COUNT    4       /* MSAA for anti-aliasing             */
 #define CM_FLATTEN_TOLERANCE    0.10    /* px: max deviation when flattening  */
 #define CM_ARC_TOLERANCE        0.10    /* px: round join/cap segmentation    */
-#define CM_VTX_RING_BYTES   (16u<<20)   /* per-frame dynamic vertex arena      */
-#define CM_UNI_RING_BYTES   (256u<<10)  /* per-frame dynamic uniform arena     */
+#define CM_VTX_ARENA_BASE   (1u<<20)    /* first vertex buffer per slot; grows */
+#define CM_UNI_ARENA_BASE   (64u<<10)   /* first uniform buffer per slot; grows*/
 
 /* ==========================================================================
  * Plain-old-data geometry types (shared CPU<->GPU; must match shaders)
@@ -136,6 +136,14 @@ typedef struct cm_path {
     uint32_t  pts_count, pts_cap;
     cm_contour *contours;
     uint32_t  contour_count, contour_cap;
+
+    /* Per-point tangents from cm_path_flatten, 4 floats a point (incoming x,y,
+     * outgoing x,y; zero = the chord), in step with pts while tan_count ==
+     * pts_count.  A curve's inner points carry the slope cairo strokes them
+     * with (cm_stroke.m); anything else that fills pts leaves tan_count
+     * behind, and the stroker then uses chords. */
+    float    *ptan;
+    uint32_t  tan_count;
 } cm_path;
 
 typedef enum {
@@ -340,6 +348,29 @@ struct cm_surface {
     void      *record;
 
     cm_status_t status;
+
+    /* --- appended: frame continuity + direct (create_for_data) targets --- */
+    /* The colour texture holds pixels a new frame must start from (it was
+     * drawn, mapped or marked dirty).  cm_frame_begin then LOADS it into the
+     * MSAA attachment instead of clearing, so drawing after a flush keeps what
+     * was there -- cairo's semantics.  A fresh surface skips the load.        */
+    bool       has_content;
+    /* Second texture object on the colour storage, sampled by the load pass
+     * (the colour texture itself is that pass's resolve target). Retained.   */
+    void      *color_read_tex;
+    /* The last committed frame's command buffer (retained), so a frame that
+     * loads the colour waits for the previous resolve to land first.          */
+    void      *last_cmd;
+    /* DIRECT surface (cm_image_surface_create_direct, manim's create_for_data):
+     * the colour texture is the caller's own buffer when it is page-aligned
+     * (zero-copy: frames load from and resolve into it), else a staging
+     * buffer copied in at frame begin and out when the frame completes.  No
+     * IOSurface, no copy-back composite.                                       */
+    bool       direct;
+    bool       ext_zero_copy;
+    size_t     ext_len;
+    void      *ext_mtlbuf;      /* id<MTLBuffer> under colour (retained)      */
+    size_t     tex_stride;      /* bytes per row of that buffer texture       */
 };
 
 struct cm_context {
@@ -417,6 +448,13 @@ typedef enum {
 
 void *cm_device_pipeline(cm_device *dev, cm_pipe_id id);
 void *cm_device_depthstencil(cm_device *dev, cm_dss_id id);
+/* Analytic-coverage pipelines for SOLID / LINEAR / RADIAL (OVER, BGRA8, MSAA
+ * pass): the edge-span cover (full == false) and the interior cover drawn
+ * through the stencil (full == true); and the edge spans' depth-stencil state
+ * (always passes, zeroes the stencil).  Built on first use; NULL if the
+ * metallib lacks the entry point. */
+void *cm_device_acov_pipeline(cm_device *dev, cm_paint_kind kind, bool full);
+void *cm_device_dss_none(cm_device *dev);
 void *cm_device_mtl(cm_device *dev);   /* id<MTLDevice>                      */
 
 /** Cover-pipeline variant selector keyed by (operator, aa-none, clip-on,
@@ -466,6 +504,12 @@ void *cm_surface_color_texture (cm_surface_t *s);
 void *cm_surface_msaa_color_tex(cm_surface_t *s);
 void *cm_surface_stencil_tex   (cm_surface_t *s);
 void  cm_surface_did_render    (cm_surface_t *s);
+/* A second texture object on the colour storage, for the frame's load pass. */
+void *cm_surface_color_read_texture(cm_surface_t *s);
+/* Direct surfaces with a staging buffer: caller's pixels -> staging (frame
+ * begin) and staging -> caller's pixels (frame complete).  No-ops otherwise. */
+void  cm_surface_direct_copy_in (cm_surface_t *s);
+void  cm_surface_direct_copy_out(cm_surface_t *s);
 
 /** Attach a real GPU raster backing (IOSurface + MSAA/stencil, like a normal
  *  image surface) to an already-zeroed surface struct, KEEPING its current

@@ -448,6 +448,18 @@ CM_PUBLIC cm_surface_t *
 cm_image_surface_create_for_data(unsigned char *data, cm_format_t format,
                                  int width, int height, int stride);
 
+/** ARGB32 surface that draws straight into the caller's buffer -- what
+ *  pycairo's create_for_data means.  `data` holds `height` rows of `stride`
+ *  bytes (`len` bytes in all) and must outlive the surface.  When `data` is
+ *  page-aligned and `stride` meets the GPU's linear-texture alignment the
+ *  buffer IS the render target (zero-copy); otherwise a staging buffer is
+ *  copied in when a frame begins and out when it completes.  Either way the
+ *  caller's pixels are the surface's pixels: a frame starts from them and a
+ *  flush leaves the result in them.  No IOSurface (get_iosurface is NULL). */
+CM_PUBLIC cm_surface_t *
+cm_image_surface_create_direct(unsigned char *data, size_t len,
+                               int width, int height, int stride);
+
 /** Create a surface compatible with `other` for the given content + size.
  *  Mirrors cairo_surface_create_similar(). */
 CM_PUBLIC cm_surface_t *

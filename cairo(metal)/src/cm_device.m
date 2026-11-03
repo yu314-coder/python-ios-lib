@@ -133,10 +133,17 @@ typedef struct cm_frame {
     bool       in_flight;               /* committed; GPU still reading buffers  */
     bool       single_sample;           /* ANTIALIAS_NONE 1-sample pass (no MSAA)*/
 
-    /* Persistent per-slot dynamic arenas (created once in cm_device_create). */
-    id<MTLBuffer> vbuf;                 /* CM_VTX_RING_BYTES                    */
-    id<MTLBuffer> ubuf;                 /* CM_UNI_RING_BYTES                    */
-    uint8_t      *vbase, *ubase;        /* CPU-mapped bases (Shared storage)    */
+    /* Per-slot dynamic arenas: a CHAIN of shared MTLBuffers per arena.  [0] is
+     * small (CM_VTX_ARENA_BASE / CM_UNI_ARENA_BASE); a frame that outgrows the
+     * current buffer moves on to the next, and a missing or too-small next one
+     * is (re)made at twice the size, so the chain grows to the largest frame
+     * seen and is reused after that.  Each draw binds its own buffer + offset,
+     * so a draw never straddles two buffers.  The old fixed 16 MB + 256 KB per
+     * slot cost ~49 MB up front and still refused the ~1,800th draw of a frame
+     * ("out of memory" -- a long manim Text hit it). */
+    NSMutableArray<id<MTLBuffer>> *vbufs;
+    NSMutableArray<id<MTLBuffer>> *ubufs;
+    NSUInteger    vidx,  uidx;          /* current buffer in each chain         */
     size_t        vcur,  ucur;          /* bump cursors, reset every begin      */
 
     /* Transient per-frame objects (set in begin, cleared in end). */
@@ -203,6 +210,16 @@ struct cm_device {
                                              [CM_CV_AA]
                                              [CM_CV_CLIP]
                                              [CM_CV_A8];
+
+    /* Lazy frame-load pipelines (fullscreen copy of the colour into the MSAA
+     * attachment), one per colour format: BGRA8, R8, B5G6R5. */
+    id<MTLRenderPipelineState> load_pipes[3];
+
+    /* Lazy analytic-coverage covers (solid, linear, radial) + a no-stencil
+     * depth-stencil state for them (cm_fill.m's analytic path). */
+    id<MTLRenderPipelineState> acov_pipes[3];
+    id<MTLRenderPipelineState> acov_full_pipes[3];
+    id<MTLDepthStencilState>   dss_none;
 
     /* Lazy 6x4 MTLSamplerState cache keyed by (filter, extend). */
     id<MTLSamplerState>        samplers[CM_SAMP_FILTERS][CM_SAMP_EXTENDS];
@@ -883,23 +900,22 @@ static bool cm_build_ring(cm_device *dev, cm_status_t *out)
         f->slot    = i;
         f->active  = false;
         f->in_flight = false;
-        f->vbase   = NULL;
-        f->ubase   = NULL;
+        f->vidx    = 0;
+        f->uidx    = 0;
         f->vcur    = 0;
         f->ucur    = 0;
         f->surface = NULL;
 
-        f->vbuf = [dev->mtl newBufferWithLength:CM_VTX_RING_BYTES
-                                        options:MTLResourceStorageModeShared];
-        f->ubuf = [dev->mtl newBufferWithLength:CM_UNI_RING_BYTES
-                                        options:MTLResourceStorageModeShared];
-        if (!f->vbuf || !f->ubuf) {
+        id<MTLBuffer> vb = [dev->mtl newBufferWithLength:CM_VTX_ARENA_BASE
+                                                 options:MTLResourceStorageModeShared];
+        id<MTLBuffer> ub = [dev->mtl newBufferWithLength:CM_UNI_ARENA_BASE
+                                                 options:MTLResourceStorageModeShared];
+        if (!vb || !ub) {
             if (out) *out = CM_STATUS_NO_MEMORY;
             return false;
         }
-        f->vbase = (uint8_t *)f->vbuf.contents;
-        f->ubase = (uint8_t *)f->ubuf.contents;
-        f->vcur = f->ucur = 0;
+        f->vbufs = [NSMutableArray arrayWithObject:vb];
+        f->ubufs = [NSMutableArray arrayWithObject:ub];
     }
     return true;
 }
@@ -1012,9 +1028,13 @@ void cm_device_destroy(cm_device *dev)
             for (int ei = 0; ei < CM_SAMP_EXTENDS; ++ei)
                 dev->samplers[fi][ei] = nil;
 
+        for (int i = 0; i < 3; ++i) dev->load_pipes[i] = nil;
+        for (int i = 0; i < 3; ++i) dev->acov_pipes[i] = nil;
+        for (int i = 0; i < 3; ++i) dev->acov_full_pipes[i] = nil;
+        dev->dss_none = nil;
         for (int i = 0; i < CM_FRAMES_IN_FLIGHT; ++i) {
-            dev->frames[i].vbuf    = nil;
-            dev->frames[i].ubuf    = nil;
+            dev->frames[i].vbufs   = nil;
+            dev->frames[i].ubufs   = nil;
             dev->frames[i].cmd     = nil;
             dev->frames[i].enc     = nil;
             dev->frames[i].surface = NULL;
@@ -1035,6 +1055,65 @@ void *cm_device_pipeline(cm_device *dev, cm_pipe_id id)
 {
     if (!dev || id < 0 || id >= CM_PIPE_COUNT) return NULL;
     return (__bridge void *)dev->pipelines[id];
+}
+
+void *cm_device_acov_pipeline(cm_device *dev, cm_paint_kind kind, bool full)
+{
+    if (!dev) return NULL;
+    int i = (kind == CM_PAINT_SOLID) ? 0 : (kind == CM_PAINT_LINEAR) ? 1
+          : (kind == CM_PAINT_RADIAL) ? 2 : -1;
+    if (i < 0) return NULL;
+    pthread_mutex_lock(&dev->lazy_mtx);
+    __strong id<MTLRenderPipelineState> *slot = full ? &dev->acov_full_pipes[i] : &dev->acov_pipes[i];
+    id<MTLRenderPipelineState> ps = *slot;
+    if (!ps) {
+        static NSString *const edge_names[3] = { @"cm_fs_acov_solid", @"cm_fs_acov_linear",
+                                                 @"cm_fs_acov_radial" };
+        static NSString *const full_names[3] = { @"cm_fs_acov_full_solid", @"cm_fs_acov_full_linear",
+                                                 @"cm_fs_acov_full_radial" };
+        NSString *const *names = full ? full_names : edge_names;
+        id<MTLFunction> vs = [dev->library newFunctionWithName:@"cm_vs_cover"];
+        id<MTLFunction> fs = [dev->library newFunctionWithName:names[i]];
+        if (vs && fs) {
+            MTLRenderPipelineDescriptor *pd = [[MTLRenderPipelineDescriptor alloc] init];
+            pd.vertexFunction    = vs;
+            pd.fragmentFunction  = fs;
+            pd.rasterSampleCount = CM_MSAA_SAMPLE_COUNT;
+            cm_configure_color_attachment(pd.colorAttachments[0], true);
+            pd.stencilAttachmentPixelFormat = MTLPixelFormatStencil8;
+            NSError *err = nil;
+            ps = [dev->mtl newRenderPipelineStateWithDescriptor:pd error:&err];
+            if (!ps) NSLog(@"CairoMetal: analytic cover %@: %@", names[i], err);
+            *slot = ps;
+        }
+    }
+    pthread_mutex_unlock(&dev->lazy_mtx);
+    return (__bridge void *)ps;
+}
+
+void *cm_device_dss_none(cm_device *dev)
+{
+    if (!dev) return NULL;
+    pthread_mutex_lock(&dev->lazy_mtx);
+    if (!dev->dss_none) {
+        /* Always passes and ZEROES the stencil under it: the edge spans clear
+         * the winding the fan pass left there, so the interior cover after
+         * them paints only the pixels they did not. */
+        MTLStencilDescriptor *z = [[MTLStencilDescriptor alloc] init];
+        z.stencilCompareFunction    = MTLCompareFunctionAlways;
+        z.stencilFailureOperation   = MTLStencilOperationZero;
+        z.depthFailureOperation     = MTLStencilOperationZero;
+        z.depthStencilPassOperation = MTLStencilOperationZero;
+        z.readMask = 0xFF; z.writeMask = 0xFF;
+        MTLDepthStencilDescriptor *d = [[MTLDepthStencilDescriptor alloc] init];
+        d.depthCompareFunction = MTLCompareFunctionAlways;
+        d.depthWriteEnabled    = NO;
+        d.frontFaceStencil = z;
+        d.backFaceStencil  = z;
+        dev->dss_none = [dev->mtl newDepthStencilStateWithDescriptor:d];
+    }
+    pthread_mutex_unlock(&dev->lazy_mtx);
+    return (__bridge void *)dev->dss_none;
 }
 
 void *cm_device_depthstencil(cm_device *dev, cm_dss_id id)
@@ -1379,6 +1458,52 @@ static bool cm_frame_scissor_rect(cm_surface_t *surface,
     return true;
 }
 
+/* The frame-load pipeline for a colour format: a fullscreen triangle that
+ * copies the surface's colour into every MSAA sample (cm_vs_fullscreen /
+ * cm_fs_load), no blending, stencil untouched.  Built on first use. */
+static id<MTLRenderPipelineState> cm_device_load_pipeline(cm_device *dev, MTLPixelFormat pf)
+{
+    int i = (pf == MTLPixelFormatBGRA8Unorm) ? 0 : (pf == MTLPixelFormatR8Unorm) ? 1
+          : (pf == MTLPixelFormatB5G6R5Unorm) ? 2 : -1;
+    if (i < 0) return nil;
+    pthread_mutex_lock(&dev->lazy_mtx);
+    id<MTLRenderPipelineState> ps = dev->load_pipes[i];
+    if (!ps) {
+        id<MTLFunction> vs = [dev->library newFunctionWithName:@"cm_vs_fullscreen"];
+        id<MTLFunction> fs = [dev->library newFunctionWithName:@"cm_fs_load"];
+        if (vs && fs) {
+            MTLRenderPipelineDescriptor *pd = [[MTLRenderPipelineDescriptor alloc] init];
+            pd.vertexFunction    = vs;
+            pd.fragmentFunction  = fs;
+            pd.rasterSampleCount = CM_MSAA_SAMPLE_COUNT;
+            pd.colorAttachments[0].pixelFormat     = pf;
+            pd.colorAttachments[0].blendingEnabled = NO;
+            pd.stencilAttachmentPixelFormat = MTLPixelFormatStencil8;
+            NSError *err = nil;
+            ps = [dev->mtl newRenderPipelineStateWithDescriptor:pd error:&err];
+            if (!ps) NSLog(@"CairoMetal: frame-load pipeline: %@", err);
+            dev->load_pipes[i] = ps;
+        }
+    }
+    pthread_mutex_unlock(&dev->lazy_mtx);
+    return ps;
+}
+
+/* Before a frame that starts from the surface's pixels: the previous frame's
+ * resolve must have landed (the load reads it through a second texture
+ * object, which Metal's tracking does not tie to the first), and a staged
+ * direct surface takes the caller's pixels in. */
+static void cm_frame_prepare_backing(cm_surface_t *backing)
+{
+    if (backing->last_cmd) {
+        id<MTLCommandBuffer> prev = (__bridge id<MTLCommandBuffer>)backing->last_cmd;
+        if (prev.status < MTLCommandBufferStatusCompleted) [prev waitUntilCompleted];
+        CFRelease(backing->last_cmd);
+        backing->last_cmd = NULL;
+    }
+    cm_surface_direct_copy_in(backing);
+}
+
 cm_frame *cm_frame_begin(cm_surface_t *surface)
 {
     if (!surface || !surface->dev) return NULL;
@@ -1444,12 +1569,27 @@ cm_frame *cm_frame_begin(cm_surface_t *surface)
             return NULL;
         }
 
+        /* Start from the surface's pixels when it has any (cairo keeps what
+         * was drawn before a flush; a direct surface's pixels are the caller's
+         * buffer).  The MSAA attachment is memoryless, so it cannot LOAD: the
+         * first draw of the pass copies the colour into every sample instead. */
+        bool load = backing->direct || backing->has_content;
+        id<MTLTexture> load_src = nil;
+        id<MTLRenderPipelineState> load_ps = nil;
+        if (load) {
+            cm_frame_prepare_backing(backing);
+            load_src = (__bridge id<MTLTexture>)cm_surface_color_read_texture(backing);
+            load_ps  = cm_device_load_pipeline(dev, resolve.pixelFormat);
+            if (!load_src || !load_ps) load = false;
+        }
+
         MTLRenderPassDescriptor *rp = [MTLRenderPassDescriptor renderPassDescriptor];
-        /* Colour: clear to transparent, render MSAA in the surface's concrete
-         * format, RESOLVE into the single-sample texture at store.  That texture
-         * is IOSurface-backed for a normal surface (zero-copy) and a PRIVATE
-         * texture for an offscreen group target (no IOSurface, no resolve-to-
-         * IOSurface) -- same store action, different storage. */
+        /* Colour: clear to transparent (then the load draw, if any), render MSAA
+         * in the surface's concrete format, RESOLVE into the single-sample
+         * texture at store.  That texture is IOSurface-backed for a normal
+         * surface, the caller's buffer (or its staging copy) for a direct one,
+         * and a PRIVATE texture for an offscreen group target -- same store
+         * action, different storage. */
         rp.colorAttachments[0].texture        = msaa;
         rp.colorAttachments[0].resolveTexture = resolve;
         rp.colorAttachments[0].loadAction     = MTLLoadActionClear;
@@ -1470,6 +1610,15 @@ cm_frame *cm_frame_begin(cm_surface_t *surface)
             return NULL;
         }
 
+        /* The load covers the whole backing (before the scissor is set): the
+         * resolve writes every pixel, so pixels outside a subsurface's window
+         * must come through unchanged. */
+        if (load) {
+            [enc setRenderPipelineState:load_ps];
+            [enc setFragmentTexture:load_src atIndex:0];
+            [enc drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
+        }
+
         /* Confine drawing to the surface's window of the backing (subsurface
          * sub-rect, or a device-offset surface).  When the window is the whole
          * backing this is a full-target scissor (a no-op clip).  An empty clamped
@@ -1487,6 +1636,8 @@ cm_frame *cm_frame_begin(cm_surface_t *surface)
         f->surface = surface;
         f->vcur    = 0;
         f->ucur    = 0;
+        f->vidx    = 0;
+        f->uidx    = 0;
         f->active  = true;
         f->single_sample = false;       /* this is the MSAA path                 */
     }
@@ -1543,6 +1694,7 @@ cm_frame *cm_frame_begin_single(cm_surface_t *surface)
     }
 
     @autoreleasepool {
+        cm_frame_prepare_backing(backing);   /* LOADs the colour: same rules  */
         id<MTLDevice> mtl = dev->mtl;
         id<MTLTexture> resolve = (__bridge id<MTLTexture>)cm_surface_color_texture(backing);
         if (!resolve) {
@@ -1596,6 +1748,8 @@ cm_frame *cm_frame_begin_single(cm_surface_t *surface)
         f->surface = surface;
         f->vcur    = 0;
         f->ucur    = 0;
+        f->vidx    = 0;
+        f->uidx    = 0;
         f->active  = true;
         f->single_sample = true;
     }
@@ -1613,28 +1767,44 @@ void *cm_device_stencil_pipeline_aa_none(cm_device *dev, bool evenodd)
     return (__bridge void *)dev->stencil_aa_none[evenodd ? 1 : 0];
 }
 
-/* Internal bump-allocator shared by the vertex + uniform arenas. */
-static void *cm_frame_alloc(cm_frame *f, uint8_t *base, id<MTLBuffer> buf,
-                            size_t *cur, size_t cap, size_t bytes,
+/* Internal bump-allocator shared by the vertex + uniform arenas: bump within
+ * the chain's current buffer, else move to the next one (made, or remade
+ * larger, at twice the size). */
+static void *cm_frame_alloc(cm_frame *f, NSMutableArray<id<MTLBuffer>> *bufs,
+                            NSUInteger *idx, size_t *cur, size_t bytes,
                             void **out_mtlbuffer, uint32_t *out_offset)
 {
-    if (!f || !f->active || bytes == 0 || !base || !buf) return NULL;
+    if (!f || !f->active || bytes == 0 || bufs.count == 0) return NULL;
+    id<MTLBuffer> buf = bufs[*idx];
     size_t off = cm_align_up(*cur, CM_RING_ALIGN);
-    if (off + bytes > cap) {
-        /* Per-frame arena exhausted. */
-        return NULL;
+    if (off + bytes > buf.length) {
+        NSUInteger next = *idx + 1;
+        if (next < bufs.count && bufs[next].length >= bytes) {
+            buf = bufs[next];
+        } else {
+            size_t want = (size_t)buf.length * 2;
+            if (want < bytes) want = cm_align_up(bytes, 4096);
+            id<MTLBuffer> nb = [f->dev->mtl newBufferWithLength:want
+                                                         options:MTLResourceStorageModeShared];
+            if (!nb) return NULL;
+            if (next < bufs.count) bufs[next] = nb;   /* slot not in flight: free */
+            else [bufs addObject:nb];
+            buf = nb;
+        }
+        *idx = next;
+        off  = 0;
     }
     *cur = off + bytes;
     if (out_mtlbuffer) *out_mtlbuffer = (__bridge void *)buf;
     if (out_offset)    *out_offset    = (uint32_t)off;
-    return base + off;
+    return (uint8_t *)buf.contents + off;
 }
 
 void *cm_frame_alloc_verts(cm_frame *f, size_t bytes,
                            void **out_mtlbuffer, uint32_t *out_offset)
 {
     if (!f) return NULL;
-    return cm_frame_alloc(f, f->vbase, f->vbuf, &f->vcur, CM_VTX_RING_BYTES,
+    return cm_frame_alloc(f, f->vbufs, &f->vidx, &f->vcur,
                           bytes, out_mtlbuffer, out_offset);
 }
 
@@ -1642,7 +1812,7 @@ void *cm_frame_alloc_uniforms(cm_frame *f, size_t bytes,
                               void **out_mtlbuffer, uint32_t *out_offset)
 {
     if (!f) return NULL;
-    return cm_frame_alloc(f, f->ubase, f->ubuf, &f->ucur, CM_UNI_RING_BYTES,
+    return cm_frame_alloc(f, f->ubufs, &f->uidx, &f->ucur,
                           bytes, out_mtlbuffer, out_offset);
 }
 
@@ -1656,10 +1826,19 @@ cm_device *cm_frame_device(cm_frame *f)
     return f ? f->dev : NULL;
 }
 
+/* GPU execution time of the last frame that was waited on (diagnostics:
+ * cairo_metal.last_gpu_ms()). */
+static double g_cm_last_gpu_ms = 0.0;
+double cm_debug_last_gpu_ms(void) { return g_cm_last_gpu_ms; }
+
 void cm_frame_end(cm_frame *f, bool wait)
 {
     if (!f || !f->active) return;
     cm_device *dev = f->dev;
+    cm_surface_t *backing = f->surface ? cm_frame_backing_surface(f->surface) : NULL;
+    /* A direct surface's pixels are the caller's memory, read as soon as the
+     * call returns: always finish the frame (and copy a staged one out). */
+    if (backing && backing->direct) wait = true;
 
     @autoreleasepool {
         [f->enc endEncoding];
@@ -1700,8 +1879,20 @@ void cm_frame_end(cm_frame *f, bool wait)
         id<MTLCommandBuffer> cmd = f->cmd;
         f->cmd = nil;
 
+        if (backing) {
+            /* The colour now holds this frame; the next one starts from it, after
+             * this command buffer completes. */
+            backing->has_content = true;
+            if (backing->last_cmd) CFRelease(backing->last_cmd);
+            backing->last_cmd = wait ? NULL : (__bridge_retained void *)cmd;
+        }
+
         if (wait) {
             [cmd waitUntilCompleted];
+            g_cm_last_gpu_ms = (cmd.GPUEndTime - cmd.GPUStartTime) * 1000.0;
+            if (cmd.status == MTLCommandBufferStatusError)
+                NSLog(@"CairoMetal: frame failed on the GPU: %@", cmd.error);
+            cm_surface_direct_copy_out(backing);
             /* The resolved IOSurface now holds fresh pixels. */
             extern void cm_surface_did_render(cm_surface_t *s) __attribute__((weak));
             if (surface && cm_surface_did_render) cm_surface_did_render(surface);

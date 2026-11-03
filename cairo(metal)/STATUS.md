@@ -12,6 +12,56 @@ the design rationale.
 
 ---
 
+## 2026-11-03 — manim round: correctness bugs, speed, memory, cairo's antialiasing
+
+Measured against real pycairo 1.29 / libcairo 1.18.6 on manim scenes (host harness:
+the app's manim 0.19 with `sys.modules["cairo"] = cairo_metal`, frames diffed byte for byte).
+
+**Bugs fixed (all were visible in manim output):**
+- Gradient stop colours had red and blue exchanged in the LUT (`cm_paint.m`) — every
+  manim gradient fill/stroke came out in the wrong colours (Gradients scene mean diff 15.3).
+- A stroke's gradient/surface paint was placed with an identity CTM (`cm_stroke_preserve`):
+  manim stroke gradients were one flat end colour.
+- Drawing after a `flush()` wiped what was drawn before (each frame cleared the MSAA
+  attachment and resolved over everything). Frames now LOAD the surface's pixels
+  (`cm_frame_begin`, `cm_fs_load`) when it has any.
+- `create_for_data` drew into a separate transparent layer and blended it over the
+  caller's buffer on the CPU at flush; a flush with nothing new drawn blended the old
+  layer in again. Now the caller's buffer IS the render target (zero-copy when
+  page-aligned, else a staging copy): `cm_image_surface_create_direct`.
+- More than ~1,800 draws in one frame raised `Error('out of memory')` (fixed 256 KB
+  uniform arena). Arenas are now growable chains (`cm_frame_alloc`), 1 MB + 64 KB base.
+- Fixed a GPU-hang class in the new coverage shaders (helper lanes reading out of range).
+
+**Closer to cairo:** device paths flatten exactly as cairo does (24.8 fixed point,
+cairo's de Casteljau + error metric: 200/200 polygons identical to `copy_path_flat`);
+curve strokes offset along the curve tangent with no joins inside a curve, each smooth
+run one polygon, outline points on the 24.8 grid (as cairo's stroker).
+
+**Measured antialiasing (`ANTIALIAS_GOOD` / `ANTIALIAS_BEST`, or `CM_ANALYTIC_AA=1` for
+every draw):** coverage per pixel from the path's edges (15 sub-rows, exact one-pass
+area where every edge spans the row), solid colours and linear-gradient stops rounded
+as pixman does. Edge pixels vs cairo: mean |diff| 13.2 → 1.4 levels on random polygons;
+manim frames max/mean diff Shapes 95/0.56 → 17/0.033, Graph 115/0.48 → 11/0.0012,
+Words 144/0.17 → 71/0.0024, Gradients 191/15.3 → 17/0.012. It costs GPU time
+(+4–7 ms a 1080p frame, renders about as fast as software cairo), so DEFAULT/FAST keep
+the 4x MSAA stencil path. `cairo_metal._set_analytic_aa(0|1|2)` and
+`cairo_metal.last_gpu_ms()` are diagnostics.
+
+**Speed / memory (default path, best of 2, same sitting):** flush per frame 1080p
+1.9–4.5 → 0.9–2.6 ms, 4K 6.8–11.4 → 2.2–3.0 ms; whole scenes 4K Shapes 1.79 → 1.25 s
+(cairo 1.97), Gradients 0.93 → 0.62 s (cairo 2.13); peak footprint −50–80 MB per render
+(4K Shapes 360 → 288 MB). ~50 MB of the remaining gap to software cairo is Metal's own
+first-render-pass allocation (same in a bare Metal program). Graph (a few long lines) is
+still slower than cairo at 4K (0.56 vs 0.36 s): the per-frame GPU wait dominates.
+
+**Open:** strokes still use our stroker for joins/caps (round joins: arcs, not cairo's
+pen polygon); measured AA is not the default; images (ImageMobject) composited on the
+CPU between vector draws still land under the whole frame's vectors (as before);
+on-device / in-app check of this build pending.
+
+---
+
 ## What works (verified)
 
 - **`swift build` (SwiftPM) — clean, 0 errors.** Compiles all 24 modules in

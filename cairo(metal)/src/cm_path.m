@@ -101,6 +101,9 @@ static bool cm__ensure_pts(cm_path *p, uint32_t need_extra)
     cm_vec2f *np = (cm_vec2f *)realloc(p->pts, (size_t)cap * sizeof(cm_vec2f));
     if (!np) return false;
     p->pts = np;
+    float *nt = (float *)realloc(p->ptan, (size_t)cap * 4 * sizeof(float));
+    if (!nt) return false;
+    p->ptan = nt;
     p->pts_cap = cap;
     return true;
 }
@@ -174,6 +177,7 @@ void cm_path_free(cm_path *p)
     free(p->verbs_xy);
     free(p->verbs);
     free(p->pts);
+    free(p->ptan);
     free(p->contours);
     memset(p, 0, sizeof(*p));
 }
@@ -255,10 +259,11 @@ void cm_path_new_sub(cm_path *p)
  * Flattening (USER space cubics -> DEVICE space polylines)
  * ==========================================================================
  *
- * The CTM is applied HERE, point by point, via cm_matrix_apply, so the flatness
- * test runs entirely in device pixels and on-screen error is bounded by
- * CM_FLATTEN_TOLERANCE at any zoom (DESIGN.md §3, Pass 0).  Cubics are split by
- * adaptive recursive de Casteljau; lines pass through unchanged.
+ * The CTM is applied HERE, point by point, so the flatness test runs entirely
+ * in device pixels and on-screen error is bounded by CM_FLATTEN_TOLERANCE at
+ * any zoom (DESIGN.md §3, Pass 0).  The device path is flattened exactly as
+ * cairo flattens it (cm__spline_rec, below); cm__cubic_is_flat serves the
+ * user-space flattener (copy_path_flat).
  */
 
 /* Flatness metric for a device-space cubic (p0,p1,p2,p3): the maximum distance
@@ -301,46 +306,6 @@ static bool cm__cubic_is_flat(double p0x, double p0y,
     return maxd2 <= tol2;
 }
 
-/* Recursive de Casteljau subdivision of a DEVICE-space cubic.  Appends every
- * point EXCEPT p0 (the caller already emitted the start) up to and including
- * p3, in order, so concatenating across a contour yields a continuous
- * polyline.  Returns false on OOM. */
-static bool cm__flatten_cubic_rec(cm_path *p,
-                                  double p0x, double p0y,
-                                  double p1x, double p1y,
-                                  double p2x, double p2y,
-                                  double p3x, double p3y,
-                                  double tol2, int depth)
-{
-    if (depth >= CM_FLATTEN_MAX_DEPTH ||
-        cm__cubic_is_flat(p0x, p0y, p1x, p1y, p2x, p2y, p3x, p3y, tol2)) {
-        if (!cm__ensure_pts(p, 1)) return false;
-        p->pts[p->pts_count].x = (float)p3x;
-        p->pts[p->pts_count].y = (float)p3y;
-        p->pts_count++;
-        return true;
-    }
-
-    /* Split at t = 0.5 (de Casteljau).  Subdivision is in device space so the
-     * midpoints are computed where the flatness test lives. */
-    double p01x = (p0x + p1x) * 0.5, p01y = (p0y + p1y) * 0.5;
-    double p12x = (p1x + p2x) * 0.5, p12y = (p1y + p2y) * 0.5;
-    double p23x = (p2x + p3x) * 0.5, p23y = (p2y + p3y) * 0.5;
-    double p012x = (p01x + p12x) * 0.5, p012y = (p01y + p12y) * 0.5;
-    double p123x = (p12x + p23x) * 0.5, p123y = (p12y + p23y) * 0.5;
-    double mx = (p012x + p123x) * 0.5, my = (p012y + p123y) * 0.5;
-
-    /* Left half: p0, p01, p012, m  — emits points up to and including m. */
-    if (!cm__flatten_cubic_rec(p, p0x, p0y, p01x, p01y, p012x, p012y, mx, my,
-                               tol2, depth + 1))
-        return false;
-    /* Right half: m, p123, p23, p3 — emits points after m up to p3. */
-    if (!cm__flatten_cubic_rec(p, mx, my, p123x, p123y, p23x, p23y, p3x, p3y,
-                               tol2, depth + 1))
-        return false;
-    return true;
-}
-
 /* Begin a new contour anchored at index pts_count.  has_point indicates
  * whether a starting point is already present (move_to) or pending (new_sub).
  * Returns the contour index or UINT32_MAX on OOM. */
@@ -362,9 +327,89 @@ static bool cm__contour_push_point(cm_path *p, uint32_t ci, double dx, double dy
     if (!cm__ensure_pts(p, 1)) return false;
     p->pts[p->pts_count].x = (float)dx;
     p->pts[p->pts_count].y = (float)dy;
+    if (p->ptan) memset(p->ptan + 4 * (size_t)p->pts_count, 0, 4 * sizeof(float));
     p->pts_count++;
     p->contours[ci].point_count++;
     return true;
+}
+
+/* ==========================================================================
+ * cairo's own flattening, so a fill covers the polygon cairo fills
+ * --------------------------------------------------------------------------
+ * cairo stores every path point in device space as 24.8 fixed point (the
+ * double rounded to nearest, ties to even: _cairo_fixed_from_double's magic
+ * number) and flattens a cubic by halving it in that fixed point until both
+ * inner control points lie within the tolerance of the chord (cairo-spline.c:
+ * de Casteljau with `a + ((b - a) >> 1)`, error = the larger squared distance
+ * of b and c from segment a-d, compared with tolerance^2).  It emits each flat
+ * piece's start point, skipping a repeat of the last one, then the end point.
+ * The old flattener split in doubles with its own flatness test: within 0.1 px
+ * of the curve too, but on different points, so curve edges came out up to
+ * ~0.2 px from cairo's.  This does the same arithmetic on the same numbers.
+ * ========================================================================== */
+static inline int32_t cm__fx(double d) { return (int32_t)nearbyint(d * 256.0); }
+
+typedef struct { int32_t ax, ay, bx, by, cx, cy, dx, dy; } cm__knots;
+
+static double cm__spline_error2(const cm__knots *k)
+{
+    double bdx = (k->bx - k->ax) / 256.0, bdy = (k->by - k->ay) / 256.0;
+    double cdx = (k->cx - k->ax) / 256.0, cdy = (k->cy - k->ay) / 256.0;
+    if (k->ax != k->dx || k->ay != k->dy) {
+        double dx = (k->dx - k->ax) / 256.0, dy = (k->dy - k->ay) / 256.0;
+        double v = dx * dx + dy * dy;
+        double u = bdx * dx + bdy * dy;
+        if (u <= 0) {
+        } else if (u >= v) { bdx -= dx; bdy -= dy; }
+        else { bdx -= u / v * dx; bdy -= u / v * dy; }
+        u = cdx * dx + cdy * dy;
+        if (u <= 0) {
+        } else if (u >= v) { cdx -= dx; cdy -= dy; }
+        else { cdx -= u / v * dx; cdy -= u / v * dy; }
+    }
+    double berr = bdx * bdx + bdy * bdy;
+    double cerr = cdx * cdx + cdy * cdy;
+    return berr > cerr ? berr : cerr;
+}
+
+static inline int32_t cm__half(int32_t a, int32_t b) { return a + ((b - a) >> 1); }
+
+static bool cm__spline_rec(cm_path *p, uint32_t ci, cm__knots *s1, double tol2,
+                           int32_t *lx, int32_t *ly, int depth)
+{
+    if (depth >= 32 || cm__spline_error2(s1) < tol2) {
+        if (s1->ax == *lx && s1->ay == *ly) return true;   /* repeat: skip */
+        *lx = s1->ax; *ly = s1->ay;
+        if (!cm__contour_push_point(p, ci, s1->ax / 256.0, s1->ay / 256.0)) return false;
+        /* cairo strokes this point along the slope to its knot (point -> b). */
+        float *t = p->ptan + 4 * (size_t)(p->pts_count - 1);
+        t[0] = t[2] = (float)(s1->bx - s1->ax);
+        t[1] = t[3] = (float)(s1->by - s1->ay);
+        return true;
+    }
+    cm__knots s2;
+    int32_t abx = cm__half(s1->ax, s1->bx), aby = cm__half(s1->ay, s1->by);
+    int32_t bcx = cm__half(s1->bx, s1->cx), bcy = cm__half(s1->by, s1->cy);
+    int32_t cdx = cm__half(s1->cx, s1->dx), cdy = cm__half(s1->cy, s1->dy);
+    int32_t abbcx = cm__half(abx, bcx), abbcy = cm__half(aby, bcy);
+    int32_t bccdx = cm__half(bcx, cdx), bccdy = cm__half(bcy, cdy);
+    int32_t fx = cm__half(abbcx, bccdx), fy = cm__half(abbcy, bccdy);
+    s2.ax = fx; s2.ay = fy; s2.bx = bccdx; s2.by = bccdy;
+    s2.cx = cdx; s2.cy = cdy; s2.dx = s1->dx; s2.dy = s1->dy;
+    s1->bx = abx; s1->by = aby; s1->cx = abbcx; s1->cy = abbcy; s1->dx = fx; s1->dy = fy;
+    if (!cm__spline_rec(p, ci, s1, tol2, lx, ly, depth + 1)) return false;
+    return cm__spline_rec(p, ci, &s2, tol2, lx, ly, depth + 1);
+}
+
+/* The device point cairo would store: user point through the CTM in
+ * cairo_matrix_transform_point's order, then rounded to 24.8. */
+static inline void cm__to_fixed(const cm_matrix_t *m, double ux, double uy,
+                                int32_t *fx, int32_t *fy)
+{
+    double x = m->xx * ux + m->xy * uy + m->x0;
+    double y = m->yx * ux + m->yy * uy + m->y0;
+    *fx = cm__fx(x);
+    *fy = cm__fx(y);
 }
 
 cm_status_t cm_path_flatten(cm_path *p, const cm_matrix_t *ctm)
@@ -389,6 +434,7 @@ cm_status_t cm_path_flatten(cm_path *p, const cm_matrix_t *ctm)
     /* Rebuild the flattened cache from scratch. */
     p->pts_count = 0;
     p->contour_count = 0;
+    p->tan_count = 0;
 
     /* Tolerance lives in DEVICE pixels because we transform control points to
      * device space before testing.  cm_matrix_max_scale is therefore NOT used
@@ -415,8 +461,9 @@ cm_status_t cm_path_flatten(cm_path *p, const cm_matrix_t *ctm)
         case CM_VERB_MOVE: {
             double ux = p->verbs_xy[xi++];
             double uy = p->verbs_xy[xi++];
-            double dx, dy;
-            cm_matrix_apply(ctm, ux, uy, &dx, &dy);
+            int32_t fx, fy;
+            cm__to_fixed(ctm, ux, uy, &fx, &fy);
+            double dx = fx / 256.0, dy = fy / 256.0;
             /* move starts a fresh contour with its first point present */
             ci = cm__begin_contour(p, true);
             if (ci == UINT32_MAX) return CM_STATUS_NO_MEMORY;
@@ -429,8 +476,9 @@ cm_status_t cm_path_flatten(cm_path *p, const cm_matrix_t *ctm)
         case CM_VERB_LINE: {
             double ux = p->verbs_xy[xi++];
             double uy = p->verbs_xy[xi++];
-            double dx, dy;
-            cm_matrix_apply(ctm, ux, uy, &dx, &dy);
+            int32_t fx, fy;
+            cm__to_fixed(ctm, ux, uy, &fx, &fy);
+            double dx = fx / 256.0, dy = fy / 256.0;
             if (ci == UINT32_MAX) {
                 /* No open contour.  Two sub-cases (cairo semantics):           */
                 ci = cm__begin_contour(p, true);
@@ -463,10 +511,12 @@ cm_status_t cm_path_flatten(cm_path *p, const cm_matrix_t *ctm)
             double u1x = p->verbs_xy[xi++], u1y = p->verbs_xy[xi++];
             double u2x = p->verbs_xy[xi++], u2y = p->verbs_xy[xi++];
             double u3x = p->verbs_xy[xi++], u3y = p->verbs_xy[xi++];
-            double d1x, d1y, d2x, d2y, d3x, d3y;
-            cm_matrix_apply(ctm, u1x, u1y, &d1x, &d1y);
-            cm_matrix_apply(ctm, u2x, u2y, &d2x, &d2y);
-            cm_matrix_apply(ctm, u3x, u3y, &d3x, &d3y);
+            int32_t f1x, f1y, f2x, f2y, f3x, f3y;
+            cm__to_fixed(ctm, u1x, u1y, &f1x, &f1y);
+            cm__to_fixed(ctm, u2x, u2y, &f2x, &f2y);
+            cm__to_fixed(ctm, u3x, u3y, &f3x, &f3y);
+            double d1x = f1x / 256.0, d1y = f1y / 256.0;
+            double d3x = f3x / 256.0, d3y = f3y / 256.0;
 
             if (ci == UINT32_MAX) {
                 /* No open contour (cairo semantics):                           */
@@ -489,15 +539,36 @@ cm_status_t cm_path_flatten(cm_path *p, const cm_matrix_t *ctm)
                 }
             }
 
-            /* Flatten the device-space cubic (cdx,cdy)->(d1)->(d2)->(d3).
-             * cm__flatten_cubic_rec appends everything after the start point,
-             * so the points belong to the current contour: bump its count by
-             * the number of points appended. */
-            uint32_t before = p->pts_count;
-            if (!cm__flatten_cubic_rec(p, cdx, cdy, d1x, d1y, d2x, d2y,
-                                       d3x, d3y, tol2, 0))
-                return CM_STATUS_NO_MEMORY;
-            p->contours[ci].point_count += (p->pts_count - before);
+            /* Flatten the device-space cubic (cdx,cdy)->(d1)->(d2)->(d3) the
+             * way cairo does; every point after the start joins the current
+             * contour. */
+            /* cairo-spline.c: a cubic whose two tangents are zero is a line. */
+            int32_t f0x = cm__fx(cdx), f0y = cm__fx(cdy);
+            if (f0x == f1x && f0y == f1y && f2x == f3x && f2y == f3y) {
+                if (!cm__contour_push_point(p, ci, d3x, d3y))
+                    return CM_STATUS_NO_MEMORY;
+            } else {
+                /* The curve's end slopes, as _cairo_spline_init picks them:
+                 * a->b (else a->c, a->d) leaving the start, c->d (else b->d,
+                 * a->d) arriving at the end. */
+                int32_t isx = f1x - f0x, isy = f1y - f0y;
+                if (!isx && !isy) { isx = f2x - f0x; isy = f2y - f0y; }
+                if (!isx && !isy) { isx = f3x - f0x; isy = f3y - f0y; }
+                int32_t fsx = f3x - f2x, fsy = f3y - f2y;
+                if (!fsx && !fsy) { fsx = f3x - f1x; fsy = f3y - f1y; }
+                if (!fsx && !fsy) { fsx = f3x - f0x; fsy = f3y - f0y; }
+                if (p->ptan && p->pts_count > 0) {
+                    float *t0 = p->ptan + 4 * (size_t)(p->pts_count - 1);
+                    t0[2] = (float)isx; t0[3] = (float)isy;
+                }
+                cm__knots k = { f0x, f0y, f1x, f1y, f2x, f2y, f3x, f3y };
+                int32_t lx = f0x, ly = f0y;
+                if (!cm__spline_rec(p, ci, &k, tol2, &lx, &ly, 0) ||
+                    !cm__contour_push_point(p, ci, d3x, d3y))
+                    return CM_STATUS_NO_MEMORY;
+                float *t3 = p->ptan + 4 * (size_t)(p->pts_count - 1);
+                t3[0] = (float)fsx; t3[1] = (float)fsy;
+            }
 
             cdx = d3x; cdy = d3y; have_cur = true;
             break;
@@ -539,6 +610,7 @@ cm_status_t cm_path_flatten(cm_path *p, const cm_matrix_t *ctm)
     }
 
     p->dirty = false;
+    p->tan_count = p->ptan ? p->pts_count : 0;
     return CM_STATUS_SUCCESS;
 }
 

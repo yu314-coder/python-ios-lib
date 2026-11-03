@@ -30,8 +30,10 @@
  * B,G,R,A bytes in memory; the backing MTLTexture is BGRA8.  See cairo_metal.h.
  *
  * BUFFER MODEL: ImageSurface.create_for_data(data, ...) keeps a writable view
- * of the caller's buffer (e.g. manim's pixel_array); on flush()/get_data() we
- * commit the GPU frame and copy rendered premultiplied-BGRA pixels back into it.
+ * of the caller's buffer (e.g. manim's pixel_array) and draws INTO it
+ * (cm_image_surface_create_direct): a frame starts from the buffer's pixels and
+ * flush()/get_data() leave the result there -- zero-copy when the buffer is
+ * page-aligned, through a staging copy otherwise.
  * ============================================================================
  */
 #define PY_SSIZE_T_CLEAN
@@ -359,6 +361,7 @@ typedef struct {
     int           width, height;
     PyObject     *map_parent;/* keepalive: the Surface a map-alias/subsurface needs */
     int           is_map_alias; /* 1 => map_parent is a map_to_image alias parent  */
+    int           is_direct;    /* create_for_data: the C surface draws into view */
 } CMSurface;
 
 /* Registry of live external-buffer (create_for_data) surfaces, so the manim
@@ -381,6 +384,10 @@ cmsurface_sync(CMSurface *self)
 {
     if (!self->surf) return;
     cm_surface_flush(self->surf);
+    if (self->is_direct) {          /* the frame already landed in the buffer */
+        g_flush_total++;
+        return;
+    }
     if (!self->has_view) return;
 
     size_t src_stride = 0;
@@ -421,6 +428,12 @@ static void
 CMSurface_dealloc(CMSurface *self)
 {
     cm_reg_del(self);
+    /* A direct surface renders into the caller's buffer: free it (which waits
+     * for its last frame) before the buffer view is released. */
+    if (self->is_direct && self->surf && self->owns) {
+        cm_surface_destroy(self->surf);
+        self->surf = NULL;
+    }
     if (self->has_view) { PyBuffer_Release(&self->view); self->has_view = 0; }
     Py_XDECREF(self->databuf);
     /* A still-mapped image alias (user forgot unmap_image): tear the alias down
@@ -513,27 +526,34 @@ CMImageSurface_create_for_data(PyObject *cls, PyObject *args)
     CMSurface *self = (CMSurface *)CMImageSurfaceType.tp_alloc(&CMImageSurfaceType, 0);
     if (!self) return NULL;
     self->surf = NULL; self->owns = 1; self->databuf = NULL; self->has_view = 0;
-    self->map_parent = NULL;
+    self->map_parent = NULL; self->is_direct = 0;
     self->width = w; self->height = h;
 
+    if (stride <= 0) stride = (long)w * 4;
+    if (stride < (long)w * 4) {
+        PyErr_SetString(PyExc_ValueError, "cairo_metal: stride is less than width*4");
+        Py_DECREF(self); return NULL;
+    }
     if (PyObject_GetBuffer(data, &self->view, PyBUF_WRITABLE | PyBUF_SIMPLE) != 0) {
         Py_DECREF(self); return NULL;
     }
     self->has_view = 1;
-    if (self->view.len < (Py_ssize_t)w * h * 4) {
-        PyErr_Format(PyExc_ValueError, "cairo_metal: data buffer too small (%zd < %d)",
-                     (Py_ssize_t)self->view.len, w * h * 4);
+    if (self->view.len < (Py_ssize_t)stride * h) {
+        PyErr_Format(PyExc_ValueError, "cairo_metal: data buffer too small (%zd < %ld)",
+                     (Py_ssize_t)self->view.len, stride * h);
         Py_DECREF(self); return NULL;
     }
     Py_INCREF(data); self->databuf = data;
 
-    self->surf = cm_image_surface_create_argb32(CM_FORMAT_ARGB32, w, h);
+    self->surf = cm_image_surface_create_direct((unsigned char *)self->view.buf,
+                                                (size_t)self->view.len, w, h, (int)stride);
     if (!self->surf) {
         cm_raise_if_error(cm_last_status());
         if (!PyErr_Occurred())
-            PyErr_SetString(CairoError, "cairo_metal: cm_image_surface_create_argb32 failed");
+            PyErr_SetString(CairoError, "cairo_metal: cm_image_surface_create_direct failed");
         Py_DECREF(self); return NULL;
     }
+    self->is_direct = 1;
     cm_reg_add(self);
     return (PyObject *)self;
 }
@@ -2603,6 +2623,16 @@ static PyObject *cm_metal_device(PyObject *m, PyObject *a) {
     extern const char *cm_metal_device_name(void);
     const char *n = cm_metal_device_name();
     return PyUnicode_FromString(n ? n : ""); }
+static PyObject *cm_last_gpu_ms(PyObject *m, PyObject *a) {
+    (void)m; (void)a;
+    extern double cm_debug_last_gpu_ms(void);
+    return PyFloat_FromDouble(cm_debug_last_gpu_ms()); }
+static PyObject *cm_set_analytic_aa(PyObject *m, PyObject *a) {
+    (void)m; int mode = 1;
+    if (!PyArg_ParseTuple(a, "i", &mode)) return NULL;
+    extern void cm_debug_set_analytic_aa(int mode);
+    cm_debug_set_analytic_aa(mode);
+    Py_RETURN_NONE; }
 static PyObject *cm_live_surfaces(PyObject *m, PyObject *a) {
     (void)m; (void)a; return PyLong_FromLong(g_reg_n); }
 static PyObject *cm_flush_stats(PyObject *m, PyObject *a) {
@@ -2642,6 +2672,8 @@ static PyMethodDef module_methods[] = {
     {"live_surfaces",        cm_live_surfaces,           METH_NOARGS, "number of live create_for_data surfaces"},
     {"gpu_selftest",         cm_gpu_selftest,            METH_NOARGS, "render+readback a test pattern; returns (ok, device, msg)"},
     {"flush_stats",          cm_flush_stats,             METH_NOARGS, "(total_flushes, nonempty_flushes)"},
+    {"last_gpu_ms",          cm_last_gpu_ms,             METH_NOARGS, "GPU time of the last waited-on frame, in ms"},
+    {"_set_analytic_aa",     cm_set_analytic_aa,         METH_VARARGS, "diagnostics: measured antialiasing 0 never, 1 GOOD/BEST (default), 2 always"},
     {NULL}
 };
 

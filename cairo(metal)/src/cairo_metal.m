@@ -638,11 +638,16 @@ cm_stroke_preserve(cm_context_t *ctx)
         return;
     }
 
-    /* The outline is already device-space geometry; cm_fill_encode flattens via
-     * the CTM, so feed it an IDENTITY CTM so it is not transformed twice. */
-    cm_matrix_t saved_ctm = ctx->ctm;
-    cm_matrix_identity(&ctx->ctm);
-    st = cm_path_flatten(&outline, &ctx->ctm);
+    /* The outline is already device-space geometry: flatten it with an IDENTITY
+     * matrix so it is not transformed twice.  The encode itself runs under the
+     * REAL CTM -- the paint (gradient axis, surface/mesh pattern) is placed with
+     * it, as cairo places a stroke's source in user space.  Encoding under the
+     * identity put every gradient/pattern stroke's axis at its user coordinates
+     * read as device pixels (manim's stroke gradients came out as one flat end
+     * colour). */
+    cm_matrix_t ident;
+    cm_matrix_identity(&ident);
+    st = cm_path_flatten(&outline, &ident);
     if (st == CM_STATUS_SUCCESS) {
         bool immediate = false;
         cm_frame *frame = cm_glue_frame_for_draw(ctx, &immediate);
@@ -670,8 +675,6 @@ cm_stroke_preserve(cm_context_t *ctx)
     } else {
         cm_ctx_set_status(ctx, st);
     }
-    ctx->ctm = saved_ctm;   /* restore; gradient paint used the real CTM */
-
     cm_path_free(&outline);
 
     /* PRESERVE: original recorded path untouched. */

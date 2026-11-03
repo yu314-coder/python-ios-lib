@@ -59,9 +59,9 @@
  * ----------------------------------------------------------------------------
  * PIXEL / PREMULTIPLY CONTRACT (do NOT "fix" -- matches cairo + manim + shaders)
  * ----------------------------------------------------------------------------
- *   The LUT is BGRA8Unorm and is written in the SAME B,G,R,A order manim hands
- *   us (it pre-swaps RGB->BGR before calling add_color_stop_rgba; cm_pattern
- *   stores those bytes verbatim in cm_rgba{r,g,b,a}).  Stops + the solid colour
+ *   The LUT is BGRA8Unorm: a stop's r/g/b go to the R/G/B bytes, as a solid
+ *   colour's do (manim pre-swaps RGB->BGR before calling add_color_stop_rgba,
+ *   and that swap must reach the pixels untouched).  Stops + the solid colour
  *   are stored NON-premultiplied; the cover-{solid,linear,radial,mask} fragment
  *   shaders premultiply after sampling (rgb*=a).  Therefore we interpolate stop
  *   colours in non-premultiplied space and store non-premultiplied texels -- NO
@@ -486,9 +486,12 @@ cm_unorm8(float v)
 /*
  * Bake the sorted stops into CM_GRAD_LUT_SIZE BGRA8 texels.
  *
- * The texel byte order is B,G,R,A to match BGRA8Unorm.  cm_rgba already holds
- * manim's pre-swapped channels: .r is the B byte, .g is G, .b is R, .a is A.
- * (See the file-header pixel contract.)  Colours are interpolated in
+ * The texel byte order is B,G,R,A to match BGRA8Unorm, and a stop's .r is
+ * cairo's red: it goes in the R byte (offset 2), exactly where a solid colour's
+ * .r lands when the cover shader writes it to the same BGRA8 target.  (manim's
+ * own R/B pre-swap happens before add_color_stop_rgba and must survive as-is;
+ * putting .r in the B byte undid it, so every manim gradient came out with red
+ * and blue exchanged.)  Colours are interpolated in
  * NON-premultiplied space and stored non-premultiplied; the cover-gradient
  * fragment shaders premultiply after sampling.
  *
@@ -531,9 +534,9 @@ cm_bake_lut_bgra(const cm_pattern_t *pat, uint8_t out[CM_GRAD_LUT_SIZE * 4])
     }
     /* One stop -> constant colour across the whole LUT. */
     if (ns == 1) {
-        uint8_t b = cm_unorm8(stops[0].color.r);
+        uint8_t b = cm_unorm8(stops[0].color.b);
         uint8_t g = cm_unorm8(stops[0].color.g);
-        uint8_t r = cm_unorm8(stops[0].color.b);
+        uint8_t r = cm_unorm8(stops[0].color.r);
         uint8_t a = cm_unorm8(stops[0].color.a);
         for (uint32_t i = 0; i < CM_GRAD_LUT_SIZE; ++i) {
             out[i * 4 + 0] = b;
@@ -571,9 +574,9 @@ cm_bake_lut_bgra(const cm_pattern_t *pat, uint8_t out[CM_GRAD_LUT_SIZE * 4])
         float cb = (float)(s0->color.b + (s1->color.b - s0->color.b) * fr);
         float ca = (float)(s0->color.a + (s1->color.a - s0->color.a) * fr);
 
-        out[i * 4 + 0] = cm_unorm8(cr);   /* B */
+        out[i * 4 + 0] = cm_unorm8(cb);   /* B */
         out[i * 4 + 1] = cm_unorm8(cg);   /* G */
-        out[i * 4 + 2] = cm_unorm8(cb);   /* R */
+        out[i * 4 + 2] = cm_unorm8(cr);   /* R */
         out[i * 4 + 3] = cm_unorm8(ca);   /* A */
     }
 }
