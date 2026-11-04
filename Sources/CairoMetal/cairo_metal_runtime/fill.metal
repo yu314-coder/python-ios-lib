@@ -613,88 +613,6 @@ static inline bool cm_acov_in(int w, int evenodd) { return evenodd ? ((w & 1) !=
 // x of edge `a` on the sub-row at yc, relative to the pixel's left side, or a
 // flag that the edge is not on that sub-row.
 static inline bool cm_acov_on(float4 a, float yc) { return cm_acov_top(a) < yc && yc <= cm_acov_bot(a); }
-static inline float cm_acov_x(float4 a, float yc, float fx) { return a.x + (yc - cm_acov_top(a)) * a.w - fx; }
-
-// One sub-row's coverage of [fx, fx+1).  The crossings inside the pixel are
-// taken in (x, index) order by repeated selection -- a few scans of the row's
-// few edges, and no per-thread arrays (dynamically indexed arrays live in
-// memory on the GPU, and cost far more than the scans).
-static inline float cm_acov_subrow(device const float4 *E, uint n, float yc, float fx, int evenodd)
-{
-    int  w = 0, crossings = 0;
-    for (uint i = 0; i < n; ++i) {
-        float4 a = E[i];
-        if (!cm_acov_on(a, yc)) continue;
-        float x = cm_acov_x(a, yc, fx);
-        if (x < 0.0) w += cm_acov_dir(a);
-        else if (x < 1.0) ++crossings;
-    }
-    bool in = cm_acov_in(w, evenodd);
-    if (crossings == 0) return in ? 1.0 : 0.0;
-
-    float at = 0.0, cov = 0.0, lx = -1.0;
-    int   li = -1;
-    for (int c = 0; c < crossings; ++c) {
-        float bx = 2.0; int bi = 0x7fffffff; int bd = 0;
-        for (uint i = 0; i < n; ++i) {
-            float4 a = E[i];
-            if (!cm_acov_on(a, yc)) continue;
-            float x = cm_acov_x(a, yc, fx);
-            if (x < 0.0 || x >= 1.0) continue;
-            bool after = (x > lx) || (x == lx && int(i) > li);   // past the last one
-            bool before = (x < bx) || (x == bx && int(i) < bi);  // ahead of the best
-            if (after && before) { bx = x; bi = int(i); bd = cm_acov_dir(a); }
-        }
-        if (in) cov += bx - at;
-        at = bx; lx = bx; li = bi;
-        w += bd;
-        in = cm_acov_in(w, evenodd);
-    }
-    return in ? cov + 1.0 - at : cov;
-}
-
-// The common row -- at most four edges -- with the edges in registers and
-// every step unrolled and branch-free: each edge's crossing (or 2.0 for none),
-// a five-swap sorting network, then the walk across the pixel.
-static inline float cm_acov_coverage4(float4 e0, float4 e1, float4 e2, float4 e3,
-                                      float fx, float fy, int evenodd)
-{
-    float total = 0.0;
-    for (int k = 0; k < CM_ACOV_SUB; ++k) {
-        float yc = fy + (float(k) + 0.5) / float(CM_ACOV_SUB);
-        int w = 0;
-        float c[4]; int d[4];
-        float4 E4[4] = { e0, e1, e2, e3 };
-        #pragma unroll
-        for (int j = 0; j < 4; ++j) {
-            float4 a = E4[j];
-            float t = cm_acov_top(a), b = cm_acov_bot(a);
-            bool act = t < yc && yc <= b;
-            float x = a.x + (yc - t) * a.w - fx;
-            int dir = cm_acov_dir(a);
-            w += (act && x < 0.0) ? dir : 0;
-            bool inpx = act && x >= 0.0 && x < 1.0;
-            c[j] = inpx ? x : 2.0;
-            d[j] = inpx ? dir : 0;
-        }
-        #define CM_CSW(i, j) { bool s_ = c[j] < c[i]; float tc = c[i]; int td = d[i]; \
-            c[i] = s_ ? c[j] : c[i]; d[i] = s_ ? d[j] : d[i]; c[j] = s_ ? tc : c[j]; d[j] = s_ ? td : d[j]; }
-        CM_CSW(0, 1) CM_CSW(2, 3) CM_CSW(0, 2) CM_CSW(1, 3) CM_CSW(1, 2)
-        #undef CM_CSW
-        float at = 0.0, cov = 0.0;
-        bool in = cm_acov_in(w, evenodd);
-        #pragma unroll
-        for (int j = 0; j < 4; ++j) {
-            bool real = c[j] < 1.0;
-            cov += (real && in) ? c[j] - at : 0.0;
-            at   = real ? c[j] : at;
-            w   += d[j];
-            in   = cm_acov_in(w, evenodd);
-        }
-        total += in ? cov + 1.0 - at : cov;
-    }
-    return total / float(CM_ACOV_SUB);
-}
 
 // Area of [0,1] where the linear u(t) from u0 to u1, clamped to [0,1], is
 // integrated: F is the antiderivative of clamp(u, 0, 1).
@@ -709,52 +627,125 @@ static inline float cm_acov_aright(float xt, float xb, float fx)
     return (cm_acov_F(u1) - cm_acov_F(u0)) / (u1 - u0);
 }
 
-// The common edge pixel exactly, in one pass: every edge that reaches the
-// pixel spans the whole pixel row (no vertex in it, nothing horizontal), and
-// the ones crossing the pixel keep their left-to-right order down the row.
-// Then the pixel splits into strips between consecutive edges, each wholly in
-// or out by the fill rule, each strip's area a difference of two trapezoid
-// integrals.  Returns false when the pixel needs the sub-row sampling.
-static inline bool cm_acov_exact4(float4 e0, float4 e1, float4 e2, float4 e3,
-                                  float fx, float fy, int evenodd, thread float &cov)
+// ---- the span-local measurement ---------------------------------------------
+// cm_fill.m makes cairo's per-row choice (exact row or 15 sub-rows), groups a
+// row's edges by SPAN -- a run of pixels some edge passes through -- and
+// stores with each span the winding of everything left of it.  A pixel reads
+// its span's record and walks only that span's edges.
+//   rows[r]:  (first segment, segment count, 0, 0)
+//   segments: one uint4 each -- (x0 | x1 << 16, first edge | edge count << 24,
+//             left windings' nibbles 0-6 | a base in bits 28-30 | 0x80000000
+//             for an exact row, nibbles 7-14).  Sub-row k's left winding is
+//             8 * base + nibble k, both signed; an exact row's is sub-row 0's.
+
+// Sub-row k's left winding.
+static inline int cm_acov_wsub(uint4 S, int k)
 {
-    float4 E4[4] = { e0, e1, e2, e3 };
-    int   w0 = 0;
-    float xm[4], xt[4], xb[4]; int d[4];
+    // Selected rather than indexed by a variable, so S stays in registers.
+    uint bits = k < 7 ? (S.z >> (4 * k)) : (S.w >> (4 * (k - 7)));
+    return (int(bits << 28) >> 28) + 8 * (int(S.z << 1) >> 29);
+}
+
+// A segment's edges, held in registers (a struct by value; an array
+// parameter would live in memory).  Unused slots: a zero-height edge far
+// above -- never active, never winds, never crosses.
+template <int N> struct cm_acov_set { float4 e[N]; };
+
+template <int N>
+static inline cm_acov_set<N> cm_acov_load(device const float4 *E, uint n)
+{
+    cm_acov_set<N> S;
     #pragma unroll
-    for (int j = 0; j < 4; ++j) {
-        float4 a = E4[j];
-        float t = cm_acov_top(a), b = cm_acov_bot(a);
-        bool inrow = t < fy + 1.0 && b > fy;
-        bool flat = (t == b);
-        float xa = flat ? a.x : a.x + (max(t, fy) - t) * a.w;
-        float xz = flat ? a.x + a.w : a.x + (min(b, fy + 1.0) - t) * a.w;
+    for (int j = 0; j < N; ++j) S.e[j] = uint(j) < n ? E[j] : float4(-1.0e9, -1.0e9, -1.0e9, 0.0);
+    return S;
+}
+
+// A sampled row: per sub-row, the winding entering the pixel, each edge's
+// crossing (or 2.0), an odd-even transposition sort, then the walk across
+// the pixel.
+template <int N>
+static inline float cm_acov_subT(cm_acov_set<N> S, uint4 W, float fx, float fy, int evenodd)
+{
+    float total = 0.0;
+    for (int k = 0; k < CM_ACOV_SUB; ++k) {
+        float yc = fy + (float(k) + 0.5) / float(CM_ACOV_SUB);
+        int w = cm_acov_wsub(W, k);
+        float c[N]; int d[N];
+        #pragma unroll
+        for (int j = 0; j < N; ++j) {
+            float4 a = S.e[j];
+            float t = cm_acov_top(a), b = cm_acov_bot(a);
+            bool act = t < yc && yc <= b;
+            float x = (a.x + (yc - t) * a.w) - fx;
+            int dir = cm_acov_dir(a);
+            w += (act && x < 0.0) ? dir : 0;
+            bool inpx = act && x >= 0.0 && x < 1.0;
+            c[j] = inpx ? x : 2.0;
+            d[j] = inpx ? dir : 0;
+        }
+        #pragma unroll
+        for (int p = 0; p < N; ++p) {
+            #pragma unroll
+            for (int j = (p & 1); j + 1 < N; j += 2) {
+                bool s_ = c[j + 1] < c[j]; float tc = c[j]; int td = d[j];
+                c[j] = s_ ? c[j + 1] : c[j]; d[j] = s_ ? d[j + 1] : d[j];
+                c[j + 1] = s_ ? tc : c[j + 1]; d[j + 1] = s_ ? td : d[j + 1];
+            }
+        }
+        float at = 0.0, cov = 0.0;
+        bool in = cm_acov_in(w, evenodd);
+        #pragma unroll
+        for (int j = 0; j < N; ++j) {
+            bool real = c[j] < 1.0;
+            cov += (real && in) ? c[j] - at : 0.0;
+            at   = real ? c[j] : at;
+            w   += d[j];
+            in   = cm_acov_in(w, evenodd);
+        }
+        total += in ? cov + 1.0 - at : cov;
+    }
+    return total / float(CM_ACOV_SUB);
+}
+
+// An exact row (no edge ends in it, no two cross in it): the pixel splits into
+// strips between the edges crossing it, each wholly in or out by the fill
+// rule, each strip's area a difference of two trapezoid integrals.
+template <int N>
+static inline float cm_acov_fullT(cm_acov_set<N> S, int wl, float fx, float fy, int evenodd)
+{
+    int   w0 = wl;
+    float xm[N], xt[N], xb[N]; int d[N];
+    #pragma unroll
+    for (int j = 0; j < N; ++j) {
+        float4 a = S.e[j];
+        float t = cm_acov_top(a);
+        // cairo's: an edge in an exact row spans all its sub-rows, and one
+        // that reaches none of their centres is not in its polygon at all.
+        bool act = cm_acov_on(a, fy + 0.5 / float(CM_ACOV_SUB));
+        float xa = a.x + (fy - t) * a.w;
+        float xz = a.x + (fy + 1.0 - t) * a.w;
         bool right = min(xa, xz) >= fx + 1.0;
-        bool full = !flat && t <= fy && b >= fy + 1.0;
-        if (inrow && !right && !full) return false;     // a vertex / flat edge here
-        bool left = inrow && !right && max(xa, xz) <= fx;
-        bool cross = inrow && !right && !left;
+        bool left = act && !right && max(xa, xz) <= fx;
+        bool cross = act && !right && !left;
         w0 += left ? cm_acov_dir(a) : 0;
         xm[j] = cross ? 0.5 * (xa + xz) : 3.0e9;
         xt[j] = xa; xb[j] = xz; d[j] = cross ? cm_acov_dir(a) : 0;
     }
-    #define CM_CSW(i, j) { bool s_ = xm[j] < xm[i]; \
-        float a_ = xm[i]; xm[i] = s_ ? xm[j] : xm[i]; xm[j] = s_ ? a_ : xm[j]; \
-        a_ = xt[i]; xt[i] = s_ ? xt[j] : xt[i]; xt[j] = s_ ? a_ : xt[j]; \
-        a_ = xb[i]; xb[i] = s_ ? xb[j] : xb[i]; xb[j] = s_ ? a_ : xb[j]; \
-        int b_ = d[i]; d[i] = s_ ? d[j] : d[i]; d[j] = s_ ? b_ : d[j]; }
-    CM_CSW(0, 1) CM_CSW(2, 3) CM_CSW(0, 2) CM_CSW(1, 3) CM_CSW(1, 2)
-    #undef CM_CSW
-    // The order must hold at the top and the bottom of the row (no crossing).
     #pragma unroll
-    for (int j = 0; j < 3; ++j) {
-        bool both = xm[j + 1] < 1.0e9;
-        if (both && (xt[j + 1] < xt[j] || xb[j + 1] < xb[j])) return false;
+    for (int p = 0; p < N; ++p) {
+        #pragma unroll
+        for (int j = (p & 1); j + 1 < N; j += 2) {
+            bool s_ = xm[j + 1] < xm[j];
+            float a_ = xm[j]; xm[j] = s_ ? xm[j + 1] : xm[j]; xm[j + 1] = s_ ? a_ : xm[j + 1];
+            a_ = xt[j]; xt[j] = s_ ? xt[j + 1] : xt[j]; xt[j + 1] = s_ ? a_ : xt[j + 1];
+            a_ = xb[j]; xb[j] = s_ ? xb[j + 1] : xb[j]; xb[j + 1] = s_ ? a_ : xb[j + 1];
+            int b_ = d[j]; d[j] = s_ ? d[j + 1] : d[j]; d[j + 1] = s_ ? b_ : d[j + 1];
+        }
     }
     float area = 0.0, prev = 1.0;       // area right of the previous boundary
     int   w = w0;
     #pragma unroll
-    for (int j = 0; j < 4; ++j) {
+    for (int j = 0; j < N; ++j) {
         bool real = xm[j] < 1.0e9;
         float ar = real ? cm_acov_aright(xt[j], xb[j], fx) : 0.0;
         if (real && cm_acov_in(w, evenodd)) area += prev - ar;
@@ -762,59 +753,168 @@ static inline bool cm_acov_exact4(float4 e0, float4 e1, float4 e2, float4 e3,
         w += d[j];
     }
     if (cm_acov_in(w, evenodd)) area += prev;
-    cov = clamp(area, 0.0, 1.0);
-    return true;
+    return clamp(area, 0.0, 1.0);
 }
 
-static inline float cm_acov_coverage(float2 pos, device const float4 *E, uint n, int evenodd)
+// A sampled row, five to eight edges, with as little held at once as
+// possible: per sub-row the edges are read again (from cache) and only their
+// crossings are kept; the covered length is summed interval by interval --
+// each crossing's interval runs to the nearest crossing right of it, at the
+// winding of every crossing at or left of it -- with no sort and no array
+// indexed by a variable.
+static inline float cm_acov_sub8(device const float4 *E, uint n, uint4 W, float fx, float fy, int evenodd)
 {
-    float fx = floor(pos.x), fy = floor(pos.y);
-
-    if (n <= 4) {
-        // Unused slots: a zero-width horizontal edge far above (never in the
-        // row, never winds, never crosses).
-        const float4 none = float4(-1.0e9, -1.0e9, -1.0e9, 0.0);
-        float4 e0 = n > 0 ? E[0] : none, e1 = n > 1 ? E[1] : none;
-        float4 e2 = n > 2 ? E[2] : none, e3 = n > 3 ? E[3] : none;
-        float cov;
-        if (cm_acov_exact4(e0, e1, e2, e3, fx, fy, evenodd, cov)) return cov;
-        return cm_acov_coverage4(e0, e1, e2, e3, fx, fy, evenodd);
-    }
-
-    // Does any edge pass through this pixel?  If not, the winding is the same
-    // everywhere in it: one pass decides 0 or 1.
-    bool  crossed = false;
-    int   wc = 0;
-    float yc = fy + 0.5;
-    for (uint i = 0; i < n; ++i) {
-        float4 a = E[i];
-        float t = cm_acov_top(a), bt = cm_acov_bot(a);
-        float xa = a.x + (max(t, fy) - t) * a.w;
-        float xb = (t == bt) ? a.x + a.w : a.x + (min(bt, fy + 1.0) - t) * a.w;
-        if (max(xa, xb) >= fx && min(xa, xb) <= fx + 1.0) { crossed = true; break; }
-        if (t < yc && yc <= bt && xa < fx) wc += cm_acov_dir(a);
-    }
-    if (!crossed) return cm_acov_in(wc, evenodd) ? 1.0 : 0.0;
-
     float total = 0.0;
-    for (int k = 0; k < CM_ACOV_SUB; ++k)
-        total += cm_acov_subrow(E, n, fy + (float(k) + 0.5) / float(CM_ACOV_SUB), fx, evenodd);
+    for (int k = 0; k < CM_ACOV_SUB; ++k) {
+        float yc = fy + (float(k) + 0.5) / float(CM_ACOV_SUB);
+        int w0 = cm_acov_wsub(W, k);
+        float c[8]; int d[8];
+        float first = 1.0;
+        #pragma unroll
+        for (int j = 0; j < 8; ++j) {
+            float4 a = uint(j) < n ? E[j] : float4(-1.0e9, -1.0e9, -1.0e9, 0.0);
+            float t = cm_acov_top(a), b = cm_acov_bot(a);
+            bool act = t < yc && yc <= b;
+            float x = (a.x + (yc - t) * a.w) - fx;
+            int dir = cm_acov_dir(a);
+            w0 += (act && x < 0.0) ? dir : 0;
+            bool inpx = act && x >= 0.0 && x < 1.0;
+            c[j] = inpx ? x : 2.0;
+            d[j] = inpx ? dir : 0;
+            first = min(first, c[j]);
+        }
+        float cov = cm_acov_in(w0, evenodd) ? first : 0.0;
+        #pragma unroll
+        for (int i = 0; i < 8; ++i) {
+            int w = w0; float nx = 1.0;
+            #pragma unroll
+            for (int j = 0; j < 8; ++j) {
+                w += (c[j] <= c[i]) ? d[j] : 0;
+                nx = (c[j] > c[i]) ? min(nx, c[j]) : nx;
+            }
+            // an interval opened by a tie is counted once, at its first index
+            bool lead = true;
+            #pragma unroll
+            for (int j = 0; j < i; ++j) lead = lead && c[j] != c[i];
+            cov += (c[i] < 1.0 && lead && cm_acov_in(w, evenodd)) ? nx - c[i] : 0.0;
+        }
+        total += cov;
+    }
     return total / float(CM_ACOV_SUB);
 }
 
-// Per pixel row of the path: (first edge, edge count, first span, span
-// count).  A SPAN is a run of pixels some edge passes through -- the only
-// pixels that need measuring.  The edge pass draws the path's bounding quad
-// (big primitives keep the GPU's SIMD groups full; a quad per span did not)
-// and a pixel outside every span of its row is discarded, leaving its stencil
-// to the interior cover.
-static inline bool cm_acov_in_span(uint px, uint4 R, device const uint *spans)
+// A sampled row, a span of more than four edges: per sub-row the crossings
+// taken in (x, index) order by repeated selection over the span's edges.
+static inline float cm_acov_subn(device const float4 *E, uint n, uint4 W, float fx, float fy, int evenodd)
 {
-    for (uint i = 0; i < R.w; ++i) {
-        uint sp = spans[R.z + i];
-        if (px >= (sp & 0xffffu) && px < (sp >> 16)) return true;
+    float total = 0.0;
+    for (int k = 0; k < CM_ACOV_SUB; ++k) {
+        float yc = fy + (float(k) + 0.5) / float(CM_ACOV_SUB);
+        int w = cm_acov_wsub(W, k), crossings = 0;
+        for (uint i = 0; i < n; ++i) {
+            float4 a = E[i];
+            if (!cm_acov_on(a, yc)) continue;
+            float x = (a.x + (yc - cm_acov_top(a)) * a.w) - fx;
+            if (x < 0.0) w += cm_acov_dir(a);
+            else if (x < 1.0) ++crossings;
+        }
+        bool in = cm_acov_in(w, evenodd);
+        float at = 0.0, cov = 0.0, lx = -1.0;
+        int   li = -1;
+        for (int c = 0; c < crossings; ++c) {
+            float bx = 2.0; int bi = 0x7fffffff; int bd = 0;
+            for (uint i = 0; i < n; ++i) {
+                float4 a = E[i];
+                if (!cm_acov_on(a, yc)) continue;
+                float x = (a.x + (yc - cm_acov_top(a)) * a.w) - fx;
+                if (x < 0.0 || x >= 1.0) continue;
+                bool after = (x > lx) || (x == lx && int(i) > li);
+                bool before = (x < bx) || (x == bx && int(i) < bi);
+                if (after && before) { bx = x; bi = int(i); bd = cm_acov_dir(a); }
+            }
+            if (in) cov += bx - at;
+            at = bx; lx = bx; li = bi;
+            w += bd;
+            in = cm_acov_in(w, evenodd);
+        }
+        total += in ? cov + 1.0 - at : cov;
     }
-    return false;
+    return total / float(CM_ACOV_SUB);
+}
+
+// An exact row, a span of more than four edges: the strips, the crossing
+// edges taken in order of their x at the row's middle (no two cross here).
+static inline float cm_acov_fulln(device const float4 *E, uint n, int wl, float fx, float fy, int evenodd)
+{
+    int w = wl, crossings = 0;
+    for (uint i = 0; i < n; ++i) {
+        float4 a = E[i];
+        float t = cm_acov_top(a);
+        if (!cm_acov_on(a, fy + 0.5 / float(CM_ACOV_SUB))) continue;
+        float xa = a.x + (fy - t) * a.w;
+        float xz = a.x + (fy + 1.0 - t) * a.w;
+        if (min(xa, xz) >= fx + 1.0) continue;
+        if (max(xa, xz) <= fx) w += cm_acov_dir(a); else ++crossings;
+    }
+    float area = 0.0, prev = 1.0, lm = -1.0e9;
+    int   li = -1;
+    for (int c = 0; c < crossings; ++c) {
+        float bm = 3.0e9, bt = 0.0, bb = 0.0; int bi = 0x7fffffff, bd = 0;
+        for (uint i = 0; i < n; ++i) {
+            float4 a = E[i];
+            float t = cm_acov_top(a);
+            if (!cm_acov_on(a, fy + 0.5 / float(CM_ACOV_SUB))) continue;
+            float xa = a.x + (fy - t) * a.w;
+            float xz = a.x + (fy + 1.0 - t) * a.w;
+            if (min(xa, xz) >= fx + 1.0 || max(xa, xz) <= fx) continue;
+            float m = 0.5 * (xa + xz);
+            bool after = (m > lm) || (m == lm && int(i) > li);
+            bool before = (m < bm) || (m == bm && int(i) < bi);
+            if (after && before) { bm = m; bi = int(i); bt = xa; bb = xz; bd = cm_acov_dir(a); }
+        }
+        float ar = cm_acov_aright(bt, bb, fx);
+        if (cm_acov_in(w, evenodd)) area += prev - ar;
+        prev = ar; lm = bm; li = bi;
+        w += bd;
+    }
+    if (cm_acov_in(w, evenodd)) area += prev;
+    return clamp(area, 0.0, 1.0);
+}
+
+static inline float cm_acov_span_coverage(float2 pos, device const float4 *edges, uint4 S,
+                                          int evenodd)
+{
+    float fx = floor(pos.x), fy = floor(pos.y);
+    device const float4 *E = edges + (S.y & 0xffffffu);
+    uint n = S.y >> 24;
+    bool full = (S.z & 0x80000000u) != 0;
+    int  wl = cm_acov_wsub(S, 0);
+    uint4 W = S;
+    // At most four edges for 95-97% of a manim frame's edge pixels: held in
+    // registers.  Five to eight (2-3%) take the sort-free path below, which
+    // holds only their crossings; walking them in device memory, sub-row by
+    // sub-row, cost a manim frame milliseconds for that few pixels.
+    if (n <= 4) {
+        cm_acov_set<4> R = cm_acov_load<4>(E, n);
+        return full ? cm_acov_fullT<4>(R, wl, fx, fy, evenodd) : cm_acov_subT<4>(R, W, fx, fy, evenodd);
+    }
+    if (n <= 8 && !full) return cm_acov_sub8(E, n, W, fx, fy, evenodd);
+    return full ? cm_acov_fulln(E, n, wl, fx, fy, evenodd)
+                : cm_acov_subn(E, n, W, fx, fy, evenodd);
+}
+
+// The pixel's segment in its row, or 0xffffffff: a binary search, the row's
+// segments being sorted and disjoint.
+static inline uint cm_acov_find_span(uint px, uint4 R, device const uint4 *spans)
+{
+    uint lo = R.x, hi = R.x + R.y;
+    while (lo < hi) {
+        uint mid = (lo + hi) >> 1;
+        if (px < (spans[mid].x & 0xffffu)) hi = mid; else lo = mid + 1;
+    }
+    if (lo == R.x) return 0xffffffffu;
+    uint sp = spans[lo - 1].x;
+    return px < (sp >> 16) ? lo - 1 : 0xffffffffu;
 }
 
 #define CM_ACOV_ARGS                                                      \
@@ -822,7 +922,7 @@ static inline bool cm_acov_in_span(uint px, uint4 R, device const uint *spans)
     constant cm_uniforms &u [[buffer(1)]],                               \
     device const float4 *edges [[buffer(2)]],                            \
     device const uint4 *rows [[buffer(3)]],                              \
-    device const uint *spans [[buffer(4)]],                              \
+    device const uint4 *spans [[buffer(4)]],                             \
     constant cm_acov_params &P [[buffer(5)]]
 
 // The edge pixel's coverage, or discard for a pixel no edge passes through.
@@ -835,8 +935,10 @@ static inline bool cm_acov_in_span(uint px, uint4 R, device const uint *spans)
     bool ok_ = py_ >= 0 && py_ < P.nrows;                                     \
     uint4 R_ = ok_ ? rows[py_] : uint4(0);                                    \
     uint px_ = uint(max(floor(in.position.x), 0.0));                          \
-    ok_ = ok_ && cm_acov_in_span(px_, R_, spans);                             \
-    float cov = ok_ ? cm_acov_coverage(in.position.xy, edges + R_.x, R_.y, P.evenodd) : 0.0; \
+    uint k_ = ok_ ? cm_acov_find_span(px_, R_, spans) : 0xffffffffu;          \
+    ok_ = ok_ && k_ != 0xffffffffu;                                           \
+    uint4 S_ = ok_ ? spans[k_] : uint4(0);                                    \
+    float cov = ok_ ? cm_acov_span_coverage(in.position.xy, edges, S_, P.evenodd) : 0.0; \
     if (!ok_) discard_fragment()
 
 fragment float4 cm_fs_acov_solid(CM_ACOV_ARGS)

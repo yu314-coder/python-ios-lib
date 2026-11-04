@@ -12,6 +12,51 @@ the design rationale.
 
 ---
 
+## 2026-11-04 — measured antialiasing 1.3-3.8x faster per frame
+
+Measured on the same manim 0.19 scenes as the 11-03 round (host harness, frames
+diffed against pycairo 1.29 / libcairo 1.18.6), old and new builds alternated in
+one sitting, best of two.
+
+The measured (cairo-style) coverage path -- `ANTIALIAS_GOOD` / `BEST`, or
+`CM_ANALYTIC_AA=1` for every draw -- spent ~80% of its GPU time measuring edge
+pixels, each walking every edge of its pixel row 30 times.  Now (`cm_fill.m`,
+`shaders/fill.metal`):
+
+- **cairo's per-row choice.** Like `cairo-tor-scan-converter.c`, a pixel row is
+  measured exactly when no edge starts or ends in it (ends rounded to its 15
+  sub-rows) and no two edges cross in it, else sampled at its 15 sub-row
+  centres -- decided on the CPU for the whole row, as cairo does (the shader
+  used to decide per pixel, looking only at edges left of it).
+- **Segments.** The pixels some edge passes through are cut at every edge's
+  first and last pixel, so the same edges overlap every pixel of a segment; each
+  segment stores those edges and the winding of everything left of it (per
+  sub-row, 4-bit with a per-segment base).  95-97% of a manim frame's edge
+  pixels then see at most four edges, held in registers; five to eight (2-3%)
+  take a sort-free path that keeps only their crossings.  The pixel finds its
+  segment by binary search.
+- **Exact-size buffers.** Reserving each draw's worst case in the frame arena
+  grew the arena chains enough to cost a frame several ms of GPU time on its own
+  (0.5 vs 8.5 ms with the edge pass off).
+
+GPU per frame, old -> new: Shapes 12.0 -> 5.3 ms at 1080p, 18.9 -> 8.2 at 4K;
+Graph 3.9 -> 1.2, 9.0 -> 2.4; Words 8.5 -> 3.5, 12.0 -> 4.6; Gradients 3.6 ->
+2.7, 6.1 -> 3.9.  Whole renders 2-42% shorter (Graph 4K 0.90 -> 0.52 s).  Pixels
+unchanged against cairo (frames' max/mean diffs equal the old path's: Shapes
+17/0.033, Graph 11/0.0009, Words 71/0.0024, Gradients 15/0.015 at 1080p; random
+polygons, 400 shapes: edge pixels mean |diff| 1.462 vs 1.464).  Peak memory in
+this mode +1-10 MB (Shapes 4K 252 -> 262 MB): each segment holds its own copy of
+its edges.  The default (MSAA) path is unchanged.  All suites green, and with
+`CM_ANALYTIC_AA=1` forced on every check.
+
+**Still open:** measured coverage is still 1.4-8x the MSAA path's GPU time (Shapes
+1080p 5.3 vs 0.7 ms), so it stays opt-in; spans of five or more edges, though
+rare, still cost ~3 ms of a Shapes frame.  The remaining one-sub-row (17-level)
+differences against cairo, and the stroker's joins and offsets (a stroked curve's
+inner side can fill pixels cairo leaves empty), are as before.
+
+---
+
 ## 2026-11-03 — manim round: correctness bugs, speed, memory, cairo's antialiasing
 
 Measured against real pycairo 1.29 / libcairo 1.18.6 on manim scenes (host harness:

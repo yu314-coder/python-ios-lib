@@ -339,12 +339,10 @@ static bool cm_fill_encode_analytic(cm_context_t *ctx, cm_frame *frame,
         if (start[r + 1] > CM_ACOV_MAX_ROW) { free(start); return false; }  // stencil path
     for (int r = 0; r < nrows; ++r) start[r + 1] += start[r];
 
-    void *edge_buf = NULL; uint32_t edge_off = 0;
-    float *edges = (float *)cm_frame_alloc_verts(frame, total * 4 * sizeof(float),
-                                                 &edge_buf, &edge_off);
-    // Each entry's pixel extent in its row, for the spans.
+    // Each entry, in row order, before the rows are sorted into spans.
+    float   *ent = (float *)malloc(total * 4 * sizeof(float));
     int32_t *ext = (int32_t *)malloc(total * 2 * sizeof(int32_t));
-    if (!edges || !ext) { free(start); free(ext); *out_status = CM_STATUS_NO_MEMORY; return true; }
+    if (!ent || !ext) { free(start); free(ent); free(ext); *out_status = CM_STATUS_NO_MEMORY; return true; }
     // start[r] serves as row r's write cursor, then is shifted back.
     CM_ACOV_EACH_EDGE({
         bool flat = (a.y == b.y);
@@ -352,7 +350,7 @@ static bool cm_fill_encode_analytic(cm_context_t *ctx, cm_frame *frame,
         float dxdy = flat ? fabsf(b.x - a.x) : (u.x - t.x) / (u.y - t.y);
         for (int r = ra; r < rb; ++r) {
             size_t k = start[r]++;
-            float *e = edges + 4 * k;
+            float *e = ent + 4 * k;
             e[0] = flat ? lx : t.x; e[1] = a.y; e[2] = b.y; e[3] = dxdy;
             float xa, xb;
             if (flat) { xa = lx; xb = lx + dxdy; }
@@ -368,42 +366,187 @@ static bool cm_fill_encode_analytic(cm_context_t *ctx, cm_frame *frame,
     for (int r = nrows; r > 0; --r) start[r] = start[r - 1];
     start[0] = 0;
 
-    // ---- edge spans: each row's edge extents, sorted and merged ------------
-    // Per row (first edge, count, first span, span count); spans packed x0 |
-    // x1 << 16.
-    void *rows_buf = NULL, *span_buf = NULL; uint32_t rows_off = 0, span_off = 0;
-    uint32_t *rows  = (uint32_t *)cm_frame_alloc_verts(frame, (size_t)nrows * 4 * sizeof(uint32_t),
-                                                       &rows_buf, &rows_off);
-    uint32_t *spans = (uint32_t *)cm_frame_alloc_verts(frame, total * sizeof(uint32_t),
-                                                       &span_buf, &span_off);
-    if (!rows || !spans) { free(start); free(ext); *out_status = CM_STATUS_NO_MEMORY; return true; }
-    uint32_t nspans = 0;
-    for (int r = 0; r < nrows; ++r) {
-        uint32_t b = start[r], e = start[r + 1];
-        rows[4 * r + 0] = b; rows[4 * r + 1] = e - b; rows[4 * r + 2] = nspans;
-        // insertion sort of the row's extents by their start
-        for (uint32_t i = b + 1; i < e; ++i) {
-            int32_t k0 = ext[2 * i], k1 = ext[2 * i + 1];
-            uint32_t j = i;
-            while (j > b && ext[2 * (j - 1)] > k0) {
-                ext[2 * j] = ext[2 * (j - 1)]; ext[2 * j + 1] = ext[2 * (j - 1) + 1]; --j;
-            }
-            ext[2 * j] = k0; ext[2 * j + 1] = k1;
-        }
-        int32_t cx0 = 0, cx1 = -1;
-        for (uint32_t i = b; i <= e; ++i) {
-            bool flush = (i == e) || (ext[2 * i] > cx1);
-            if (flush && cx1 > cx0) {
-                int32_t x0 = cx0 < col0 ? col0 : cx0, x1 = cx1 > col1 ? col1 : cx1;
-                if (x1 > x0) spans[nspans++] = (uint32_t)x0 | ((uint32_t)x1 << 16);
-            }
-            if (i == e) break;
-            if (flush) { cx0 = ext[2 * i]; cx1 = ext[2 * i + 1]; }
-            else if (ext[2 * i + 1] > cx1) cx1 = ext[2 * i + 1];
-        }
-        rows[4 * r + 3] = nspans - rows[4 * r + 2];
+    // ---- per row: cairo's choice of stepper, the segments, their edges -------
+    // cairo's scan converter (cairo-tor-scan-converter.c, 1.18) measures a
+    // pixel row EXACTLY (each edge's trapezoid) when no edge starts or ends
+    // inside it -- edge ends rounded to its 15 sub-rows, floor(15 y + 0.5) --
+    // and the edges keep their order down it; otherwise it samples the row at
+    // its 15 sub-row centres.  It decides for the whole row, so this does too.
+    //
+    // The pixels some edge passes through are cut into SEGMENTS at every
+    // edge's first and last pixel, so within a segment the same edges overlap
+    // every pixel.  Each segment stores those edges and the winding of
+    // everything wholly left of it -- once for an exact row, per sub-row for a
+    // sampled one -- so a pixel walks a few edges (at most four for ~97% of a
+    // manim frame's edge pixels) instead of every edge of the row thirty times.
+    //   rows:     (first segment, segment count, 0, 0), segments sorted by x
+    //   segments: one uint4 each -- (x0 | x1 << 16, first edge | edge count
+    //             << 24, the left windings' nibbles 0-6 | a base in bits 28-30
+    //             | 0x80000000 for an exact row, nibbles 7-14).  The left
+    //             winding of sub-row k is 8 * base + nibble k, both signed; an
+    //             exact row's is sub-row 0's.  A draw whose windings or counts
+    //             do not fit takes the stencil path.
+    void *edge_buf = NULL, *rows_buf = NULL, *span_buf = NULL;
+    uint32_t edge_off = 0, rows_off = 0, span_off = 0;
+    uint32_t *rows = (uint32_t *)cm_frame_alloc_verts(frame, (size_t)nrows * 4 * sizeof(uint32_t),
+                                                      &rows_buf, &rows_off);
+    size_t   seg_cap = total + 16, out_cap = total + 16;          // grown as needed
+    uint32_t *segs  = (uint32_t *)malloc(seg_cap * 4 * sizeof(uint32_t));
+    float    *outE  = (float *)malloc(out_cap * 4 * sizeof(float));
+    uint32_t *order = (uint32_t *)malloc(total * sizeof(uint32_t));
+    int64_t  *cells = (int64_t *)malloc(total * 2 * sizeof(int64_t));
+    int32_t  *bnd   = (int32_t *)malloc(total * 2 * sizeof(int32_t));
+    int8_t   *act   = (int8_t *)malloc(total * 2);          // per entry: first, last active sub-row + 1
+    if (!rows || !segs || !outE || !order || !cells || !bnd || !act) {
+        free(start); free(ent); free(ext); free(segs); free(outE); free(order); free(cells); free(bnd); free(act);
+        *out_status = CM_STATUS_NO_MEMORY; return true;
     }
-    free(start); free(ext);
+    uint32_t nsegs = 0;
+    size_t   nout = 0;
+    bool fits = true, oom = false;
+    for (int r = 0; r < nrows && fits && !oom; ++r) {
+        uint32_t b = start[r], e = start[r + 1];
+        float Y = (float)(row0 + r);
+        int32_t sy = 15 * (row0 + r);
+        // the row's entries, by where they start in it; each one's sub-rows
+        for (uint32_t i = b; i < e; ++i) {
+            uint32_t j = i;
+            while (j > b && ext[2 * order[j - 1]] > ext[2 * i]) { order[j] = order[j - 1]; --j; }
+            order[j] = i;
+            const float *q = ent + 4 * i;
+            float tp = fminf(q[1], q[2]), bt = fmaxf(q[1], q[2]);
+            int32_t st = (int32_t)floorf(15.0f * tp + 0.5f) - sy;
+            int32_t sb = (int32_t)floorf(15.0f * bt + 0.5f) - sy;
+            if (tp == bt) { st = 0; sb = 0; }                          // flat: cairo drops it
+            if (st < 0) st = 0;
+            if (sb > 15) sb = 15;
+            if (sb < st) sb = st;
+            act[2 * i] = (int8_t)st; act[2 * i + 1] = (int8_t)sb;
+        }
+        // cairo's stepper for the row: every edge active in it spans it whole,
+        // and their order at the next row's first sub-row is their order here.
+        bool full = true;
+        uint32_t nact = 0;
+        for (uint32_t i = b; i < e && full; ++i) {
+            if (act[2 * i + 1] <= act[2 * i]) continue;               // no sub-row of this row
+            if (act[2 * i] > 0 || act[2 * i + 1] < 15) { full = false; break; }
+            const float *q = ent + 4 * i;
+            float tp = fminf(q[1], q[2]);
+            // the cell (1/256 px, rounded) at this row's first sub-row and the next's
+            double y0 = (double)Y + 0.5 / 15.0;
+            cells[2 * nact]     = (int64_t)floor(((double)q[0] + (y0 - tp) * (double)q[3]) * 256.0 + 0.5);
+            cells[2 * nact + 1] = (int64_t)floor(((double)q[0] + (y0 + 1.0 - tp) * (double)q[3]) * 256.0 + 0.5);
+            ++nact;
+        }
+        if (full) {
+            // sorted by the top cell, then the bottom one; a crossing turns the order
+            for (uint32_t i = 1; i < nact; ++i) {
+                int64_t c0 = cells[2 * i], c1 = cells[2 * i + 1];
+                uint32_t j = i;
+                while (j > 0 && (cells[2 * (j - 1)] > c0 ||
+                                 (cells[2 * (j - 1)] == c0 && cells[2 * (j - 1) + 1] > c1))) {
+                    cells[2 * j] = cells[2 * (j - 1)]; cells[2 * j + 1] = cells[2 * (j - 1) + 1]; --j;
+                }
+                cells[2 * j] = c0; cells[2 * j + 1] = c1;
+            }
+            for (uint32_t i = 1; i < nact; ++i)
+                if (cells[2 * i + 1] < cells[2 * (i - 1) + 1]) { full = false; break; }
+        }
+#define CM_ACOV_ADD_WINDING(k_, wl_, ws_)                                         \
+        { int32_t d_ = ent[4 * (k_) + 1] < ent[4 * (k_) + 2] ? 1 : -1;           \
+          int32_t a_ = act[2 * (k_)], z_ = act[2 * (k_) + 1];                    \
+          if (z_ > a_) { if (full) (wl_) += d_;                                  \
+                         for (int s_ = a_; s_ < z_; ++s_) (ws_)[s_] += d_; } }
+        // runs of overlapping extents; each cut at every extent's ends
+        int32_t wl = 0, wsub[15] = {0};
+        rows[4 * r + 0] = nsegs; rows[4 * r + 2] = 0; rows[4 * r + 3] = 0;
+        uint32_t i = b;
+        while (i < e && fits && !oom) {
+            uint32_t i0 = i;
+            int32_t cx1 = ext[2 * order[i] + 1];
+            for (++i; i < e && ext[2 * order[i]] <= cx1; ++i)
+                if (ext[2 * order[i] + 1] > cx1) cx1 = ext[2 * order[i] + 1];
+            // the cuts: every extent's two ends, sorted and unique
+            uint32_t nb = 0;
+            for (uint32_t m = i0; m < i; ++m) {
+                bnd[nb++] = ext[2 * order[m]]; bnd[nb++] = ext[2 * order[m] + 1];
+            }
+            for (uint32_t m = 1; m < nb; ++m) {
+                int32_t v = bnd[m]; uint32_t j = m;
+                while (j > 0 && bnd[j - 1] > v) { bnd[j] = bnd[j - 1]; --j; }
+                bnd[j] = v;
+            }
+            uint32_t nu = 0;
+            for (uint32_t m = 0; m < nb; ++m) if (nu == 0 || bnd[m] != bnd[nu - 1]) bnd[nu++] = bnd[m];
+            for (uint32_t c = 0; c + 1 < nu; ++c) {
+                int32_t sx0 = bnd[c], sx1 = bnd[c + 1];
+                int32_t x0 = sx0 < col0 ? col0 : sx0, x1 = sx1 > col1 ? col1 : sx1;
+                if (x1 <= x0) continue;                                   // off the surface
+                int32_t swl = wl, sws[15];
+                memcpy(sws, wsub, sizeof(sws));
+                uint32_t first = (uint32_t)nout, cnt = 0;
+                for (uint32_t m = i0; m < i; ++m) {
+                    uint32_t k = order[m];
+                    int32_t ex0 = ext[2 * k], ex1 = ext[2 * k + 1];
+                    if (ex1 <= sx0) { CM_ACOV_ADD_WINDING(k, swl, sws) }     // wholly left
+                    else if (ex0 <= sx0 && ex1 >= sx1) {                      // over every pixel
+                        if (nout == out_cap) {
+                            out_cap *= 2;
+                            float *g = (float *)realloc(outE, out_cap * 4 * sizeof(float));
+                            if (!g) { oom = true; break; }
+                            outE = g;
+                        }
+                        memcpy(outE + 4 * nout++, ent + 4 * k, 4 * sizeof(float));
+                        ++cnt;
+                    }
+                }
+                if (oom) break;
+                if (full) for (int k = 0; k < 15; ++k) sws[k] = swl;
+                // a base (a multiple of 8, -32..24) that puts every sub-row's
+                // winding in a signed nibble
+                int32_t mn = sws[0], mx = sws[0];
+                for (int k = 1; k < 15; ++k) { if (sws[k] < mn) mn = sws[k]; if (sws[k] > mx) mx = sws[k]; }
+                int32_t base = 99;
+                for (int32_t bb = -4; bb <= 3 && base == 99; ++bb)
+                    if (mn - 8 * bb >= -8 && mx - 8 * bb <= 7) base = bb;
+                if (base == 99) { fits = false; base = 0; }
+                if (cnt > 255 || first > 0xffffffu) fits = false;
+                if (nsegs == seg_cap) {
+                    seg_cap *= 2;
+                    uint32_t *g = (uint32_t *)realloc(segs, seg_cap * 4 * sizeof(uint32_t));
+                    if (!g) { oom = true; break; }
+                    segs = g;
+                }
+                uint32_t *sp = segs + 4 * nsegs++;
+                uint64_t nib = 0;
+                for (int k = 0; k < 15; ++k) nib |= (uint64_t)((uint32_t)(sws[k] - 8 * base) & 0xfu) << (4 * k);
+                sp[0] = (uint32_t)x0 | ((uint32_t)x1 << 16);
+                sp[1] = first | (cnt << 24);
+                sp[2] = (uint32_t)(nib & 0x0fffffffu) | (((uint32_t)base & 7u) << 28) | (full ? 0x80000000u : 0u);
+                sp[3] = (uint32_t)(nib >> 28);
+            }
+            // the run is left of every later one in the row
+            for (uint32_t m = i0; m < i; ++m) CM_ACOV_ADD_WINDING(order[m], wl, wsub)
+        }
+#undef CM_ACOV_ADD_WINDING
+        rows[4 * r + 1] = nsegs - rows[4 * r + 0];
+    }
+    free(start); free(ent); free(ext); free(order); free(cells); free(bnd); free(act);
+    if (oom) { free(segs); free(outE); *out_status = CM_STATUS_NO_MEMORY; return true; }
+    if (!fits) { free(segs); free(outE); return false; }  // windings or counts past the packing: the stencil path
+    // Into the frame's arena at their exact size: reserving the worst case
+    // per draw made the arena chain much larger, and that alone cost a manim
+    // frame several milliseconds of GPU time.
+    uint32_t nspans = nsegs;
+    if (nsegs) {
+        void *gs = cm_frame_alloc_verts(frame, (size_t)nsegs * 4 * sizeof(uint32_t), &span_buf, &span_off);
+        void *ge = nout ? cm_frame_alloc_verts(frame, nout * 4 * sizeof(float), &edge_buf, &edge_off) : NULL;
+        if (!gs || (nout && !ge)) { free(segs); free(outE); *out_status = CM_STATUS_NO_MEMORY; return true; }
+        memcpy(gs, segs, (size_t)nsegs * 4 * sizeof(uint32_t));
+        if (nout) memcpy(ge, outE, nout * 4 * sizeof(float));
+        if (!nout) { edge_buf = span_buf; edge_off = span_off; }   // bound, never read
+    }
+    free(segs); free(outE);
 
     // ---- uniforms + paint ---------------------------------------------------
     void *uni_buf = NULL; uint32_t uni_off = 0;
