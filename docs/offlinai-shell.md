@@ -313,12 +313,12 @@ gpu-z [graph] [-i] [-q] [--torch] [--out FORMAT|PATH] [--json [PATH]]
 
 | Option | What it does |
 |---|---|
-| *(none)* | Information block, then the measurements and a score — `cpu-z` on the CPU-Z bench scale (an M4 performance core ≈ 815), `gpu-z` on the Geekbench 6 Metal scale (Mac mini M4 ≈ 57k). Both are estimates from CodeBench's own workloads |
+| *(none)* | Information block, then the measurements and a score — `cpu-z` on the CPU-Z bench scale (an M4 performance core ≈ 815), `gpu-z` on the Geekbench 6 Metal scale (Mac mini M4 ≈ 57k). Both are estimates from CodeBench's own workloads; `cpu-z` times each workload as the median of three runs (one with `-q`) |
 | `graph` | Draw it instead. `cpu-z`: memory latency under **random access** against block size (4 KB → 256 MB; a pointer chase in shuffled order, so the cache levels show as steps, with the core's L1/L2 sizes marked), STREAM-triad bandwidth against array size, FP32/FP64 FMA throughput against threads. `gpu-z`: MPS matrix-multiply TFLOPS against matrix size (fp32, fp16), bandwidth against buffer size, peak shader TFLOPS |
 | `graph latency` | One `cpu-z` graph only (`bandwidth`, `fma` likewise); latency alone is sampled at ×√2 steps |
 | `--out F` | `html` (default): a page with the key numbers as tiles and a plotly card per chart — hover values, zoom, light/dark with the system, plotly.js embedded so it works offline. `png`, `jpg`, `svg`, `pdf`: the same charts drawn by matplotlib. Or a file path with one of those extensions |
 | `--core p` / `--core e` | Asks for one kind of core and then says where the work actually ran — each cluster's share of the time and its clock, from the kernel's own per-cluster accounting. Darwin keeps the efficiency cores to an app only in its background band, which also holds their clock down (1.3–2.5 GHz on an M4, against ≈2.8 GHz normally), and it lends the performance cores rather than reserving them, so under load part of a `p` run lands on efficiency cores; the report shows how much. iOS lets no app set a core's frequency, so there is no frequency sweep |
-| `--stress S` | Every core for S seconds, the work done each second (throttling shows as the device warms) |
+| `--stress S` | Every core for S seconds: the work done each second, in M4 performance cores' worth, against the first full second — a device that holds its clock stays near 100%, one that throttles falls below it |
 | `--torch` | `gpu-z` also times PyTorch's Metal bridge — what Python code gets, copies included |
 | `--json [P]` | Save the numbers as JSON |
 | `-i` / `-q` | Information only / shorter, noisier runs |
