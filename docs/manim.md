@@ -358,6 +358,7 @@ than accumulates, which makes 4K and 8K memory-safe:
   | `frame_queue_min` | `OFFLINAI_MANIM_QUEUE_MIN` | 2 | below this the renderer and encoder stop overlapping |
   | `frame_queue_max` | `OFFLINAI_MANIM_QUEUE_MAX` | 32 | past this the encoder is the bottleneck |
   | `video_codec` | `OFFLINAI_MANIM_CODEC` | — | force an encoder instead of probing |
+  | `encoder_stall_seconds` | `OFFLINAI_MANIM_ENCODER_STALL_S` | — | how long the encoder may finish no frame before the render fails as stuck; `0` waits for as long as it takes |
 
   Each field is seeded from its variable at import, so the environment sets
   defaults and code assigned afterwards wins — later simply happens later.
@@ -378,6 +379,28 @@ than accumulates, which makes 4K and 8K memory-safe:
   looking inert. Both clamps are themselves fields, for a device that wants
   different ones.
 
+- **Each animation's clip closes only after its encoder has finished.** A
+  writer thread encodes each animation's frames from a bounded queue. At the
+  animation's end the clip used to give that thread 60 s, then close the
+  container and — on iOS, to free memory — drop the stream, container and
+  queue. At 8K and 120 fps with 32 frames queued, an iPad's encoder is still
+  working normally after 60 s; it then wrote into None and the render died
+  with `AttributeError: 'NoneType' object has no attribute 'mux'` (reported by
+  ManimStudio as "the video encoder stopped"). Worse, the thread looked its
+  queue up through the writer, so it could take the next clip's frames.
+
+  Now the clip waits for as long as the encoder keeps finishing frames,
+  printing `[manim-debug] writer still encoding (N frames left), waiting…`
+  each minute so a long wait is visible. Only if no frame comes out for the
+  stall window does it give up, and then it raises — `RuntimeError: the video
+  encoder made no progress for N s at WxH` — rather than closing the container
+  under a thread that may still be writing. The window is five minutes, in
+  proportion to the pixel count above 4K, up to twenty
+  (`settings.encoder_stall_window()` says which and why); it is measured per
+  frame, so it only has to cover one frame's encode. Each thread reads its own
+  clip's queue, a clip cannot open while the previous one's thread runs, and
+  the memory release still happens, after the thread has exited.
+  `manim_writer_test.py` checks all of it.
 - **Return freed pages to the OS.** `PYTHONMALLOC=malloc` plus
   `malloc_zone_pressure_relief(NULL, 0)` between animations, so released
   memory actually leaves `phys_footprint` (what jetsam measures) instead

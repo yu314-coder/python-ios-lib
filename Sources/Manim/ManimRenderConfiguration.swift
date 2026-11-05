@@ -88,16 +88,29 @@ extension ManimLib {
         /// See `VideoCodec`. `nil` asks the hardware.
         public var videoCodec: VideoCodec?
 
+        /// How long, in seconds, the encoder may finish no frame at all
+        /// before a render fails as stuck.
+        ///
+        /// At the end of each animation the render waits for the encoder to
+        /// work through its queue, for as long as frames keep coming out —
+        /// at 8K and 120 fps with a deep queue that is minutes on an iPad,
+        /// and it is not an error. This is only how long *no* frame may. `nil`
+        /// — the default — is five minutes, in proportion to the pixel count
+        /// above 4K, up to twenty. `0` waits for as long as it takes.
+        public var encoderStallSeconds: Int?
+
         public init(frameQueueDepth: Int? = nil,
                     frameQueueBudgetMB: Int = 256,
                     frameQueueMinimum: Int = 2,
                     frameQueueMaximum: Int = 32,
-                    videoCodec: VideoCodec? = nil) {
+                    videoCodec: VideoCodec? = nil,
+                    encoderStallSeconds: Int? = nil) {
             self.frameQueueDepth = frameQueueDepth
             self.frameQueueBudgetMB = frameQueueBudgetMB
             self.frameQueueMinimum = frameQueueMinimum
             self.frameQueueMaximum = frameQueueMaximum
             self.videoCodec = videoCodec
+            self.encoderStallSeconds = encoderStallSeconds
         }
 
         /// How many frames this configuration works out to at a given size,
@@ -135,6 +148,7 @@ extension ManimLib {
             put("OFFLINAI_MANIM_QUEUE_MIN", String(max(frameQueueMinimum, 1)))
             put("OFFLINAI_MANIM_QUEUE_MAX", String(max(frameQueueMaximum, 1)))
             put("OFFLINAI_MANIM_CODEC", videoCodec?.rawValue)
+            put("OFFLINAI_MANIM_ENCODER_STALL_S", encoderStallSeconds.map { String(max($0, 0)) })
         }
     }
 
