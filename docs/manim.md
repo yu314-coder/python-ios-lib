@@ -401,6 +401,25 @@ than accumulates, which makes 4K and 8K memory-safe:
   clip's queue, a clip cannot open while the previous one's thread runs, and
   the memory release still happens, after the thread has exited.
   `manim_writer_test.py` checks all of it.
+- **An image costs what it covers, not what the frame covers.** A BusyTeX
+  `MathTex` is a PNG, so it reaches the camera as an `ImageMobject` (see
+  *Write / Create on busytex MathTex* below), and a 20×16 matrix of numbers is
+  320 of them. `Camera.display_image_mobject` used to paste each one into a
+  transparent image the size of the frame (built from a frame-sized float64
+  array, 265 MB at 8K) and alpha-composite the whole frame, so each number
+  cost about 45 ms at 7680×4320: 14.5 s a frame for the matrix on an M4 Mac,
+  33–40 s on an iPad Air M3. It now composites only the rectangle the
+  transformed image covers, clipped to the frame (skipped when it is wholly
+  off it): about 1.5 ms a number, 0.53 s a frame on the same Mac, so the
+  FadeIn's 180 frames at 120 fps take 1.6 min instead of 44. In the scene it
+  came from (a TSNE explainer's data matrix, with everything else on screen)
+  a frame went from 20.4 s to 0.32 s. Compositing is per pixel and
+  the frame-sized overlay was transparent outside that rectangle, which
+  `alpha_composite` leaves exactly as it was, so frames are pixel-identical;
+  the perspective transform, its resampling and the early returns are
+  unchanged. The CairoMetal GPU toggle only replaces `cairo`, which never
+  draws these images, so it takes the same path. `manim_image_test.py`
+  checks it.
 - **Return freed pages to the OS.** `PYTHONMALLOC=malloc` plus
   `malloc_zone_pressure_relief(NULL, 0)` between animations, so released
   memory actually leaves `phys_footprint` (what jetsam measures) instead
@@ -618,7 +637,7 @@ are preserved.
 |---|---|
 | numpy 2.3.5 | Working |
 | scipy 1.15.2 | Partial (fortran stubs route through libfortran_io_stubs) |
-| Pillow 12.2.0 | Working (PIL.Image patched) |
+| Pillow 11.0.0 | Working (PIL.Image patched) |
 | pycairo + CairoGraphics | Working |
 | manimpango 0.6.1 | Working (pycairo-compat fallback enabled) |
 | svgelements 1.9.6 | Working |
@@ -637,6 +656,8 @@ manim/typing.py                       — PIL Resampling fallback
 manim/animation/animation.py          — iOS-specific defaults
 manim/animation/creation.py           — Write/Create iOS tweaks
 manim/animation/fading.py             — iOS tweaks
+manim/camera/camera.py                — images composited over their own box
+                                       only, not the whole frame
 manim/constants.py                    — frame defaults
 manim/mobject/geometry/line.py        — subdivide curves disabled
 manim/mobject/svg/svg_mobject.py      — cache off, rasterized embed
