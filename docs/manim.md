@@ -120,7 +120,7 @@ goes through PyAV's VideoToolbox H.264 encoder.
 | Submodule | Provides |
 |---|---|
 | `text.text_mobject` | `Text`, `MarkupText`, `Paragraph` (manimpango-driven). **iOS-aware:** falls back to PangoCairo pycairo path when needed |
-| `text.tex_mobject` | `Tex`, `MathTex`, `BulletedList`, `Title`. **iOS-patched:** rasterized PNG fallback if LaTeX SVG path fails |
+| `text.tex_mobject` | `Tex`, `MathTex`, `BulletedList`, `Title`. **iOS:** vector glyphs as on a desktop (pdflatex in BusyTeX → `offlinai_latex.pdf_vector`); rasterized PNG only as a fallback |
 | `text.numbers` | `DecimalNumber`, `Integer`, `Variable`. **iOS-patched:** debug while-loop counter for "only first frame rendered" symptom |
 | `text.code_mobject` | `Code` — pygments-syntax-highlighted source snippets |
 
@@ -420,6 +420,41 @@ than accumulates, which makes 4K and 8K memory-safe:
   unchanged. The CairoMetal GPU toggle only replaces `cairo`, which never
   draws these images, so it takes the same path. `manim_image_test.py`
   checks it.
+- **Per-frame cost cut in the library, same frames.** Profiling a TSNE
+  explainer (the scene behind the 8K reports) showed the time going to
+  Python bookkeeping, not to drawing or encoding. Each change below gives
+  byte-identical frames (every frame of the scene hashed, old vs new, at
+  1080p and 8K; `manim_speed_test.py` checks each one):
+  - `Camera.set_cairo_context_path` walked every curve as NumPy scalars
+    (three tiny slices per curve, a NumPy comparison per anchor), about
+    50 µs per VMobject before cairo drew anything. It now reads the points
+    once as plain floats and makes the same cairo calls with the same
+    numbers: a 1000-curve path 15.2 → 2.0 ms. Classes that override the
+    path methods keep the old loop.
+  - `Mobject.get_family` recursed with a dedupe at every level (a list
+    and a set per family member, many times a frame); it now walks the
+    family once and dedupes once, which gives the same list.
+  - Each frame starts with `set_pixel_array(background)`, which copied the
+    background into a new array and then into the frame: two full-frame
+    copies and a 133 MB temporary at 8K. Now one copy into the frame.
+  - Starting an animation copies mobjects. Every glyph of a `Text` carried
+    its parsed svgelements path, which `deepcopy` rebuilt object by object
+    (7.6 ms for a 25-letter Text); glyph copies now share it (it is only
+    read), and immutable values are handed over without `copy.deepcopy`:
+    0.8 ms.
+  - Large images are resampled (PIL's `transform`, which releases the GIL)
+    on worker threads while the next ones are placed, and composited in
+    their original order, at most 4 MB in flight: 320 numbers at 8K
+    0.49 → 0.12 s a frame. `OFFLINAI_MANIM_IMAGE_THREADS=0` draws them one
+    by one.
+  - `ThreeDCamera.project_points` worked the perspective factor out twice.
+
+  With MathTex now vector glyphs as well (next section), the scene's first
+  30 animations render 1.8× faster at 1080p30 (16.6 → 9.3 s) and 2.5× at
+  8K30 (42.4 → 16.8 s) on an M4 Mac; the 20×16 number matrix's FadeIn at 8K
+  went from 0.70 to 0.044 s a frame. Peak memory footprint is unchanged
+  (1080p 396 → 391 MB, mean of 4 runs; 8K 869 → 867 MB, mean of 2). The
+  encoder and the frame queue are untouched.
 - **Return freed pages to the OS.** `PYTHONMALLOC=malloc` plus
   `malloc_zone_pressure_relief(NULL, 0)` between animations, so released
   memory actually leaves `phys_footprint` (what jetsam measures) instead
@@ -609,7 +644,36 @@ Note: the **video encode already overlaps rendering** — manim's
 bounded frame queue (`listen_and_write`), so encode latency is hidden behind
 the next frame's render today.
 
+### MathTex and Tex are vector glyphs, as on a desktop
+
+Desktop manim gets each formula from `dvisvgm`: a path per glyph and a
+`<g id='uniqueNNN'>` per MathTex part. On iOS formulas used to be one PNG
+each (BusyTeX → PDF → picture), so they animated differently from real
+manim. Rendered side by side with manim 0.20 on a Mac, 12 common equation
+animations showed it: `Write` and `Create` were a left-to-right wipe instead
+of drawn strokes, `Indicate` and `set_color_by_tex` didn't recolour, and 6 of
+the 12 failed — `Transform` / `ReplacementTransform` between two formulas
+("Mobject pixel array shapes incompatible for interpolation"),
+`MathTex("a^2", "+", "b^2", ...)`, `TransformMatchingTex`, and `Tex` with
+inline math (the last three didn't compile).
+
+`offlinai_latex` now compiles manim's own .tex with pdflatex in BusyTeX and
+turns the PDF's glyph outlines into the SVG dvisvgm would have written (see
+[offlinai-latex.md](offlinai-latex.md), backend 0). All 12 animations match
+the desktop frame by frame (0.09% of pixels differ, by at most 31/255, on
+glyph edges); a whole TSNE explainer video (2,879 frames) matches too, with
+1,152 of its first 1,263 frames byte-identical. In the CodeBench app with the
+real BusyTeX, `manim_tex_vector_test.py` passes 11/11 and the same 12
+animations match the desktop. manim's iOS cache check in `tex_file_writing.py`
+accepts these SVGs (their `offlinai_latex vector` marker).
+
+Templates that need XeLaTeX (ctex, fontspec…) and CJK keep the picture path
+below.
+
 ### Write / Create on busytex MathTex (column reveal)
+
+*Only for formulas that still come back as a picture (XeLaTeX templates,
+CJK, or the vector path turned off).*
 
 `MathTex` / `Tex` route through `offlinai_latex`, which produces a
 PNG-in-`<image>` SVG when busytex (real xelatex) handles the expression.
@@ -657,11 +721,19 @@ manim/animation/animation.py          — iOS-specific defaults
 manim/animation/creation.py           — Write/Create iOS tweaks
 manim/animation/fading.py             — iOS tweaks
 manim/camera/camera.py                — images composited over their own box
-                                       only, not the whole frame
+                                       only, not the whole frame; paths built
+                                       from plain floats; one-copy frame reset;
+                                       images resampled on worker threads
+manim/camera/three_d_camera.py        — perspective factor worked out once
+manim/mobject/mobject.py              — get_family in one walk; faster
+                                       __deepcopy__ (_shared_on_copy)
 manim/constants.py                    — frame defaults
 manim/mobject/geometry/line.py        — subdivide curves disabled
-manim/mobject/svg/svg_mobject.py      — cache off, rasterized embed
+manim/mobject/svg/svg_mobject.py      — cache off, rasterized embed; glyph
+                                       copies share the parsed path
 manim/mobject/text/tex_mobject.py     — PNG-fallback path
+manim/utils/tex_file_writing.py       — iOS: offlinai_latex; cache accepts its
+                                       vector SVGs
 manim/mobject/text/numbers.py         — debug counter
 manim/scene/scene_file_writer.py      — VideoToolbox codec choice by resolution
                                        (h264/hevc) + hvc1 tagging; save_image guard

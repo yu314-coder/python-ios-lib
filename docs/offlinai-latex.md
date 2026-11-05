@@ -4,7 +4,7 @@
 **Type:** Pure Python wrapper around the host app's `LaTeXEngine.swift`
 **SPM target:** Bundled in the Python framework (host-app glue)
 **File size:** 1,295 lines
-**Backends:** SwiftMath (native math glyphs) · BusyTeX WASM (xelatex + CJK) · pdftex C library (1.40.20) · Cairo text-path fallback
+**Backends:** vector glyphs (BusyTeX pdflatex → PDF outlines, what manim gets from dvisvgm on a desktop) · SwiftMath (native math glyphs) · BusyTeX WASM (xelatex + CJK, picture) · pdftex C library (1.40.20) · Cairo text-path fallback
 
 Bridges Python LaTeX requests to the host app's pdftex / SwiftMath /
 BusyTeX rendering pipeline. Used by manim's `MathTex` / `Tex` mobjects
@@ -15,7 +15,8 @@ under the hood, and called directly by the `pdflatex` / `latex` / `tex`
 
 | File | What it does |
 |---|---|
-| `offlinai_latex/__init__.py` | Single module — `tex_to_svg()`, `compile_tex()`, `_autowrap_math_in_text()` preprocessor, BusyTeX dispatch, Cairo fallback, SVG cache |
+| `offlinai_latex/__init__.py` | `tex_to_svg()`, `compile_tex()`, `_autowrap_math_in_text()` preprocessor, BusyTeX dispatch, Cairo fallback, SVG cache |
+| `offlinai_latex/pdf_vector.py` | `prepare_source()` + `pdf_to_svg()`: manim's .tex ready for pdflatex, and a pdfTeX PDF turned into the SVG dvisvgm would write (uses the bundled `pypdf` and `fontTools`) |
 
 ## Public API
 
@@ -31,6 +32,12 @@ under the hood, and called directly by the `pdflatex` / `latex` / `tex`
 your script
    ↓ tex_to_svg(...)
 offlinai_latex
+   ├─ manim passed its .tex (tex_template_body)?
+   │       ↓ yes
+   │  vector glyphs: pdflatex in BusyTeX (compile_doc_request) → PDF →
+   │  pdf_vector → a path per glyph, <rect> per rule, <g id='uniqueNNN'> per part
+   │       ↓ fail (xelatex-only template, compile error, no LaTeX host)
+   │  one line in the log, fall through
    ├─ cache hit? → return cached SVG (validates <path> or <image> presence)
    ├─ has CJK in \text{} OR uses \underbrace / \boxed / \cancel / \xrightarrow
    │  / multi-line environments?
@@ -62,6 +69,52 @@ offlinai_latex returns the path
 ```
 
 ## Backends in detail
+
+### 0. Vector glyphs (manim's MathTex / Tex, preferred)
+
+Desktop manim compiles its .tex with `latex` and converts the DVI with
+`dvisvgm`: every glyph becomes its own path, rules become rectangles, and
+each MathTex part sits in a `<g id='uniqueNNN'>` group (manim writes
+`\special{dvisvgm:raw ...}` markers into the .tex for that). That is what
+`Write` draws stroke by stroke, what `Transform` morphs, and what
+`set_color_by_tex`, `TransformMatchingTex` and `tex[0][2]` index into.
+
+iOS has no dvisvgm, and formulas used to come back as one PNG (BusyTeX →
+PDF → picture): `Write` was a left-to-right wipe, `Transform` between two
+formulas crashed ("Mobject pixel array shapes incompatible for
+interpolation"), `Indicate` / `set_color_by_tex` couldn't recolour, and
+`MathTex("a^2", "+", "b^2")` or `Tex(r"... $\pi r^2$")` failed to compile.
+
+Now, when manim hands `tex_to_svg` its whole .tex (`tex_template_body`),
+`pdf_vector.prepare_source` turns the dvisvgm markers into PDF
+marked-content markers (`\pdfliteral direct{/uniqueNNN BMC}` … `{EMC}`)
+and swaps `\documentclass[preview]{standalone}` for `article` (BusyTeX's
+tree has standalone but not `preview.sty`; article lays the body out the same
+way, and manim only uses the glyphs' places relative to each other). pdflatex
+compiles it in BusyTeX through `compile_doc_request` (the same request the
+shell's `pdflatex` uses), and `pdf_to_svg` reads the page: text operators
+place glyphs whose outlines come from the Type 1 fonts embedded in the PDF
+(the Computer Modern outlines dvisvgm reads too), the rules pdfTeX draws as
+stroked lines become `<rect>`, colours become `fill`, and the markers become
+the groups. Units are PostScript points, as in dvisvgm's SVG.
+
+Checked against real dvisvgm on 20 formulas, paragraphs, lists and titles:
+same glyphs, parts and colours, points within 0.0004 manim units. Twelve
+equation animations rendered with manim 0.20 on a desktop and with this path
+match frame by frame (0.09% of pixels differ, by at most 31/255, on glyph
+edges), and so does a whole TSNE explainer video, 2,879 frames (its three
+`}}` formulas written `} }` so desktop manim could finish it). In the app
+(real BusyTeX) `manim_tex_vector_test.py` passes 11/11.
+
+What doesn't take this path: templates that need XeLaTeX (fontspec, ctex,
+xeCJK, unicode-math…) or CJK text, which keep the BusyTeX picture path. A
+failed compile prints one line and falls back; three failures in a row turn
+the vector path off for the session; if no LaTeX host picks the request up
+within 15 s it stays off. A formula manim cut at `}}` (its part-marker
+syntax, e.g. `\frac{p_{i|j}}{2n}`, which stops desktop manim with a LaTeX
+error) is compiled again with the markers removed and the braces repaired:
+still glyphs, and MathTex gives each part the whole formula.
+`OFFLINAI_LATEX_VECTOR=0` turns the path off.
 
 ### 1. SwiftMath (preferred for pure math)
 
@@ -160,6 +213,8 @@ differ (compile_*, math_done_*, etc.).
 | `compile_math_request.txt` | Math expression for BusyTeX: `<id>\n<svg_path>\nFFFFFF\n<expression>\n` |
 | `math_done_<id>.txt` | Two lines: status + message. Swift writes when BusyTeX done |
 | `compile_request.txt` | Full-document path for Swift's pdf→SVG conversion: `<input_path>\n<svg_path>\n` |
+| `compile_doc_request.txt` | Full document for pdflatex in BusyTeX: `<tex_path>\n<pdf_path>\n<jobname>\n<pdflatex>\n`; the vector path writes it whole and renames it into place |
+| `compile_doc_done.txt` | Two lines: status + message, when the PDF is written |
 | `<svg_path>.latex.log` | xelatex log Swift writes alongside the SVG on compile failure |
 
 ## Public API examples
@@ -192,9 +247,19 @@ $E = mc^2$
 |---|---|
 | `OFFLINAI_LATEX_USE_PDFTEX=1` | Try pdftex via ctypes (off by default — pdftex crashes after one call). Use only for one-off previews |
 | `OFFLINAI_LATEX_FORCE_NATIVE=1` | Override the kill-switch that refuses to call lib-tex v1.40.20 |
-| `OFFLINAI_LATEX_FORCE_BUSYTEX=1` | Always route through BusyTeX, even for trivial math |
+| `OFFLINAI_LATEX_VECTOR=0` | Don't make vector glyphs (manim's MathTex / Tex then take the routes below) |
+| `OFFLINAI_LATEX_FORCE_BUSYTEX=1` | Always route through BusyTeX, even for trivial math (after the vector path) |
 | `OFFLINAI_LATEX_DISABLE_BUSYTEX=1` | Skip BusyTeX entirely (SwiftMath → Cairo path only) |
 | `OFFLINAI_LATEX_GLYPH_STYLE=outline|coarse|rect|empty` | Cairo fallback glyph-extraction mode |
+
+## MathTex parts on the picture path
+
+Before BusyTeX gets a formula, `_strip_specials_balanced` removes manim's
+part markers. It used to turn every part boundary into `}}`, to undo
+manim's `}}` autosplit, which gave `a^2}}+}}b^2` for an ordinary
+`MathTex("a^2", "+", "b^2")` and a failed compile. Now plain parts (each
+balances its braces) just lose the markers; the `}}` repair is kept for
+parts that the autosplit cut mid-brace.
 
 ## iOS-specific notes
 
