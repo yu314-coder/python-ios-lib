@@ -673,7 +673,10 @@ below.
 ### Write / Create on busytex MathTex (column reveal)
 
 *Only for formulas that still come back as a picture (XeLaTeX templates,
-CJK, or the vector path turned off).*
+CJK, or the vector path turned off).* The picture becomes an
+`ImageMobject` straight from its decoded pixels; it used to go through a
+temporary PNG that was never deleted, one left in the temp folder per
+formula (thousands over a few renders).
 
 `MathTex` / `Tex` route through `offlinai_latex`, which produces a
 PNG-in-`<image>` SVG when busytex (real xelatex) handles the expression.
