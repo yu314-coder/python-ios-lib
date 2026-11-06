@@ -42,10 +42,13 @@ What changed, and what has to hold for each:
  13. PyAV's from_ndarray (rebuilt for the app) copies the array once without
      the GIL: the planes hold the array's bytes, and in the app another
      thread keeps running during an 8K copy.
- 14. Frames the writer is done with can go back to the camera to draw in
-     again (OFFLINAI_MANIM_FRAME_POOL=1; off by default, as it lets
-     VideoToolbox hold more frames): only frames the camera handed out and
-     nothing else holds; the encoder gets the same frames on and off.
+ 14. Frames the writer is done with go back to the camera to draw in again
+     while the stream caps the frames VideoToolbox holds (python-ios-lib's
+     FFmpeg: max_pending_frames; without it frames would pile up in the
+     encoder) and the frame is within the frame queue's budget (up to 8K):
+     only frames the camera handed out and nothing else holds; the encoder
+     gets the same frames on and off. In the app, the bundled FFmpeg has
+     the option.
 """
 from __future__ import annotations
 
@@ -689,7 +692,34 @@ print("14. frames drawn again in once the writer is done with them")
 from manim.camera import camera as _cm
 from manim.scene.scene_file_writer import SceneFileWriter
 _pool_env = os.environ.pop("OFFLINAI_MANIM_FRAME_POOL", None)
-check("off unless asked for (memory as before)", not _cm._FramePool.enabled())
+
+
+class _Capped:
+    _capped = True
+
+
+def _given_back(stream):
+    f = np.zeros((6, 8, 4), np.uint8)
+    _cm._frame_pool.handed_out(f)
+    ok = sfw._return_frame(f, stream)
+    _cm._frame_pool.clear()
+    return ok
+
+
+check("frames go back only while VideoToolbox is capped (memory as before otherwise)",
+      _given_back(_Capped()) and not _given_back(None) and not _given_back(FakeStream(4, 4, "yuv420p")))
+_big = np.zeros(sfw._pool_budget_bytes() // 4 + 16, np.uint32)  # a frame past the queue budget (12K, 14K)
+_cm._frame_pool.handed_out(_big)
+check("…and only frames within the frame queue's budget (up to 8K)", not sfw._return_frame(_big, _Capped()))
+del _big
+_cm._frame_pool.clear()
+os.environ["OFFLINAI_MANIM_FRAME_POOL"] = "0"
+check("…OFFLINAI_MANIM_FRAME_POOL=0 never gives frames back", not _given_back(_Capped()))
+caps = sfw._caps_pending_frames("hevc_videotoolbox")
+if _sys.platform == "ios":
+    check("the app's FFmpeg caps the frames VideoToolbox holds (max_pending_frames)", caps)
+else:
+    print(f"        (this FFmpeg {'has' if caps else 'does not have'} max_pending_frames)")
 os.environ["OFFLINAI_MANIM_FRAME_POOL"] = "1"
 pool = _cm._FramePool()
 a = np.zeros((6, 8, 4), np.uint8)

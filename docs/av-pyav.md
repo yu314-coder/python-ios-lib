@@ -171,6 +171,22 @@ wrappers (~2-12 MB each).
 at runtime; `av._core.ffmpeg_version_info` is the human-readable
 string (`"FFmpeg 7.x (offlinai-ios)"`).
 
+### python-ios-lib's libavcodec
+
+`Frameworks/ffmpeg/libavcodec.62.29.101.dylib` is the app's FFmpeg snapshot
+(`git-2026-04-07-0510aff`) rebuilt with one patch,
+`ffmpeg_ios/videotoolbox_max_pending.patch` (`ffmpeg_ios/build_libavcodec_ios.sh`
+rebuilds it; same 445 exported symbols, the other six libraries untouched).
+The VideoToolbox encoders get one more option, `max_pending_frames` (default
+0, no limit): with it set, sending a frame waits while that many are still
+being encoded, counted by VideoToolbox's output callback. VideoToolbox
+otherwise keeps a copy of every frame it is handed until it gets to it.
+
+```python
+stream = out.add_stream("hevc_videotoolbox", rate=30,
+                        options={"realtime": "1", "max_pending_frames": "2"})
+```
+
 ### Codec availability
 
 | Codec | Decode | Encode | Notes |

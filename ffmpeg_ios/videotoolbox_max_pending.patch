@@ -1,0 +1,90 @@
+--- a/libavcodec/videotoolboxenc.c
++++ b/libavcodec/videotoolboxenc.c
+@@ -22,7 +22,9 @@
+ #include <CoreMedia/CoreMedia.h>
+ #include <CoreVideo/CoreVideo.h>
+ #include <dlfcn.h>
++#include <errno.h>
+ #include <pthread.h>
++#include <time.h>
+ #include <TargetConditionals.h>
+ #include <VideoToolbox/VideoToolbox.h>
+ 
+@@ -262,6 +264,13 @@
+     int64_t frame_ct_out;
+     int64_t frame_ct_in;
+ 
++    /* python-ios-lib: frames handed to VideoToolbox, and returned by its
++     * output callback; with max_pending > 0, sending waits while
++     * max_pending of them are still being encoded. */
++    int64_t frames_sent;
++    int64_t frames_done;
++    int max_pending;
++
+     int64_t first_pts;
+     int64_t dts_delta;
+ 
+@@ -745,6 +754,13 @@
+     AVCodecContext *avctx = ctx;
+     VTEncContext   *vtctx = avctx->priv_data;
+     BufNode *info = sourceFrameCtx;
++
++    /* Called once for every frame sent, whether it was encoded, dropped or
++     * failed: one frame less being encoded (see max_pending). */
++    pthread_mutex_lock(&vtctx->lock);
++    vtctx->frames_done++;
++    pthread_cond_broadcast(&vtctx->cv_sample_sent);
++    pthread_mutex_unlock(&vtctx->lock);
+ 
+     av_buffer_unref(&info->frame_buf);
+     if (vtctx->async_error) {
+@@ -2483,6 +2499,26 @@
+     if (!node)
+         return AVERROR(ENOMEM);
+ 
++    /* VideoToolbox takes frames as fast as they come and holds each one
++     * (a copy of the whole picture) until it is encoded, so a sender
++     * quicker than the hardware leaves it holding a queue of them for no
++     * speed. With max_pending, wait until fewer than that many are being
++     * encoded. Not with frame reordering, which holds frames back until
++     * later ones arrive; and never for more than 2 s at a time. */
++    if (vtctx->max_pending > 0 && !vtctx->has_b_frames) {
++        struct timespec until;
++        clock_gettime(CLOCK_REALTIME, &until);
++        until.tv_sec += 2;
++        pthread_mutex_lock(&vtctx->lock);
++        while (vtctx->frames_sent - vtctx->frames_done >= vtctx->max_pending &&
++               !vtctx->async_error) {
++            if (pthread_cond_timedwait(&vtctx->cv_sample_sent, &vtctx->lock,
++                                       &until) == ETIMEDOUT)
++                break;
++        }
++        pthread_mutex_unlock(&vtctx->lock);
++    }
++
+     status = create_cv_pixel_buffer(avctx, frame, &cv_img, node);
+     if (status)
+         goto out;
+@@ -2518,6 +2554,10 @@
+         // Not necessary, just in case new code put after here
+         goto out;
+     }
++
++    pthread_mutex_lock(&vtctx->lock);
++    vtctx->frames_sent++;
++    pthread_mutex_unlock(&vtctx->lock);
+ 
+ out:
+     if (frame_dict)
+@@ -2789,7 +2829,10 @@
+         OFFSET(spatialaq), AV_OPT_TYPE_INT, { .i64 = -1 }, -1, 1, VE }, \
+     { "max_ref_frames", \
+         "Sets the maximum number of reference frames. This only has an effect when the value is less than the maximum allowed by the profile/level.", \
+-        OFFSET(max_ref_frames), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, INT_MAX, VE },
++        OFFSET(max_ref_frames), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, INT_MAX, VE }, \
++    { "max_pending_frames", \
++        "Frames sent and still being encoded past which sending another waits (0: no limit)", \
++        OFFSET(max_pending), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, INT_MAX, VE },
+ 
+ static const AVCodecHWConfigInternal *const vt_encode_hw_configs[] = {
+         HW_CONFIG_ENCODER_FRAMES(VIDEOTOOLBOX, VIDEOTOOLBOX),

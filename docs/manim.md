@@ -551,29 +551,40 @@ than accumulates, which makes 4K and 8K memory-safe:
   133.3 s → 86.5 and 84.6 s. 14336×8064 (14K) HEVC
   renders as before (checked: same duration and pictures, 4.49 GB peak
   footprint vs 4.50 GB before).
-- **Frames can be drawn again in once the writer is done with them — off
-  by default** (`OFFLINAI_MANIM_FRAME_POOL=1` turns it on). Each finished
-  frame goes to the writer as it is and the next one starts in another
-  array; in an iOS process a newly allocated 8K array costs ~9 ms more
-  than one already in use (a 133 MB copy: 15 vs 6 ms in the app's build),
-  its pages being mapped in as they are first written. With the pool, the
-  writer gives a frame back once it has encoded it (`_return_frame`) and
-  the camera starts the next frame in it (`camera._FramePool`): only frames
-  the camera handed out, only if nothing else holds them (a hook that kept
-  the array keeps it as it was), one waiting at most, emptied when the
-  scene's movie is finished. The encoder gets byte-identical frames either
-  way (791 hashed).
+- **VideoToolbox holds at most two frames, and frames are drawn again in
+  once the writer is done with them.** VideoToolbox takes frames as fast
+  as they come and keeps a copy of each until it is encoded; FFmpeg's
+  wrapper hands back at most one packet per frame sent and had no way to
+  wait for it, so a writer quicker than the hardware left it holding a
+  queue of whole frames. python-ios-lib's libavcodec (`ffmpeg_ios/`: the
+  app's FFmpeg snapshot `git-2026-04-07-0510aff`, rebuilt with
+  `videotoolbox_max_pending.patch`; same 445 exported symbols) adds the
+  encoder option `max_pending_frames`, counted by VideoToolbox's own output
+  callback; the writer sets it to `settings.encoder_pending_frames` (2,
+  `OFFLINAI_MANIM_ENCODER_PENDING`; 0 leaves it to VideoToolbox). Sending
+  8K frames as fast as possible in the app: no limit 52.6–53.6 ms a frame
+  and +424–620 MB at the peak; limit 2, 53.7 ms and +190 MB.
 
-  Measured in the app's build (fresh launch each, 8K120, TSNE first seven
-  animations): 57.5 / 59.4 s off, 46.1 / 44.2 s on — but peak footprint
-  1543 / 1543 MB off, 1949 / 1951 MB on. With frames drawn faster the
-  writer keeps VideoToolbox fed with more frames than it encodes: up to 10
-  held at once instead of 6, each a copy of a whole frame. FFmpeg's
-  VideoToolbox encoder hands back at most one packet per frame it is sent
-  and has no setting for how many it may hold, so the writer cannot tell
-  when to wait; pacing it by the packets' timing either let the queue grow
-  or slowed the render to 98–123 s. At 14K that queue would be over a
-  gigabyte, so the pool stays off by default: memory is as before.
+  With the encoder capped, finished frames go back to the camera
+  (`camera._FramePool`, `_return_frame`): in an iOS process a newly
+  allocated 8K array costs ~9 ms more than one already in use (a 133 MB
+  copy: 15 vs 6 ms in the app's build). Only frames the camera handed out,
+  only if nothing else holds them (a hook that kept the array keeps it as
+  it was), one waiting at most, emptied when the scene's movie is finished,
+  only while the stream is capped (stock FFmpeg, and ManimStudio's own
+  split clips, are not), and only for frames within the frame queue's
+  budget (`frame_queue_budget_mb`, 256 MB: up to 8K; at 14K the frame kept
+  for the camera cost ~330 MB at the peak). `OFFLINAI_MANIM_FRAME_POOL=0`
+  turns the pool off, `=1` on whatever the encoder. The encoder gets
+  byte-identical frames either way (791 hashed). Without the cap the pool
+  had cost ~400 MB at 8K (10 frames in the encoder instead of 6).
+
+  In the app's build (fresh launch each, TSNE scene, ManimStudio's encoder
+  wrapper), peak footprint, previous default → now: 8K120 1497–1902 MB
+  (four runs) → 1543 / 1545 MB (1585 / 1585 with a limit of 3); 14K30
+  3983–4313 MB (five runs) → 4147–4153 MB (three); the same
+  movie length; times within this loaded Mac's noise (8K at the hardware
+  encoder's floor either way).
 - **GPU cairo (CairoMetal) frames were blank.** CairoMetal records fills and
   strokes and renders them into the frame's memory only when flushed
   (`cairo._flush_all`). manim never flushed, so with the GPU switch on every
@@ -880,10 +891,22 @@ manim/utils/tex_file_writing.py       — iOS: offlinai_latex; cache accepts its
 manim/mobject/text/numbers.py         — debug counter
 manim/scene/scene_file_writer.py      — VideoToolbox codec choice by resolution
                                        (h264/hevc) + hvc1 tagging; save_image guard;
-                                       frames converted to YUV on several cores
+                                       frames converted to YUV on several cores;
+                                       holds written once; VideoToolbox capped at
+                                       encoder_pending_frames; finished frames
+                                       given back to the camera
 manim/utils/ios_encoder.py           — NEW: VideoToolbox capability probe +
                                        RenderSettings (queue depth, codec,
-                                       convert_threads)
+                                       convert_threads, hold_frames,
+                                       encoder_pending_frames)
+
+Native, rebuilt from recipes in the repo:
+Frameworks/ffmpeg/libavcodec.62.29.101.dylib
+                                     — VideoToolbox max_pending_frames option
+                                       (ffmpeg_ios/build_libavcodec_ios.sh)
+av/video/frame.cpython-314-iphoneos.so
+                                     — from_ndarray: one copy, GIL released
+                                       (pyav_ios/build_frame_ios.sh)
 
 Swift, for apps embedding the package:
 Sources/Manim/ManimRenderConfiguration.swift
