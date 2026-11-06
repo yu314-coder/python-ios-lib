@@ -49,6 +49,7 @@ import copy
 import itertools as it
 import os
 import random
+import shutil
 import time
 
 PASSED = 0
@@ -489,9 +490,13 @@ class _AppTookTheRender(Exception):
     its output folder) moved the movie away."""
 
 
+_made_dirs = []
+
+
 def _render_holds(mode):
     _enc.hold_frames = mode
     media = _tf.mkdtemp(prefix="holds_")
+    _made_dirs.append(media)
     with tempconfig({"media_dir": media, "pixel_width": 320, "pixel_height": 180,
                      "frame_rate": 30, "disable_caching": True, "verbosity": "WARNING",
                      "progress_bar": "none", "write_to_movie": True}):
@@ -567,6 +572,7 @@ try:
 
     once_writer, once_clips = _render_holds.writer, _render_holds.clips
     work = _tf.mkdtemp(prefix="split_")
+    _made_dirs.append(work)
     copies = []
     for c in once_clips:
         dst = os.path.join(work, os.path.basename(c))
@@ -597,6 +603,7 @@ try:
           f"({before} -> {after} of {frames_due} frames)",
           len(held_copies) == 3 and before < frames_due and after == frames_due)
     work2 = _tf.mkdtemp(prefix="split2_")
+    _made_dirs.append(work2)
     fresh = []
     for c in once_clips:
         dst = os.path.join(work2, os.path.basename(c))
@@ -628,6 +635,9 @@ try:
 except _AppTookTheRender:
     print("        (the app's render hook moved this scene's movie: checked by rendering"
           " through manim's own writer, as manim_writer_test.py does)")
+
+for _d in _made_dirs:
+    shutil.rmtree(_d, ignore_errors=True)
 
 print("13. from_ndarray: one copy, without the GIL")
 import threading
