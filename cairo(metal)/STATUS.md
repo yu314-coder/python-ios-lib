@@ -101,9 +101,10 @@ first-render-pass allocation (same in a bare Metal program). Graph (a few long l
 still slower than cairo at 4K (0.56 vs 0.36 s): the per-frame GPU wait dominates.
 
 **Open:** strokes still use our stroker for joins/caps (round joins: arcs, not cairo's
-pen polygon); measured AA is not the default; images (ImageMobject) composited on the
-CPU between vector draws still land under the whole frame's vectors (as before);
-on-device / in-app check of this build pending.
+pen polygon); measured AA is not the default; on-device / in-app check of this build
+pending. (Images under the frame's vectors, and frames with nothing drawn when the app
+didn't flush: fixed on manim's side on 2026-11-06 — its camera calls `_flush_all` before
+writing images into the frame and when the frame is done. See docs/manim.md.)
 
 ---
 

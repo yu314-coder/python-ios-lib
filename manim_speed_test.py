@@ -34,6 +34,8 @@ What changed, and what has to hold for each:
  10. The movie writer converts each frame to the encoder's YUV on several
      cores before encode() (PyAV did it inside, on one): the encoder gets
      the bytes PyAV's own conversion gives, and only where that was checked.
+ 11. A GPU cairo (CairoMetal) draws when flushed: the camera flushes before
+     writing images into the frame itself and when the frame is done.
 """
 from __future__ import annotations
 
@@ -415,6 +417,41 @@ w2.encode(None)
 w2.codec_tag = "hvc1"
 check("…flushing passes None through, and settings reach the stream",
       s2.got == [None] and s2.codec_tag == "hvc1" and w2.width == 1920)
+
+print("11. GPU cairo flushed before images and at the end of a frame")
+import types
+calls = []
+real_cairo = camera_module.cairo
+gpu_like = types.ModuleType("cairo")
+gpu_like.__dict__.update(real_cairo.__dict__)
+gpu_like._flush_all = lambda: calls.append("flush")
+orig_images = Camera.display_multiple_image_mobjects
+orig_vectors = Camera.display_multiple_non_background_colored_vmobjects
+
+def images_seen(self, *a, **k):
+    calls.append("images")
+    return orig_images(self, *a, **k)
+
+def vectors_seen(self, *a, **k):
+    calls.append("vectors")
+    return orig_vectors(self, *a, **k)
+
+camera_module.cairo = gpu_like
+Camera.display_multiple_image_mobjects = images_seen
+Camera.display_multiple_non_background_colored_vmobjects = vectors_seen
+try:
+    c = Camera()
+    c.capture_mobjects([Square(), ImageMobject(np.full((8, 8, 4), 200, np.uint8)), Circle()])
+finally:
+    camera_module.cairo = real_cairo
+    Camera.display_multiple_image_mobjects = orig_images
+    Camera.display_multiple_non_background_colored_vmobjects = orig_vectors
+check("vectors, flush, images, vectors, flush", calls == ["vectors", "flush", "images", "vectors", "flush"],
+      str(calls))
+calls.clear()
+c = Camera()
+c.capture_mobjects([Square()])
+check("…and pycairo, which has no flush, is never asked", calls == [], str(calls))
 
 print(f"{PASSED} passed, {FAILED} failed")
 raise SystemExit(1 if FAILED else 0)

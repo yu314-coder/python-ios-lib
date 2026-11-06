@@ -503,7 +503,8 @@ than accumulates, which makes 4K and 8K memory-safe:
   FFmpeg and VideoToolbox), the scene's first seven animations at 8K120
   (1,020 frames, written through ManimStudio's encoder wrapper) took
   105.4 s with `3938e8d7` and 68.5 s with this and the converted frames
-  below (CPU cairo).
+  below (CPU cairo); 70.6 s with CairoMetal, whose frames now have
+  something on them.
 
 - **Frames reach the encoder already converted, on several cores.** PyAV
   turns each RGBA frame into the encoder's YUV inside `encode()`, with the
@@ -522,6 +523,16 @@ than accumulates, which makes 4K and 8K memory-safe:
   105 to 76 ms. What remains on the writer is PyAV's `from_ndarray`, which
   copies the array twice (`tobytes()` first) and holds the GIL meanwhile
   (33 ms at 8K in the app's build); that needs a PyAV rebuild.
+- **GPU cairo (CairoMetal) frames were blank.** CairoMetal records fills and
+  strokes and renders them into the frame's memory only when flushed
+  (`cairo._flush_all`). manim never flushed, so with the GPU switch on every
+  frame came out with nothing drawn on it, unless the app flushed in its own
+  `get_frame` hook (CodeBench's editor does; ManimStudio and a script run
+  from the terminal did not): a 1,272-frame 8K render was all black. The
+  camera now flushes when a frame is done, and before images, point clouds
+  and background-coloured shapes, which it writes into the frame with NumPy
+  and which therefore landed under the shapes drawn before them. pycairo
+  has no `_flush_all` and is never asked.
 - **Return freed pages to the OS.** `PYTHONMALLOC=malloc` plus
   `malloc_zone_pressure_relief(NULL, 0)` between animations, so released
   memory actually leaves `phys_footprint` (what jetsam measures) instead
