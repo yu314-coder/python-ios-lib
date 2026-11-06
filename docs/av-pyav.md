@@ -214,6 +214,16 @@ aren't compiled in. For live camera capture, use Swift's AVFoundation
   — but iOS has no multiprocessing anyway.
 - Encode/decode releases the GIL during the FFmpeg call. Safe to use
   from a Python thread; the host app's UI stays responsive.
+- `VideoFrame.from_ndarray` copies the array **once, without the GIL**
+  (python-ios-lib patch, `av/video/frame.py` `copy_array_to_plane`).
+  Stock PyAV makes `array.tobytes()` first — a whole copy into a bytes
+  object, 133 MB for an 8K RGBA frame — and then a second copy into the
+  plane, both holding the GIL, so a thread encoding video stalled every
+  other thread for both. Same bytes in the planes (309 cases checked
+  against the stock module: 20 formats, padded rows, strided and
+  Fortran-order arrays). The module is rebuilt from the bundled sources by
+  `pyav_ios/build_frame_ios.sh` (PyAV 17.0.1's FFmpeg declarations,
+  FFmpeg 8.1.1 headers, same load commands as the original).
 
 ---
 
