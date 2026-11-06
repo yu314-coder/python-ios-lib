@@ -265,6 +265,10 @@ These are structural in the module split / `cm_internal.h`, not bolted on:
 8. **GPU wraps kept with their arrays.** The `MTLBuffer` over a numpy array's
    memory is kept while that array lives (up to four arrays), so a new surface
    over it does not wrap and map it again.
+9. **manim's paths in one call.** `Context._append_cubic_curves(points, atol)`
+   builds a VMobject's subpaths from its cubic Bezier points in C, exactly as
+   manim's camera does call by call; a transparent solid source drawn OVER is
+   skipped before any work, as cairo does.
 
 ---
 

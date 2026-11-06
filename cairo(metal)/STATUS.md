@@ -12,6 +12,51 @@ the design rationale.
 
 ---
 
+## 2026-11-07 — manim's paths in one call; transparent draws skipped
+
+- **`Context._append_cubic_curves(points, atol)`** builds, in one C call, the path
+  manim's camera builds from a VMobject's cubic Bezier points (a subpath wherever
+  a curve does not start at the previous one's end, closed when it ends at its
+  start; manim's tolerance test, the same doubles and comparisons).  manim
+  (python-ios-lib) uses it when the context's type has it: one call per mobject
+  instead of three Python calls per curve.  Same paths: 600 random shapes against
+  manim's loop written out (`tests/test_path_batch.py`), 133 real manim paths in
+  `manim_speed_test.py`; 1,451 TSNE frames byte-identical at 1080p and 4K.
+- **A transparent solid source drawn OVER is skipped** in `fill`/`stroke`, before
+  flattening, stroke expansion and the two GPU passes, as cairo's `_reduce_op`
+  skips it (manim fills every shape, transparent ones included).  Pixels unchanged.
+
+TSNE, first 1,451 frames, ms per frame (recycled frames, layer frames on; pycairo and
+"now" measured in one sitting, one run each, on a loaded M4 Mac):
+
+| | pycairo | CairoMetal 2026-11-06 | now |
+|---|---|---|---|
+| this Mac, 1080p | 3.4 | 4.5 | 3.3 |
+| this Mac, 4K | 4.6 | 5.9-6.1 | 4.3 |
+| this Mac, 8K | 7.8 | 11.3-11.5 | 7.8 |
+| in the app (CodeBench, Designed for iPad), 1080p | 6.0 | -- | 4.3 |
+
+In the app pycairo's fills are slower than on the Mac (2.38 vs 0.96 ms a frame),
+so there CairoMetal draws a 1080p frame ~28% faster.  Whole renders barely move:
+at 4K and 8K the hardware encoder sets the pace, and at 1080p60 with the movie
+written the two came out within this loaded Mac's noise (7.4 / 8.1 s).
+
+**Tried, not kept:** covering each fill with its own stencil triangles instead
+of its bounding box (byte-identical, but GPU time per frame 1.33 -> 3.15 ms at
+4K: on this tile-based GPU the triangle count costs more than the area saved);
+spinning on the command buffer's status before blocking (-0.1 ms at 8K, nothing
+at 1080p, and it keeps a core busy that the encoder's threads use); raising the
+calling thread's QoS (no change: the app already runs at default and the
+wake-up latency is the same as on the Mac).  Not waiting at the end of a frame
+(letting the GPU finish while manim works out the next one) would hide the flush
+(~1.2-1.9 ms at 1080p) but CodeBench's and ManimStudio's `write_frame` hooks read
+each frame before passing it on, so they would see it unfinished.
+
+`tests/test_path_batch.py` (11 checks); every suite passes; on the iOS build in
+CodeBench 25/25, 55/55, 98/98, 45/45, 11/11.
+
+---
+
 ## 2026-11-06 — frames drawn into caller memory: layer frames, kept GPU wraps
 
 manim draws each frame into its own pixel array (`ImageSurface.create_for_data`).

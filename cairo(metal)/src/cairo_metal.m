@@ -533,6 +533,16 @@ cm_set_fill_rule(cm_context_t *ctx, cm_fill_rule_t fill_rule)
     ctx->fill_rule = fill_rule;
 }
 
+/* A fully transparent solid source drawn OVER leaves every pixel as it is:
+ * cairo reduces the operator to DEST and returns before rasterizing
+ * (_reduce_op in cairo-gstate.c); so do we, before flattening, stroking and
+ * the two GPU passes.  (manim fills every shape, transparent ones included.) */
+static inline bool cm_draw_is_noop(const cm_context_t *ctx)
+{
+    return ctx->op == CM_OPERATOR_OVER && ctx->source.kind == CM_PAINT_SOLID
+        && ctx->source.solid.a == 0.0f;
+}
+
 CM_PUBLIC void
 cm_fill_preserve(cm_context_t *ctx)
 {
@@ -540,6 +550,7 @@ cm_fill_preserve(cm_context_t *ctx)
 
     /* Empty path -> nothing to fill (and nothing to preserve differently). */
     if (ctx->path.verb_count == 0) return;
+    if (cm_draw_is_noop(ctx)) return;
 
     /* Flatten the recorded path into device space using the current CTM.  This
      * is idempotent while the path is clean, so a following stroke_preserve on
@@ -614,6 +625,7 @@ cm_stroke_preserve(cm_context_t *ctx)
 
     if (ctx->path.verb_count == 0) return;
     if (!(ctx->line_width > 0.0)) return;   /* zero/negative width: nothing */
+    if (cm_draw_is_noop(ctx)) return;
 
     /* Flatten the source path into device space (idempotent if already clean
      * from a preceding fill_preserve on the same preserved path). */

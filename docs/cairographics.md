@@ -176,12 +176,12 @@ before importing manim.
   `cairo(metal)/README.md` / `DESIGN.md`). It is toggleable in the CodeBench
   app (**Settings → Manim → GPU rendering**). **It does NOT make manim
   renders shorter,** though. At 4K and 8K the hardware video encoder sets
-  the pace and pycairo's drawing already keeps up with it, and per frame
-  CairoMetal is still a little slower than pycairo for manim's frames (a few
-  hundred simple shapes, which pycairo fills quickly): 8K 11.4 vs ~9.7 ms,
-  4K 6.0 vs 5.4 ms on an M4, after 2026-11-06's layer frames, kept GPU wraps
-  and frames handed to the writer without a copy (it was 14.8 ms at 8K; see
-  `cairo(metal)/STATUS.md` and `docs/manim.md`). MetalFX upscaling (draw at
+  the pace and pycairo's drawing already keeps up with it. Per frame,
+  after 2026-11-06/07's layer frames, kept GPU wraps, frames handed to the
+  writer without a copy and manim's paths built in one C call, CairoMetal
+  draws a manim frame as fast as pycairo on an M4 Mac (8K 7.8 ms; it was
+  14.8) and ~28% faster in the app at 1080p (4.3 vs 6.0 ms); see
+  `cairo(metal)/STATUS.md` and `docs/manim.md`. MetalFX upscaling (draw at
   4K, upscale to 8K) was measured and is slower than drawing at 8K. The
   real speed lever is **lower fps**. CairoMetal is a real, general-purpose
   GPU cairo — just not a manim accelerator.

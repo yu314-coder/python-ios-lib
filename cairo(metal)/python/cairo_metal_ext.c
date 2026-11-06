@@ -2149,6 +2149,64 @@ static PyObject *CMContext_curve_to(CMContext *self, PyObject *args) {
     double x1, y1, x2, y2, x3, y3;
     if (!PyArg_ParseTuple(args, "dddddd", &x1, &y1, &x2, &y2, &x3, &y3)) return NULL;
     cm_curve_to(self->ctx, x1, y1, x2, y2, x3, y3); Py_RETURN_NONE; }
+/* _append_cubic_curves(points, atol) -- manim's path, in one call.
+ *
+ * points: a C-contiguous float64 array of shape (4*n, k>=2), n cubic Bezier
+ * curves (anchor, handle, handle, anchor), as manim's VMobject keeps them.
+ * Exactly what manim's camera._append_cubic_path does with them, one Python
+ * call per point per curve fewer: a subpath starts wherever a curve's first
+ * anchor is not the previous curve's last anchor (consider_points_equals_2d:
+ * |dx| <= atol + 1e-5*|x| and |dy| <= atol + 1e-5*|y|, an exactly equal anchor
+ * with a finite y passing outright), and a subpath is closed when its last
+ * point equals its first by the same test.  Same doubles, same comparisons,
+ * so the same path. */
+static inline int cm_pts_far(double px, double py, double x, double y, double atol)
+{
+    const double rtol = 1.0e-5;
+    return fabs(px - x) > atol + rtol * fabs(x) || !(fabs(py - y) <= atol + rtol * fabs(y));
+}
+static PyObject *CMContext_append_cubic_curves(CMContext *self, PyObject *args) {
+    PyObject *obj; double atol;
+    if (!PyArg_ParseTuple(args, "Od", &obj, &atol)) return NULL;
+    Py_buffer v;
+    if (PyObject_GetBuffer(obj, &v, PyBUF_C_CONTIGUOUS | PyBUF_FORMAT | PyBUF_ND) != 0) return NULL;
+    if (v.ndim != 2 || !v.format || strcmp(v.format, "d") != 0 || v.shape[1] < 2 || v.shape[0] % 4) {
+        PyBuffer_Release(&v);
+        PyErr_SetString(PyExc_ValueError,
+            "_append_cubic_curves: points must be a C-contiguous float64 array of shape (4n, >=2)");
+        return NULL;
+    }
+    const double *p = (const double *)v.buf;
+    Py_ssize_t k = v.shape[1], count = v.shape[0] / 4;
+    if (count > 0) {
+        cm_context_t *c = self->ctx;
+        const int same_passes = atol >= 0;
+#define PX(i, j) p[((i) * 4 + (j)) * k]
+#define PY(i, j) p[((i) * 4 + (j)) * k + 1]
+        Py_ssize_t first = 0;
+        cm_new_sub_path(c);
+        cm_move_to(c, PX(0, 0), PY(0, 0));
+        for (Py_ssize_t i = 0; i < count; ++i) {
+            if (i) {
+                double x = PX(i, 0), y = PY(i, 0), px = PX(i - 1, 3), py = PY(i - 1, 3);
+                int exact = same_passes && px == x && py == y && -INFINITY < y && y < INFINITY;
+                if (!exact && cm_pts_far(px, py, x, y, atol)) {
+                    if (!cm_pts_far(PX(first, 0), PY(first, 0), px, py, atol))
+                        cm_close_path(c);
+                    first = i;
+                    cm_new_sub_path(c);
+                    cm_move_to(c, x, y);
+                }
+            }
+            cm_curve_to(c, PX(i, 1), PY(i, 1), PX(i, 2), PY(i, 2), PX(i, 3), PY(i, 3));
+        }
+        if (!cm_pts_far(PX(first, 0), PY(first, 0), PX(count - 1, 3), PY(count - 1, 3), atol))
+            cm_close_path(c);
+#undef PX
+#undef PY
+    }
+    PyBuffer_Release(&v);
+    Py_RETURN_NONE; }
 static PyObject *CMContext_rel_move_to(CMContext *self, PyObject *args) {
     double dx, dy; if (!PyArg_ParseTuple(args, "dd", &dx, &dy)) return NULL;
     cm_rel_move_to(self->ctx, dx, dy); if (cm_check_ctx(self->ctx) < 0) return NULL; Py_RETURN_NONE; }
@@ -2530,6 +2588,8 @@ static PyMethodDef CMContext_methods[] = {
     {"move_to",         (PyCFunction)CMContext_move_to,         METH_VARARGS, "move_to(x, y)"},
     {"line_to",         (PyCFunction)CMContext_line_to,         METH_VARARGS, "line_to(x, y)"},
     {"curve_to",        (PyCFunction)CMContext_curve_to,        METH_VARARGS, "curve_to(x1, y1, x2, y2, x3, y3)"},
+    {"_append_cubic_curves", (PyCFunction)CMContext_append_cubic_curves, METH_VARARGS,
+     "_append_cubic_curves(points, atol): manim's cubic Bezier points (4n x >=2 float64) as subpaths, in one call"},
     {"close_path",      (PyCFunction)CMContext_close_path,      METH_NOARGS,  "close_path()"},
     {"rel_move_to",     (PyCFunction)CMContext_rel_move_to,     METH_VARARGS, "rel_move_to(dx, dy)"},
     {"rel_line_to",     (PyCFunction)CMContext_rel_line_to,     METH_VARARGS, "rel_line_to(dx, dy)"},
