@@ -610,6 +610,15 @@ than accumulates, which makes 4K and 8K memory-safe:
   4K60 22.7–23.4 s; pycairo 59.9–62.6 s at 8K120): the hardware encoder sets
   the pace at those sizes, and the drawing keeps up with it either way.
 
+  2026-11-07: the camera builds each VMobject's path with CairoMetal's
+  `Context._append_cubic_curves` (one C call per mobject, the same subpaths
+  and closes as its loop: 133 paths checked in `manim_speed_test.py`, TSNE
+  frames byte-identical), and CairoMetal skips transparent fills and strokes
+  as cairo does. Per frame, pycairo / CairoMetal now: 1080p 3.4 / 3.3 ms, 4K
+  4.6 / 4.3, 8K 7.8 / 7.8 on the Mac; in the app (1080p) 6.0 / 4.3 ms —
+  pycairo fills more slowly there. Renders still take as long as before at
+  4K and 8K (the encoder), and at 1080p60 the two came out within noise.
+
   **MetalFX upscaling, tried and not used.** Drawing at 4K and upscaling to
   8K with `MTLFXSpatialScaler` works and looks better than bilinear (about
   Lanczos: 37.6–46.2 dB against the frames drawn at 8K, a faint bright fringe
@@ -740,10 +749,10 @@ the GPU (`h264_videotoolbox`, or `hevc_videotoolbox` above the H.264 ceiling). A
 (CairoMetal)** can be toggled on (**Settings → Manim → GPU rendering**) — it
 renders correctly on the GPU but does **not** make renders shorter: at 4K
 and 8K the hardware video encoder sets the pace and pycairo's drawing
-already keeps up with it, and per frame CairoMetal is still a little slower
-than pycairo on an M4 (8K 11.4 vs ~9.7 ms, 4K 6.0 vs 5.4 ms, after the
-2026-11-06 work above; at 8K120 its peak memory is ~90–100 MB above pycairo's). For shorter
-renders, **lower fps** writes fewer frames.
+already keeps up with it. Per frame it now draws as fast as pycairo on an
+M4 Mac and ~28% faster in the app at 1080p (4.3 vs 6.0 ms, 2026-11-07); at
+8K120 its peak memory is ~90–100 MB above pycairo's. For shorter renders,
+**lower fps** writes fewer frames.
 (manim's own OpenGL renderer remains unusable on iOS — `moderngl` is a stub.)
 See `cairo(metal)/` and `docs/cairographics.md`.
 
@@ -906,7 +915,8 @@ manim/animation/creation.py           — Write/Create iOS tweaks
 manim/animation/fading.py             — iOS tweaks
 manim/camera/camera.py                — images composited over their own box
                                        only, not the whole frame; paths built
-                                       from plain floats; one-copy frame reset;
+                                       from plain floats (in one CairoMetal call
+                                       when cairo is CairoMetal); one-copy frame reset;
                                        images resampled on worker threads;
                                        frames handed to the writer
                                        (release_frame); one-colour rows filled

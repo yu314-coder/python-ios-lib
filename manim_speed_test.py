@@ -147,6 +147,31 @@ with tempconfig({"verbosity": "WARNING"}):
             total += 1
             same += a.calls == b.calls
     check(f"cairo gets the same calls for {total} paths", same == total, f"{same}/{total}")
+    try:
+        import cairo_metal as _cm
+    except Exception:
+        _cm = None
+    if _cm is None or not hasattr(_cm.Context, "_append_cubic_curves"):
+        print("        (CairoMetal not here: its one-call paths are checked in the app)")
+    else:
+        # CairoMetal builds the path in one call (Context._append_cubic_curves);
+        # the same calls made one by one must give the same path.
+        _surf = _cm.ImageSurface(_cm.FORMAT_ARGB32, 64, 64)
+        _one, _each = _cm.Context(_surf), _cm.Context(_surf)
+        same = total = 0
+        for shape in shapes:
+            for vm in shape.family_members_with_points():
+                _one.new_path()
+                cam.set_cairo_context_path(_one, vm)
+                rec = Recorder()
+                old_path(cam, rec, vm)
+                _each.new_path()
+                for name, args in rec.calls:
+                    getattr(_each, name)(*args)
+                total += 1
+                same += list(_one.copy_path()) == list(_each.copy_path())
+        check(f"CairoMetal's one-call paths are the paths made call by call ({total} paths)",
+              same == total, f"{same}/{total}")
     t0 = time.perf_counter()
     for _ in range(3):
         for vm in long.family_members_with_points():
