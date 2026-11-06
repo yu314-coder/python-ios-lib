@@ -483,6 +483,10 @@ void *cm_device_sampler(cm_device *dev, cm_filter_t filter, cm_extend_t extend);
 typedef struct cm_frame cm_frame;       /* opaque: cmd buffer + ring slice   */
 
 cm_frame   *cm_frame_begin(cm_surface_t *surface);
+/* layer_ok: the frame may draw on a transparent layer composited into the
+ * caller's pixels at its end (only OVER draws; a direct surface). */
+cm_frame   *cm_frame_begin_ex(cm_surface_t *surface, bool layer_ok);
+bool        cm_frame_is_layer(cm_frame *f);
 void       *cm_frame_alloc_verts(cm_frame *f, size_t bytes,
                                  void **out_mtlbuffer, uint32_t *out_offset);
 void       *cm_frame_alloc_uniforms(cm_frame *f, size_t bytes,

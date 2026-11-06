@@ -132,6 +132,7 @@ typedef struct cm_frame {
     bool       active;                  /* begun and not yet ended              */
     bool       in_flight;               /* committed; GPU still reading buffers  */
     bool       single_sample;           /* ANTIALIAS_NONE 1-sample pass (no MSAA)*/
+    bool       layer;                   /* layer frame: composited at its end    */
 
     /* Per-slot dynamic arenas: a CHAIN of shared MTLBuffers per arena.  [0] is
      * small (CM_VTX_ARENA_BASE / CM_UNI_ARENA_BASE); a frame that outgrows the
@@ -214,6 +215,11 @@ struct cm_device {
     /* Lazy frame-load pipelines (fullscreen copy of the colour into the MSAA
      * attachment), one per colour format: BGRA8, R8, B5G6R5. */
     id<MTLRenderPipelineState> load_pipes[3];
+
+    /* Lazy layer-frame composite (cm_tile_composite tile function), BGRA8 only;
+     * tile_state 0 = not tried yet, 1 = built, -1 = not available here. */
+    id<MTLRenderPipelineState> tile_pipe;
+    int                        tile_state;
 
     /* Lazy analytic-coverage covers (solid, linear, radial) + a no-stencil
      * depth-stencil state for them (cm_fill.m's analytic path). */
@@ -1029,6 +1035,7 @@ void cm_device_destroy(cm_device *dev)
                 dev->samplers[fi][ei] = nil;
 
         for (int i = 0; i < 3; ++i) dev->load_pipes[i] = nil;
+        dev->tile_pipe = nil;
         for (int i = 0; i < 3; ++i) dev->acov_pipes[i] = nil;
         for (int i = 0; i < 3; ++i) dev->acov_full_pipes[i] = nil;
         dev->dss_none = nil;
@@ -1489,6 +1496,54 @@ static id<MTLRenderPipelineState> cm_device_load_pipeline(cm_device *dev, MTLPix
     return ps;
 }
 
+/* Layer frames (CM_LAYER_FRAMES=0 turns them off): see cm_tile_composite in
+ * fill.metal.  The composite is a tile function, so it needs a GPU with tile
+ * shading (Apple4 and up: every Apple-silicon Mac, A11 and later). */
+static int g_layer_frames = -1;          /* -1: not read from the environment yet */
+
+static bool cm_layer_frames_enabled(void)
+{
+    if (g_layer_frames < 0) {
+        const char *env = getenv("CM_LAYER_FRAMES");
+        g_layer_frames = !(env && env[0] == '0');
+    }
+    return g_layer_frames == 1;
+}
+
+/* Diagnostics (cairo_metal._set_layer_frames): 0 off, 1 on, for frames begun
+ * after the call. */
+void cm_debug_set_layer_frames(int on) { g_layer_frames = on ? 1 : 0; }
+
+static id<MTLRenderPipelineState> cm_device_tile_composite_pipeline(cm_device *dev)
+{
+    pthread_mutex_lock(&dev->lazy_mtx);
+    if (dev->tile_state == 0) {
+        dev->tile_state = -1;
+        id<MTLFunction> fn = nil;
+        if ([dev->mtl supportsFamily:MTLGPUFamilyApple4])
+            fn = [dev->library newFunctionWithName:@"cm_tile_composite"];
+        if (fn) {
+            MTLTileRenderPipelineDescriptor *td = [[MTLTileRenderPipelineDescriptor alloc] init];
+            td.tileFunction = fn;
+            td.rasterSampleCount = CM_MSAA_SAMPLE_COUNT;
+            td.colorAttachments[0].pixelFormat = MTLPixelFormatBGRA8Unorm;
+            td.threadgroupSizeMatchesTileSize = YES;
+            NSError *err = nil;
+            dev->tile_pipe = [dev->mtl newRenderPipelineStateWithTileDescriptor:td
+                                                                       options:MTLPipelineOptionNone
+                                                                    reflection:nil
+                                                                         error:&err];
+            if (dev->tile_pipe) dev->tile_state = 1;
+            else NSLog(@"CairoMetal: layer composite pipeline: %@", err);
+        }
+    }
+    id<MTLRenderPipelineState> ps = dev->tile_pipe;
+    pthread_mutex_unlock(&dev->lazy_mtx);
+    return ps;
+}
+
+bool cm_frame_is_layer(cm_frame *f) { return f && f->layer; }
+
 /* Before a frame that starts from the surface's pixels: the previous frame's
  * resolve must have landed (the load reads it through a second texture
  * object, which Metal's tracking does not tie to the first), and a staged
@@ -1505,6 +1560,11 @@ static void cm_frame_prepare_backing(cm_surface_t *backing)
 }
 
 cm_frame *cm_frame_begin(cm_surface_t *surface)
+{
+    return cm_frame_begin_ex(surface, false);
+}
+
+cm_frame *cm_frame_begin_ex(cm_surface_t *surface, bool layer_ok)
 {
     if (!surface || !surface->dev) return NULL;
     cm_device *dev = surface->dev;
@@ -1576,6 +1636,17 @@ cm_frame *cm_frame_begin(cm_surface_t *surface)
         bool load = backing->direct || backing->has_content;
         id<MTLTexture> load_src = nil;
         id<MTLRenderPipelineState> load_ps = nil;
+        /* A layer frame: the caller's buffer is composited into at the end
+         * (cm_frame_end) instead of loaded here and resolved over in full. */
+        bool layer = layer_ok && backing == surface && backing->direct
+                  && backing->ext_mtlbuf && resolve.pixelFormat == MTLPixelFormatBGRA8Unorm
+                  && (backing->tex_stride % 4) == 0
+                  && cm_layer_frames_enabled()
+                  && cm_device_tile_composite_pipeline(dev) != nil;
+        if (layer) {
+            cm_frame_prepare_backing(backing);
+            load = false;
+        }
         if (load) {
             cm_frame_prepare_backing(backing);
             load_src = (__bridge id<MTLTexture>)cm_surface_color_read_texture(backing);
@@ -1591,9 +1662,10 @@ cm_frame *cm_frame_begin(cm_surface_t *surface)
          * and a PRIVATE texture for an offscreen group target -- same store
          * action, different storage. */
         rp.colorAttachments[0].texture        = msaa;
-        rp.colorAttachments[0].resolveTexture = resolve;
+        rp.colorAttachments[0].resolveTexture = layer ? nil : resolve;
         rp.colorAttachments[0].loadAction     = MTLLoadActionClear;
-        rp.colorAttachments[0].storeAction    = MTLStoreActionMultisampleResolve;
+        rp.colorAttachments[0].storeAction    = layer ? MTLStoreActionDontCare
+                                                      : MTLStoreActionMultisampleResolve;
         rp.colorAttachments[0].clearColor     = MTLClearColorMake(0.0, 0.0, 0.0, 0.0);
         /* Stencil: clear to 0; samples are transient (memoryless), DontCare. */
         rp.stencilAttachment.texture     = stencil;
@@ -1640,6 +1712,7 @@ cm_frame *cm_frame_begin(cm_surface_t *surface)
         f->uidx    = 0;
         f->active  = true;
         f->single_sample = false;       /* this is the MSAA path                 */
+        f->layer   = layer;
     }
     return f;
 }
@@ -1752,6 +1825,7 @@ cm_frame *cm_frame_begin_single(cm_surface_t *surface)
         f->uidx    = 0;
         f->active  = true;
         f->single_sample = true;
+        f->layer = false;
     }
     return f;
 }
@@ -1841,6 +1915,18 @@ void cm_frame_end(cm_frame *f, bool wait)
     if (backing && backing->direct) wait = true;
 
     @autoreleasepool {
+        if (f->layer && backing) {
+            /* Composite the layer into the caller's pixels, tile by tile, before
+             * the attachment (memoryless, never stored) goes away. */
+            struct { uint32_t width, height, stride_px, samples; } p = {
+                (uint32_t)backing->width, (uint32_t)backing->height,
+                (uint32_t)(backing->tex_stride / 4), CM_MSAA_SAMPLE_COUNT };
+            [f->enc setRenderPipelineState:dev->tile_pipe];
+            [f->enc setTileBuffer:(__bridge id<MTLBuffer>)backing->ext_mtlbuf offset:0 atIndex:0];
+            [f->enc setTileBytes:&p length:sizeof(p) atIndex:1];
+            [f->enc dispatchThreadsPerTile:MTLSizeMake(f->enc.tileWidth, f->enc.tileHeight, 1)];
+        }
+        f->layer = false;
         [f->enc endEncoding];
         f->enc = nil;
 

@@ -12,6 +12,77 @@ the design rationale.
 
 ---
 
+## 2026-11-06 — frames drawn into caller memory: layer frames, kept GPU wraps
+
+manim draws each frame into its own pixel array (`ImageSurface.create_for_data`).
+Profiling the TSNE scene's first 1,451 frames showed CairoMetal slower per frame
+than pycairo (8K: 14.8 vs 7.9 ms; 4K: 7.2 vs 4.5 ms), for three reasons, all
+fixed here and in manim (python-ios-lib):
+
+- **Every frame went through the GPU twice in full.** A frame started by copying
+  the whole buffer into the MSAA attachment (`cm_fs_load`) and ended by resolving
+  every pixel back: ~3.5-5 ms of GPU time at 7680x4320 even for one small shape.
+  Now a frame over caller memory whose draws are all OVER is a **layer frame**
+  (`cm_frame_begin_ex`): its attachment starts transparent, nothing is loaded,
+  and a tile function at its end (`cm_tile_composite`, `fill.metal`) resolves
+  each pixel (each distinct colour weighted by the samples it covers) and
+  composites it OVER the buffer -- only where something was drawn.  One shape at
+  8K: 3.5 -> 1.7 ms of GPU time.  Any other operator composites the open layer
+  first and draws on a frame that loads the buffer, as before.  Needs tile
+  shading (Apple4+: every Apple-silicon Mac, A11 and later); without it, or with
+  `CM_LAYER_FRAMES=0` / `cairo_metal._set_layer_frames(0)`, frames load as before.
+  OVER is associative, so the picture is the same to rounding: TSNE frames within
+  one level of the old path on <0.1% of pixels (and as far from pycairo as
+  before); 30 stacked translucent layers over noise are as close to the exact
+  result as before (mean error 0.158 vs 0.184; pycairo 0.368).
+- **A new surface each frame wrapped the array for the GPU again.** manim makes
+  one per frame over the few arrays its frames rotate through; making the
+  `MTLBuffer` and mapping its pages cost ~1.7 ms a frame at 8K.  The wrap is now
+  kept with the numpy array that owns the memory (up to four arrays) and dropped,
+  through a weak reference, when the array is freed (numpy clears those before it
+  frees the memory).  A new surface over an array in use now costs what reusing
+  one does (2.09 vs 2.16 ms a frame).
+- **manim copied each GPU frame for the writer** (133 MB at 8K, ~4 ms here and
+  ~15 ms in an iOS process).  manim now hands CairoMetal frames to the writer as
+  it does pycairo's (python-ios-lib, `CairoRenderer._frame_for_writer`).
+
+TSNE, first 1,451 frames, frames recycled as the app's writer does, ms per frame
+(two runs each, a loaded M4 Mac): 8K pycairo 9.2-10.2, CairoMetal before
+14.3-15.2, now 11.3-11.5; 4K 5.2-5.6 / 6.8-6.9 / 5.9-6.1; 1080p 3.5-3.6 /
+4.4-4.7 / 4.5-4.6.  So CairoMetal is 25% faster at 8K than it was and still not
+faster than pycairo on this Mac: manim's frames are mostly a few hundred simple
+shapes, which pycairo fills quickly on the CPU, and the GPU frame still costs a
+pass over the whole frame (the tile function runs on every tile, ~1 ms at 8K
+with nothing to do).
+
+In the app (CodeBench, Designed for iPad on the M4, fresh launch per run; TSNE's
+first seven animations through ManimStudio's encoder wrapper), GPU switch on:
+8K120 peak memory footprint 1885-1913 MB before, 1758-1765 MB now; 4K60
+1100 / 1100 -> 1070 / 1078 MB.  Render time is unchanged (8K120 57.5-63.1 s
+either way, 4K60 22.7-23.4 s): at those sizes the hardware video encoder sets
+the pace and the drawing, on the GPU or the CPU, keeps up with it.  On the iOS
+build: `cairo_gpu_test.py` 25/25, `cairo_gpu_full_test.py` 55/55,
+`cairo_gpu_deep_test.py` 98/98, `tests/test_layer_frames.py` 45/45.
+
+New: `tests/test_layer_frames.py` (45 checks: nine scenes on four backgrounds,
+layer vs whole-frame, exact-result check for translucency, untouched pixels and
+odd-size edges, wraps kept and dropped).  All suites pass with layer frames on
+and off.
+
+**Found, not fixed:** `mask()` with a gradient pattern samples a mask texture
+that is never bound (only image masks get one): the result is undefined in both
+paths (white everywhere with the old path, nothing with layer frames; pycairo
+fades through the gradient).  `mask_surface` works.  manim never masks.
+
+**Tried, not used: MetalFX upscaling** (drawing at 4K and upscaling to 8K with
+`MTLFXSpatialScaler`).  It works -- sharper than bilinear, about as close to the
+native 8K frame as Lanczos (37.6-46.2 dB PSNR), with a faint bright fringe on
+edges -- but the upscale alone took 7-11 ms of GPU time per 8K frame, while
+drawing at 8K costs ~3.4 ms more than drawing at 4K, and the encoder still gets
+8K frames.  Slower and softer, so not an option.
+
+---
+
 ## 2026-11-04 — measured antialiasing 1.3-3.8x faster per frame
 
 Measured on the same manim 0.19 scenes as the 11-03 round (host harness, frames

@@ -1541,3 +1541,47 @@ cm_fs_blend_gouraud_clip(GouraudInOut          in       [[stage_in]],
 //    once the clip pipelines are wired in (1).  The clip UV needs no new uniform:
 //    cm_dev_to_clip_uv recovers (1/W,1/H) from to_clip (= 2/W, -2/H).
 // ===========================================================================
+
+// ===========================================================================
+// LAYER FRAMES -- composite the frame's drawing into the caller's pixels
+// ===========================================================================
+//
+// A frame drawn into a caller's buffer (ImageSurface.create_for_data: manim's
+// pixel_array) used to start by copying every pixel of the buffer into the MSAA
+// attachment (cm_fs_load) and end by resolving every pixel back: two full
+// passes over the frame's memory, ~5 ms of GPU time at 7680x4320 even for one
+// small shape.  A layer frame (cm_frame_begin_ex, OVER draws only) starts from
+// a transparent attachment instead, and this tile function ends it: per pixel
+// it averages the samples (the MSAA resolve, by each colour's coverage) and composites the result OVER the
+// caller's pixel, writing only the pixels something was drawn on.  Draws OVER a
+// transparent layer and then the layer OVER the frame give the same colour as
+// drawing OVER the frame (OVER is associative), to rounding.
+//
+// The buffer holds cairo ARGB32: bytes B,G,R,A, premultiplied; the attachment
+// reads back as logical RGBA.
+struct CMLayerPixel { half4 color [[color(0)]]; };
+struct CMCompositeParams { uint width; uint height; uint stride_px; uint samples; };
+
+kernel void cm_tile_composite(imageblock<CMLayerPixel, imageblock_layout_implicit> blk,
+                              ushort2 lid [[thread_position_in_threadgroup]],
+                              uint2 gid [[thread_position_in_grid]],
+                              device uchar4 *frame [[buffer(0)]],
+                              constant CMCompositeParams &p [[buffer(1)]])
+{
+    if (gid.x >= p.width || gid.y >= p.height) return;
+    // The attachment keeps each pixel's distinct colours (one, inside a shape)
+    // with the samples each covers; the resolve weights each by its samples.
+    float4 acc = 0.0f;
+    ushort colors = blk.get_num_colors(lid);
+    for (ushort c = 0; c < colors; ++c) {
+        uint covered = popcount(blk.get_color_coverage_mask(lid, c));
+        acc += float4(blk.read(lid, c, imageblock_data_rate::color).color) * float(covered);
+    }
+    acc /= float(p.samples);
+    if (acc.a <= 0.0f && all(acc.rgb <= 0.0f)) return;      // nothing drawn here
+    device uchar4 *dst = frame + gid.y * p.stride_px + gid.x;
+    float4 layer = acc.bgra;                                 // to memory order
+    float4 o = layer;
+    if (acc.a < 1.0f) o += float4(*dst) * (1.0f / 255.0f) * (1.0f - acc.a);
+    *dst = uchar4(clamp(o * 255.0f + 0.5f, 0.0f, 255.0f));
+}

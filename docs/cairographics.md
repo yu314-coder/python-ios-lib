@@ -175,14 +175,16 @@ before importing manim.
   IOSurface-backed texture, **pixel-diffed against real cairo** (see
   `cairo(metal)/README.md` / `DESIGN.md`). It is toggleable in the CodeBench
   app (**Settings → Manim → GPU rendering**). **It does NOT make manim
-  faster,** though — profiling a 4K render shows the cairo *fill* (the only
-  stage the GPU replaces) is only ~5% of the time, while ~67% is manim's
-  per-frame Python animation engine (mobject interpolation), ~12% CPU
-  path-building, and ~11% the already-hardware H.264 encode. So GPU
-  rasterization cannot move the needle for manim; the real speed levers are
-  **lower fps** and **CPU-side parallelism** (free-threaded Python).
-  CairoMetal is a real, general-purpose GPU cairo — just not a manim
-  accelerator.
+  renders shorter,** though. At 4K and 8K the hardware video encoder sets
+  the pace and pycairo's drawing already keeps up with it, and per frame
+  CairoMetal is still a little slower than pycairo for manim's frames (a few
+  hundred simple shapes, which pycairo fills quickly): 8K 11.4 vs ~9.7 ms,
+  4K 6.0 vs 5.4 ms on an M4, after 2026-11-06's layer frames, kept GPU wraps
+  and frames handed to the writer without a copy (it was 14.8 ms at 8K; see
+  `cairo(metal)/STATUS.md` and `docs/manim.md`). MetalFX upscaling (draw at
+  4K, upscale to 8K) was measured and is slower than drawing at 8K. The
+  real speed lever is **lower fps**. CairoMetal is a real, general-purpose
+  GPU cairo — just not a manim accelerator.
 - **PDF / PostScript / SVG backends ARE built in.** (An earlier revision
   of this doc said they were absent — stale.) `cairo-pdf.h` / `cairo-ps.h` /
   `cairo-svg.h` ship in `cairo/include/`, `libcairo.a` exports

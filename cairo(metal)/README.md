@@ -255,6 +255,16 @@ These are structural in the module split / `cm_internal.h`, not bolted on:
    (e.g. runs of solid fills), minimizing
    `setRenderPipelineState`/`setDepthStencilState` churn inside the single
    encoder.
+7. **Layer frames for caller memory.** A frame drawn into a caller's buffer
+   (`ImageSurface.create_for_data`, as manim does) whose draws are all OVER
+   starts from a transparent memoryless attachment instead of loading the whole
+   buffer, and a tile function (`cm_tile_composite`) composites it into the
+   buffer at the end, only where something was drawn. Other operators fall back
+   to a frame that loads the buffer. `CM_LAYER_FRAMES=0` (or
+   `cairo_metal._set_layer_frames(0)`) turns it off. See `STATUS.md`.
+8. **GPU wraps kept with their arrays.** The `MTLBuffer` over a numpy array's
+   memory is kept while that array lives (up to four arrays), so a new surface
+   over it does not wrap and map it again.
 
 ---
 

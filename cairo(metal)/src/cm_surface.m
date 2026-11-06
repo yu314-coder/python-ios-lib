@@ -405,8 +405,42 @@ cm_surface_t *cm_image_surface_create_for_data(unsigned char *data,
  * Frames always load (cm_frame_begin), so operators other than OVER see the
  * real destination, as in cairo, and nothing is blended twice.
  */
+static cm_surface_t *cm_direct_create(unsigned char *data, size_t len, int width,
+                                      int height, int stride, void *wrap);
+
 cm_surface_t *cm_image_surface_create_direct(unsigned char *data, size_t len,
                                              int width, int height, int stride)
+{
+    return cm_direct_create(data, len, width, height, stride, NULL);
+}
+
+/* The same, over a buffer an earlier direct surface wrapped (its
+ * cm_surface_direct_wrap): making the MTLBuffer and mapping its pages for the
+ * GPU cost ~1.7 ms at 7680x4320 on every new surface, and manim makes one per
+ * frame over the few arrays its frames rotate through.  The wrap is used only
+ * if it still covers exactly this memory. */
+cm_surface_t *cm_image_surface_create_direct_with_wrap(unsigned char *data, size_t len,
+                                                       int width, int height, int stride,
+                                                       void *wrap)
+{
+    return cm_direct_create(data, len, width, height, stride, wrap);
+}
+
+/* A zero-copy direct surface's MTLBuffer, retained for the caller (NULL for
+ * any other surface); cm_direct_wrap_release gives it back. */
+void *cm_surface_direct_wrap(cm_surface_t *s)
+{
+    if (!s || !s->direct || !s->ext_zero_copy || !s->ext_mtlbuf) return NULL;
+    return (void *)CFRetain(s->ext_mtlbuf);
+}
+
+void cm_direct_wrap_release(void *wrap)
+{
+    if (wrap) CFRelease(wrap);
+}
+
+static cm_surface_t *cm_direct_create(unsigned char *data, size_t len, int width,
+                                      int height, int stride, void *wrap)
 {
     if (!data || width <= 0 || height <= 0) {
         g_last_status = CM_STATUS_INVALID_FORMAT;
@@ -452,9 +486,13 @@ cm_surface_t *cm_image_surface_create_direct(unsigned char *data, size_t len,
              * owns the pages it starts in, so rounding the length up stays
              * inside it. */
             size_t span = ((size_t)stride * (size_t)height + page - 1) / page * page;
-            buf = [mtl newBufferWithBytesNoCopy:data length:span
-                                        options:MTLResourceStorageModeShared
-                                    deallocator:nil];
+            id<MTLBuffer> earlier = (__bridge id<MTLBuffer>)wrap;
+            if (earlier && earlier.contents == (void *)data && earlier.length == span)
+                buf = earlier;
+            else
+                buf = [mtl newBufferWithBytesNoCopy:data length:span
+                                            options:MTLResourceStorageModeShared
+                                        deallocator:nil];
             if (buf) { tex_stride = (size_t)stride; s->ext_zero_copy = true; }
         }
         if (!buf) {

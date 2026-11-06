@@ -505,6 +505,93 @@ CMImageSurface_init(CMSurface *self, PyObject *args, PyObject *kwds)
     return 0;
 }
 
+/* GPU wraps of the arrays create_for_data was handed, kept while each array
+ * lives.  manim makes a surface per frame (Camera._move_cairo_context) over
+ * the few arrays its frames rotate through; wrapping an array's memory for the
+ * GPU again each time cost ~1.7 ms a frame at 7680x4320.  An entry belongs to
+ * the numpy array that owns the memory and goes when that array is freed (a
+ * weak reference: numpy clears those before it frees the memory, and no
+ * surface over the memory is left by then -- each holds a buffer view of it). */
+extern cm_surface_t *cm_image_surface_create_direct_with_wrap(unsigned char *data, size_t len,
+                                                              int width, int height, int stride,
+                                                              void *wrap);
+extern void *cm_surface_direct_wrap(cm_surface_t *s);
+extern void  cm_direct_wrap_release(void *wrap);
+
+#define CM_WRAP_MAX 4
+typedef struct { PyObject *ref; unsigned char *data; size_t len; void *wrap; unsigned long used; } cm_wrap_entry;
+static cm_wrap_entry g_wraps[CM_WRAP_MAX];
+static unsigned long g_wrap_clock = 0;
+static PyObject *g_wrap_gone_cb = NULL;   /* the weakref callback */
+
+static void cm_wrap_drop(cm_wrap_entry *e)
+{
+    PyObject *ref = e->ref;
+    void *wrap = e->wrap;
+    e->ref = NULL; e->wrap = NULL; e->data = NULL; e->len = 0;
+    cm_direct_wrap_release(wrap);
+    Py_XDECREF(ref);
+}
+
+static PyObject *cm_wrap_gone(PyObject *m, PyObject *ref)
+{
+    (void)m;
+    for (int i = 0; i < CM_WRAP_MAX; ++i)
+        if (g_wraps[i].ref == ref) cm_wrap_drop(&g_wraps[i]);
+    Py_RETURN_NONE;
+}
+static PyMethodDef cm_wrap_gone_def = {"_wrap_gone", cm_wrap_gone, METH_O, NULL};
+
+/* The numpy array that owns the memory behind `data` (a memoryview of one, or
+ * the array), or NULL (new reference) -- only an array with no base owns it. */
+static PyObject *cm_wrap_owner(PyObject *data)
+{
+    PyObject *obj = data;
+    if (PyMemoryView_Check(obj)) obj = PyMemoryView_GET_BASE(obj);
+    if (!obj) return NULL;
+    const char *tn = Py_TYPE(obj)->tp_name;
+    if (strcmp(tn, "numpy.ndarray") != 0) return NULL;
+    PyObject *base = PyObject_GetAttrString(obj, "base");
+    if (!base) { PyErr_Clear(); return NULL; }
+    int owns = base == Py_None;
+    Py_DECREF(base);
+    if (!owns) return NULL;
+    Py_INCREF(obj);
+    return obj;
+}
+
+static void *cm_wrap_find(PyObject *owner, unsigned char *data, size_t len)
+{
+    for (int i = 0; i < CM_WRAP_MAX; ++i) {
+        cm_wrap_entry *e = &g_wraps[i];
+        if (!e->ref || e->data != data || e->len != len) continue;
+        PyObject *live = NULL;
+        if (PyWeakref_GetRef(e->ref, &live) == 1) {
+            int same = live == owner;
+            Py_DECREF(live);
+            if (same) { e->used = ++g_wrap_clock; return e->wrap; }
+        }
+    }
+    return NULL;
+}
+
+static void cm_wrap_keep(PyObject *owner, unsigned char *data, size_t len, cm_surface_t *surf)
+{
+    void *wrap = cm_surface_direct_wrap(surf);
+    if (!wrap) return;
+    if (!g_wrap_gone_cb) g_wrap_gone_cb = PyCFunction_New(&cm_wrap_gone_def, NULL);
+    PyObject *ref = g_wrap_gone_cb ? PyWeakref_NewRef(owner, g_wrap_gone_cb) : NULL;
+    if (!ref) { PyErr_Clear(); cm_direct_wrap_release(wrap); return; }
+    cm_wrap_entry *slot = &g_wraps[0];
+    for (int i = 0; i < CM_WRAP_MAX; ++i) {
+        if (!g_wraps[i].ref) { slot = &g_wraps[i]; break; }
+        if (g_wraps[i].used < slot->used) slot = &g_wraps[i];
+    }
+    if (slot->ref) cm_wrap_drop(slot);
+    slot->ref = ref; slot->data = data; slot->len = len; slot->wrap = wrap;
+    slot->used = ++g_wrap_clock;
+}
+
 /* classmethod create_for_data(data, format, width, height[, stride]) */
 static PyObject *
 CMImageSurface_create_for_data(PyObject *cls, PyObject *args)
@@ -545,8 +632,15 @@ CMImageSurface_create_for_data(PyObject *cls, PyObject *args)
     }
     Py_INCREF(data); self->databuf = data;
 
-    self->surf = cm_image_surface_create_direct((unsigned char *)self->view.buf,
-                                                (size_t)self->view.len, w, h, (int)stride);
+    PyObject *owner = cm_wrap_owner(data);
+    void *wrap = owner ? cm_wrap_find(owner, (unsigned char *)self->view.buf,
+                                      (size_t)self->view.len) : NULL;
+    self->surf = cm_image_surface_create_direct_with_wrap((unsigned char *)self->view.buf,
+                                                          (size_t)self->view.len, w, h,
+                                                          (int)stride, wrap);
+    if (self->surf && owner && !wrap)
+        cm_wrap_keep(owner, (unsigned char *)self->view.buf, (size_t)self->view.len, self->surf);
+    Py_XDECREF(owner);
     if (!self->surf) {
         cm_raise_if_error(cm_last_status());
         if (!PyErr_Occurred())
@@ -2633,6 +2727,12 @@ static PyObject *cm_set_analytic_aa(PyObject *m, PyObject *a) {
     extern void cm_debug_set_analytic_aa(int mode);
     cm_debug_set_analytic_aa(mode);
     Py_RETURN_NONE; }
+static PyObject *cm_set_layer_frames(PyObject *m, PyObject *a) {
+    (void)m; int on = 1;
+    if (!PyArg_ParseTuple(a, "i", &on)) return NULL;
+    extern void cm_debug_set_layer_frames(int on);
+    cm_debug_set_layer_frames(on);
+    Py_RETURN_NONE; }
 static PyObject *cm_live_surfaces(PyObject *m, PyObject *a) {
     (void)m; (void)a; return PyLong_FromLong(g_reg_n); }
 static PyObject *cm_flush_stats(PyObject *m, PyObject *a) {
@@ -2673,6 +2773,7 @@ static PyMethodDef module_methods[] = {
     {"gpu_selftest",         cm_gpu_selftest,            METH_NOARGS, "render+readback a test pattern; returns (ok, device, msg)"},
     {"flush_stats",          cm_flush_stats,             METH_NOARGS, "(total_flushes, nonempty_flushes)"},
     {"last_gpu_ms",          cm_last_gpu_ms,             METH_NOARGS, "GPU time of the last waited-on frame, in ms"},
+    {"_set_layer_frames",    cm_set_layer_frames,        METH_VARARGS, "diagnostics: 1 (default) frames drawn into caller memory composite a layer at their end, 0 load and resolve the whole frame (CM_LAYER_FRAMES=0)"},
     {"_set_analytic_aa",     cm_set_analytic_aa,         METH_VARARGS, "diagnostics: measured antialiasing 0 never, 1 GOOD/BEST (default), 2 always"},
     {NULL}
 };

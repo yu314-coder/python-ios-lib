@@ -111,7 +111,16 @@ static void cm_glue_active_init(void)
  * must batch into the one MTLCommandBuffer per surface that cm_surface_flush
  * ends, so cm_compose.m acquires the active frame through THIS accessor (via a
  * `weak` extern) rather than opening a second, untracked command buffer. */
+static cm_frame *cm_glue_frame_for_surface_ex(cm_surface_t *surface, bool create,
+                                              bool layer_ok);
+
 cm_frame *cm_glue_frame_for_surface(cm_surface_t *surface, bool create)
+{
+    return cm_glue_frame_for_surface_ex(surface, create, false);
+}
+
+static cm_frame *cm_glue_frame_for_surface_ex(cm_surface_t *surface, bool create,
+                                              bool layer_ok)
 {
     if (!surface) return NULL;
     cm_glue_active_init();
@@ -123,7 +132,7 @@ cm_frame *cm_glue_frame_for_surface(cm_surface_t *surface, bool create)
         if (node) { result = node->frame; return; }
         if (!create) return;
 
-        cm_frame *f = cm_frame_begin(surface);   /* one command buffer / frame */
+        cm_frame *f = cm_frame_begin_ex(surface, layer_ok); /* one command buffer / frame */
         if (!f) return;                          /* surface->status set inside */
         cm_active_frame *n = (cm_active_frame *)malloc(sizeof(*n));
         if (!n) { cm_frame_end(f, false); return; }
@@ -199,7 +208,16 @@ cm_frame *cm_glue_frame_for_draw(cm_context_t *ctx, bool *out_immediate)
          * normal MSAA batched frame -- AA-none then degrades to MSAA edges, which
          * is still correct colour (just soft edges) rather than a dropped draw. */
     }
-    return cm_glue_frame_for_surface(ctx->surface, /*create=*/true);
+    /* OVER draws may go on a layer frame (cm_frame_begin_ex); any other operator
+     * needs the surface's pixels under it, so a layer frame open on the surface
+     * is composited first and the draw starts a frame that loads them. */
+    bool layer_ok = ctx->op == CM_OPERATOR_OVER;
+    if (!layer_ok) {
+        cm_frame *open = cm_glue_frame_for_surface(ctx->surface, /*create=*/false);
+        if (open && cm_frame_is_layer(open))
+            cm_glue_end_frame_for_surface(ctx->surface, /*wait=*/true);
+    }
+    return cm_glue_frame_for_surface_ex(ctx->surface, /*create=*/true, layer_ok);
 }
 
 /* End an immediate (AA-none) draw frame: commit + wait so the colour texture holds
