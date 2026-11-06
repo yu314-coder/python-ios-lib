@@ -42,6 +42,10 @@ What changed, and what has to hold for each:
  13. PyAV's from_ndarray (rebuilt for the app) copies the array once without
      the GIL: the planes hold the array's bytes, and in the app another
      thread keeps running during an 8K copy.
+ 14. Frames the writer is done with can go back to the camera to draw in
+     again (OFFLINAI_MANIM_FRAME_POOL=1; off by default, as it lets
+     VideoToolbox hold more frames): only frames the camera handed out and
+     nothing else holds; the encoder gets the same frames on and off.
 """
 from __future__ import annotations
 
@@ -680,6 +684,78 @@ if _sys.platform == "ios":
     check(f"another thread runs during an 8K copy ({ratio:.0%} of its free speed)", ratio > 0.4)
 else:
     print(f"        (this PyAV is not the app's: another thread ran at {ratio:.0%} during an 8K copy)")
+
+print("14. frames drawn again in once the writer is done with them")
+from manim.camera import camera as _cm
+from manim.scene.scene_file_writer import SceneFileWriter
+_pool_env = os.environ.pop("OFFLINAI_MANIM_FRAME_POOL", None)
+check("off unless asked for (memory as before)", not _cm._FramePool.enabled())
+os.environ["OFFLINAI_MANIM_FRAME_POOL"] = "1"
+pool = _cm._FramePool()
+a = np.zeros((6, 8, 4), np.uint8)
+pool.handed_out(a)
+check("a frame the camera handed out comes back to it", pool.give_back(a) and pool.take(a.shape, a.dtype) is a)
+b = np.zeros((6, 8, 4), np.uint8)
+check("…an array it never handed out does not", not pool.give_back(b))
+frames = [np.zeros((6, 8, 4), np.uint8) for _ in range(4)]
+for f in frames:
+    pool.handed_out(f)
+    pool.give_back(f)
+check(f"…at most {pool.MAX} wait", len(pool) == pool.MAX)
+check("…none of another size is taken", pool.take((5, 8, 4), np.dtype(np.uint8)) is None)
+pool.clear()
+check("…and clearing empties it", len(pool) == 0)
+
+
+def _writer_returns(extra_holder):
+    frame_data = np.zeros((6, 8, 4), np.uint8)
+    _cm._frame_pool.handed_out(frame_data)
+    keep = [frame_data] if extra_holder else None  # noqa: F841
+    return sfw._return_frame(frame_data)
+
+
+check("the writer gives back a frame nothing else holds", _writer_returns(False))
+check("…but not one a hook kept", not _writer_returns(True))
+_cm._frame_pool.clear()
+
+
+def _encoded_hashes(pool_on):
+    import hashlib
+    got = []
+    real = SceneFileWriter.encode_and_write_frame
+
+    def hashing(self, frame, num_frames):
+        got.append(hashlib.blake2b(np.ascontiguousarray(frame).tobytes(), digest_size=12).hexdigest())
+        return real(self, frame, num_frames)
+
+    os.environ["OFFLINAI_MANIM_FRAME_POOL"] = "1" if pool_on else "0"
+    SceneFileWriter.encode_and_write_frame = hashing
+    media = _tf.mkdtemp(prefix="pool_")
+    try:
+        with tempconfig({"media_dir": media, "pixel_width": 320, "pixel_height": 180,
+                         "frame_rate": 30, "disable_caching": True, "verbosity": "WARNING",
+                         "progress_bar": "none", "write_to_movie": True}):
+            sc = _Holds()
+            real_platform = _sys.platform
+            _sys.platform = "ios"
+            try:
+                sc.render()
+            finally:
+                _sys.platform = real_platform
+    finally:
+        SceneFileWriter.encode_and_write_frame = real
+        os.environ.pop("OFFLINAI_MANIM_FRAME_POOL", None)
+        shutil.rmtree(media, ignore_errors=True)
+    return got
+
+
+off, on = _encoded_hashes(False), _encoded_hashes(True)
+check(f"the encoder gets the same {len(on)} frames with the pool on and off", on and on == off,
+      f"{len(on)} vs {len(off)}")
+if _pool_env is None:
+    os.environ.pop("OFFLINAI_MANIM_FRAME_POOL", None)
+else:
+    os.environ["OFFLINAI_MANIM_FRAME_POOL"] = _pool_env
 
 print(f"{PASSED} passed, {FAILED} failed")
 raise SystemExit(1 if FAILED else 0)

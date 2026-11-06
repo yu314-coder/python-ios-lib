@@ -551,6 +551,29 @@ than accumulates, which makes 4K and 8K memory-safe:
   133.3 s → 86.5 and 84.6 s. 14336×8064 (14K) HEVC
   renders as before (checked: same duration and pictures, 4.49 GB peak
   footprint vs 4.50 GB before).
+- **Frames can be drawn again in once the writer is done with them — off
+  by default** (`OFFLINAI_MANIM_FRAME_POOL=1` turns it on). Each finished
+  frame goes to the writer as it is and the next one starts in another
+  array; in an iOS process a newly allocated 8K array costs ~9 ms more
+  than one already in use (a 133 MB copy: 15 vs 6 ms in the app's build),
+  its pages being mapped in as they are first written. With the pool, the
+  writer gives a frame back once it has encoded it (`_return_frame`) and
+  the camera starts the next frame in it (`camera._FramePool`): only frames
+  the camera handed out, only if nothing else holds them (a hook that kept
+  the array keeps it as it was), one waiting at most, emptied when the
+  scene's movie is finished. The encoder gets byte-identical frames either
+  way (791 hashed).
+
+  Measured in the app's build (fresh launch each, 8K120, TSNE first seven
+  animations): 57.5 / 59.4 s off, 46.1 / 44.2 s on — but peak footprint
+  1543 / 1543 MB off, 1949 / 1951 MB on. With frames drawn faster the
+  writer keeps VideoToolbox fed with more frames than it encodes: up to 10
+  held at once instead of 6, each a copy of a whole frame. FFmpeg's
+  VideoToolbox encoder hands back at most one packet per frame it is sent
+  and has no setting for how many it may hold, so the writer cannot tell
+  when to wait; pacing it by the packets' timing either let the queue grow
+  or slowed the render to 98–123 s. At 14K that queue would be over a
+  gigabyte, so the pool stays off by default: memory is as before.
 - **GPU cairo (CairoMetal) frames were blank.** CairoMetal records fills and
   strokes and renders them into the frame's memory only when flushed
   (`cairo._flush_all`). manim never flushed, so with the GPU switch on every
