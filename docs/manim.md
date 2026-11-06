@@ -455,6 +455,73 @@ than accumulates, which makes 4K and 8K memory-safe:
   went from 0.70 to 0.044 s a frame. Peak memory footprint is unchanged
   (1080p 396 → 391 MB, mean of 4 runs; 8K 869 → 867 MB, mean of 2). The
   encoder and the frame queue are untouched.
+- **Second pass: one full-frame pass per frame instead of two, and less
+  bookkeeping.** Same rule as above: every frame of the TSNE scene hashed,
+  old vs new (771 frames, byte-identical); `manim_speed_test.py` checks each
+  change (18 checks).
+  - The renderer gave the writer a copy of every finished frame
+    (`get_frame`), then copied the background over the frame to start the
+    next one: two passes over 133 MB per frame at 8K. The finished frame
+    itself now goes to the writer (`Camera.release_frame`) and the next
+    frame starts in a new array holding the background. The cached cairo
+    context moves to the new array with everything set on it (matrix, line
+    join and cap, ...), so drawing is the same. A `get_frame` that was
+    replaced (CodeBench's GPU cairo flushes there) or a cairo that is not
+    pycairo keeps the copy. Memory is the same: the writer held copies
+    before, it holds the frames now.
+  - Rows of the starting picture that are one colour are filled rather than
+    copied (a fill writes the memory once, a copy also reads it: 4.7 → 2.2 ms
+    for a plain 8K frame). It needs the picture not to change after it was
+    looked at, so the camera's one-colour background and the renderer's
+    static frame are read-only arrays now; `set_background` and
+    `background_color` still replace them.
+  - The camera's list of what to draw asked each of the scene's (already
+    flattened) mobjects for its family, every frame; it is one walk now.
+    `remove_list_redundancies` runs in C (`dict.fromkeys`). `Mobject.update`
+    goes through the family without a Python call per member. The iOS image
+    fade in `Animation.interpolate_mobject` looked through every family on
+    every frame for an `ImageMobject`; until one exists in the process it
+    returns at once.
+  - Paths are built in one pass, and an anchor exactly equal to the previous
+    one skips the tolerance test (a 1000-curve path 13.6 → 2.0 ms).
+    `interpolate_color` has `interpolate()` written out; `ThreeDCamera`
+    scales x and y in one step.
+
+  The whole TSNE video (186 s, 5,580 frames) at 8K30, written through
+  ManimStudio's encoder wrapper (hardware HEVC) on an M4 Mac: 448 s with
+  `3938e8d7`, 387 s now. Drawing went from 124 to 49 s and interpolation
+  from 14.5 to 8.9 s; peak memory footprint 2.07 → 2.02 GB. What is left
+  is the encoder: hardware HEVC takes about 55 ms per 8K frame on that
+  Mac (about 18 frames a second) whatever it is fed — frames converted to
+  YUV ahead of it on other threads were 6% faster, `prio_speed` changed
+  nothing — so the render now runs within about 25% of what the encoder
+  allows, and at 8K the encoder decides how long a render takes. 47% of
+  this video's frames are `wait()` holds, each one converted and encoded
+  again.
+
+  In the app's own build (CodeBench, Designed for iPad, M4; iOS PyAV,
+  FFmpeg and VideoToolbox), the scene's first seven animations at 8K120
+  (1,020 frames, written through ManimStudio's encoder wrapper) took
+  105.4 s with `3938e8d7` and 68.5 s with this and the converted frames
+  below (CPU cairo).
+
+- **Frames reach the encoder already converted, on several cores.** PyAV
+  turns each RGBA frame into the encoder's YUV inside `encode()`, with the
+  encoder's thread count, and VideoToolbox's is one: 37 ms an 8K frame on
+  one core, on the writer thread, on top of the hardware encoder's own
+  ~55 ms. The writer's stream now does the same `reformat` first with up
+  to four threads (`settings.convert_threads`, `OFFLINAI_MANIM_CONVERT_THREADS`;
+  `1` leaves it to PyAV), so `encode()` has nothing to convert. HEVC, its
+  options, the queue and the frames the encoder gets are unchanged: the
+  threaded conversion gave the same bytes as the single-core one for every
+  even size checked (480 conversions, 2×2 to 14336×8064, yuv420p and nv12,
+  2–8 threads, with the app's FFmpeg). FFmpeg 8.0.1's swscale (9.1) differed
+  at 854×480, so it is only used from swscale 9.7, for even sizes and those
+  two formats. ManimStudio's own encode wrapper goes through the same
+  stream. In the app's build on an M4, an 8K frame's encode went from about
+  105 to 76 ms. What remains on the writer is PyAV's `from_ndarray`, which
+  copies the array twice (`tobytes()` first) and holds the GIL meanwhile
+  (33 ms at 8K in the app's build); that needs a PyAV rebuild.
 - **Return freed pages to the OS.** `PYTHONMALLOC=malloc` plus
   `malloc_zone_pressure_relief(NULL, 0)` between animations, so released
   memory actually leaves `phys_footprint` (what jetsam measures) instead
@@ -720,16 +787,27 @@ are preserved.
 ```
 manim/_config/__init__.py             — disable_caching, gc threshold
 manim/typing.py                       — PIL Resampling fallback
-manim/animation/animation.py          — iOS-specific defaults
+manim/animation/animation.py          — iOS-specific defaults; image fade
+                                       skipped until an ImageMobject exists
 manim/animation/creation.py           — Write/Create iOS tweaks
 manim/animation/fading.py             — iOS tweaks
 manim/camera/camera.py                — images composited over their own box
                                        only, not the whole frame; paths built
                                        from plain floats; one-copy frame reset;
-                                       images resampled on worker threads
-manim/camera/three_d_camera.py        — perspective factor worked out once
+                                       images resampled on worker threads;
+                                       frames handed to the writer
+                                       (release_frame); one-colour rows filled
+manim/renderer/cairo_renderer.py      — hands the frame over instead of
+                                       copying it; read-only static frame
+manim/utils/family.py                 — the scene's family list in one walk
+manim/utils/iterables.py              — remove_list_redundancies in C
+manim/camera/three_d_camera.py        — perspective factor worked out once,
+                                       x and y scaled in one step
+manim/mobject/types/image_mobject.py  — notes when an ImageMobject exists
+manim/mobject/types/vectorized_mobject.py — interpolate_color written out
 manim/mobject/mobject.py              — get_family in one walk; faster
-                                       __deepcopy__ (_shared_on_copy)
+                                       __deepcopy__ (_shared_on_copy); update
+                                       without recursion
 manim/constants.py                    — frame defaults
 manim/mobject/geometry/line.py        — subdivide curves disabled
 manim/mobject/svg/svg_mobject.py      — cache off, rasterized embed; glyph
@@ -739,9 +817,11 @@ manim/utils/tex_file_writing.py       — iOS: offlinai_latex; cache accepts its
                                        vector SVGs
 manim/mobject/text/numbers.py         — debug counter
 manim/scene/scene_file_writer.py      — VideoToolbox codec choice by resolution
-                                       (h264/hevc) + hvc1 tagging; save_image guard
+                                       (h264/hevc) + hvc1 tagging; save_image guard;
+                                       frames converted to YUV on several cores
 manim/utils/ios_encoder.py           — NEW: VideoToolbox capability probe +
-                                       RenderSettings (queue depth, codec)
+                                       RenderSettings (queue depth, codec,
+                                       convert_threads)
 
 Swift, for apps embedding the package:
 Sources/Manim/ManimRenderConfiguration.swift
