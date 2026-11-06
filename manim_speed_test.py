@@ -474,6 +474,38 @@ c = Camera()
 c.capture_mobjects([Square()])
 check("…and pycairo, which has no flush, is never asked", calls == [], str(calls))
 
+from manim import Create as _Create, Scene as _GScene
+from manim.renderer.cairo_renderer import CairoRenderer as _CR
+
+
+class _GpuProbe(_GScene):
+    def construct(self):
+        self.play(_Create(Square()), run_time=0.2)
+
+
+_handed = []
+_orig_ffw = _CR._frame_for_writer
+
+
+def _record_hand_off(self):
+    frame = _orig_ffw(self)
+    _handed.append(frame is self.camera.pixel_array)
+    return frame
+
+
+_CR._frame_for_writer = _record_hand_off
+camera_module.cairo = gpu_like
+try:
+    with tempconfig({"write_to_movie": False, "frame_rate": 15, "pixel_width": 320,
+                     "pixel_height": 180, "verbosity": "WARNING", "disable_caching": True,
+                     "progress_bar": "none"}):
+        _GpuProbe().render()
+finally:
+    camera_module.cairo = real_cairo
+    _CR._frame_for_writer = _orig_ffw
+check(f"…and a GPU cairo's frames go to the writer as they are, flushed, not copied "
+      f"({len(_handed)} frames)", bool(_handed) and all(_handed) and "flush" in calls)
+
 print("12. wait() written as its first and last frame")
 import sys as _sys
 import tempfile as _tf

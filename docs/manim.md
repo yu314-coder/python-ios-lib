@@ -465,10 +465,11 @@ than accumulates, which makes 4K and 8K memory-safe:
     itself now goes to the writer (`Camera.release_frame`) and the next
     frame starts in a new array holding the background. The cached cairo
     context moves to the new array with everything set on it (matrix, line
-    join and cap, ...), so drawing is the same. A `get_frame` that was
-    replaced (CodeBench's GPU cairo flushes there) or a cairo that is not
-    pycairo keeps the copy. Memory is the same: the writer held copies
-    before, it holds the frames now.
+    join and cap, ...), so drawing is the same. A `get_frame` replaced on
+    the renderer itself (or by a subclass) keeps the copy. Memory is the
+    same: the writer held copies before, it holds the frames now. GPU cairo
+    (CairoMetal) frames were still copied until 2026-11-06 (see "CairoMetal
+    frames" below); they are handed over too now.
   - Rows of the starting picture that are one colour are filled rather than
     copied (a fill writes the memory once, a copy also reads it: 4.7 → 2.2 ms
     for a plain 8K frame). It needs the picture not to change after it was
@@ -585,6 +586,44 @@ than accumulates, which makes 4K and 8K memory-safe:
   3983–4313 MB (five runs) → 4147–4153 MB (three); the same
   movie length; times within this loaded Mac's noise (8K at the hardware
   encoder's floor either way).
+- **CairoMetal frames (GPU switch), 2026-11-06.** Profiling the TSNE scene
+  (first 1,451 frames) showed CairoMetal slower per frame than pycairo
+  (8K: 14.8 vs 7.9 ms). Three costs, removed:
+  - the renderer copied every GPU frame for the writer (133 MB at 8K, ~4 ms
+    on a Mac and ~15 ms in an iOS process). The camera flushes CairoMetal's
+    drawing into the frame at the end of `capture_mobjects`, so the frame is
+    handed to the writer as pycairo's are (`_frame_for_writer`); the next
+    frame's surface is made over the new array;
+  - CairoMetal wrapped that array for the GPU again for each new surface
+    (~1.7 ms at 8K); the wrap is now kept while the array lives;
+  - every GPU frame loaded the whole frame and wrote all of it back (~3.5–5 ms
+    at 8K for one small shape); OVER-only frames now draw on a transparent
+    layer that is composited into the frame where something was drawn
+    (`cairo(metal)/STATUS.md`).
+
+  The same 1,451 frames, ms per frame on a loaded M4 Mac (pycairo /
+  CairoMetal before / now): 8K 9.2–10.2 / 14.3–15.2 / 11.3–11.5; 4K
+  5.2–5.6 / 6.8–6.9 / 5.9–6.1; 1080p 3.5–3.6 / 4.4–4.7 / 4.5–4.6. Pictures
+  within one level of the old GPU path. In the app (fresh launch each), GPU
+  switch on, peak footprint: 8K120 1885–1913 → 1758–1765 MB; 4K60 1100 →
+  1070–1078 MB. Render time did not change (8K120 57.5–63.1 s either way,
+  4K60 22.7–23.4 s; pycairo 59.9–62.6 s at 8K120): the hardware encoder sets
+  the pace at those sizes, and the drawing keeps up with it either way.
+
+  **MetalFX upscaling, tried and not used.** Drawing at 4K and upscaling to
+  8K with `MTLFXSpatialScaler` works and looks better than bilinear (about
+  Lanczos: 37.6–46.2 dB against the frames drawn at 8K, a faint bright fringe
+  on edges), but the upscale took 7–11 ms of GPU time per 8K frame, while
+  drawing at 8K costs ~3.4 ms more than at 4K, and the encoder still gets
+  8K frames. Slower and softer, so it is not an option.
+- **Encoder settings tried at 8K, none faster (2026-11-06).** In the app's
+  own FFmpeg, 8K frames sent to hardware HEVC as fast as possible took
+  71.1 ms each as yuv420p and 71.2 ms as NV12 (median of seven, alternated;
+  NV12 was 5–13% faster only with the desktop PyAV wheel's FFmpeg). On the
+  Mac, `prio_speed`, `realtime=0`, a bitrate, constant quality and
+  `power_efficient=0` all landed within the same 75–79 ms. Two encoding
+  sessions at once got ~20% more frames through between them, but each
+  holds its own frames, so memory would go up. The encoder is left as it is.
 - **GPU cairo (CairoMetal) frames were blank.** CairoMetal records fills and
   strokes and renders them into the frame's memory only when flushed
   (`cairo._flush_all`). manim never flushed, so with the GPU switch on every
@@ -699,11 +738,12 @@ fires. Covered by `manim_encoder_test.py`.
 Rendering stays on cairo's CPU rasterizer by default; only the *encode* uses
 the GPU (`h264_videotoolbox`, or `hevc_videotoolbox` above the H.264 ceiling). An **experimental Metal cairo backend
 (CairoMetal)** can be toggled on (**Settings → Manim → GPU rendering**) — it
-renders correctly on the GPU but does **not** speed manim up: profiling a 4K
-render shows the cairo fill is only ~5% of the time, while ~67% is manim's
-per-frame Python animation engine (mobject interpolation), ~12% CPU
-path-building, and ~11% the already-hardware video encode. So GPU
-rasterization can't move the needle — use **lower fps** for real speedups.
+renders correctly on the GPU but does **not** make renders shorter: at 4K
+and 8K the hardware video encoder sets the pace and pycairo's drawing
+already keeps up with it, and per frame CairoMetal is still a little slower
+than pycairo on an M4 (8K 11.4 vs ~9.7 ms, 4K 6.0 vs 5.4 ms, after the
+2026-11-06 work above; at 8K120 its peak memory is ~90–100 MB above pycairo's). For shorter
+renders, **lower fps** writes fewer frames.
 (manim's own OpenGL renderer remains unusable on iOS — `moderngl` is a stub.)
 See `cairo(metal)/` and `docs/cairographics.md`.
 
@@ -871,7 +911,8 @@ manim/camera/camera.py                — images composited over their own box
                                        frames handed to the writer
                                        (release_frame); one-colour rows filled
 manim/renderer/cairo_renderer.py      — hands the frame over instead of
-                                       copying it; read-only static frame
+                                       copying it (GPU cairo too); read-only
+                                       static frame
 manim/utils/family.py                 — the scene's family list in one walk
 manim/utils/iterables.py              — remove_list_redundancies in C
 manim/camera/three_d_camera.py        — perspective factor worked out once,
