@@ -24,7 +24,8 @@ through the writer. Four things have to hold:
      container under it.
   3. Each thread reads its own clip's queue; the next clip opens only after
      the previous one's thread has exited.
-  4. Every frame lands in its own clip, and the final video has them all.
+  4. Every frame lands in its own clip, and the final video has them all
+     (counted by time: a wait() may be written as its first and last frame).
 """
 from __future__ import annotations
 
@@ -71,9 +72,14 @@ class ThreeClips(Scene):
         self.play(sq.animate.shift(RIGHT * 2).rotate(PI / 3), run_time=1.0)
 
 
-def frames_in(path):
+def frames_in(path, fps=30):
+    """The frames a clip shows, by time: a wait() is written as its first and
+    last frame, the first lasting until the second (VideoToolbox), so its
+    packets are fewer than its frames, but not its length."""
     with av.open(path) as c:
         v = c.streams.video[0]
+        if v.duration is not None and v.time_base is not None:
+            return int(round(float(v.duration * v.time_base) * fps))
         return sum(1 for p in c.demux(v) if p.size)
 
 

@@ -36,6 +36,12 @@ What changed, and what has to hold for each:
      the bytes PyAV's own conversion gives, and only where that was checked.
  11. A GPU cairo (CairoMetal) draws when flushed: the camera flushes before
      writing images into the frame itself and when the frame is done.
+ 12. A wait() is written as its first and last frame, the first lasting
+     until the second: the movie is as long and shows the same picture at
+     every moment, with fewer frames; a GIF keeps every frame.
+ 13. PyAV's from_ndarray (rebuilt for the app) copies the array once without
+     the GIL: the planes hold the array's bytes, and in the app another
+     thread keeps running during an 8K copy.
 """
 from __future__ import annotations
 
@@ -385,10 +391,10 @@ ok = total = 0
 for (h, w) in ((4320, 7680), (1080, 1920), (720, 1280)):
     for fmt in ("yuv420p", "nv12"):
         stream = FakeStream(w, h, fmt)
-        wrapped = sfw._with_threaded_convert(stream)
+        wrapped = sfw._writer_stream(stream)
         if not checked:
             total += 1
-            ok += wrapped is stream  # left to PyAV on a swscale not checked
+            ok += wrapped._threads == 1  # left to PyAV on a swscale not checked
             continue
         a = rng.integers(0, 256, size=(h, w, 4), dtype=np.uint8)
         a[: h // 3] = (20, 30, 40, 255)
@@ -397,7 +403,7 @@ for (h, w) in ((4320, 7680), (1080, 1920), (720, 1280)):
         want = [bytes(p) for p in frame.reformat(w, h, fmt, threads=1).planes]
         got = stream.got[-1]
         total += 1
-        ok += (wrapped is not stream and got.format.name == fmt
+        ok += (wrapped._threads > 1 and got.format.name == fmt
                and [bytes(p) for p in got.planes] == want)
 if checked:
     check(f"{total} frames reach the encoder as PyAV's own conversion makes them "
@@ -407,16 +413,23 @@ else:
           ok == total, f"{ok}/{total}")
 odd = FakeStream(853, 481, "yuv420p")
 check("odd sizes and other formats keep PyAV's conversion",
-      sfw._with_threaded_convert(odd) is odd
-      and sfw._with_threaded_convert(FakeStream(1920, 1080, "argb")).pix_fmt == "argb"
-      and not isinstance(sfw._with_threaded_convert(FakeStream(1920, 1080, "argb")),
-                         sfw._ConvertingVideoStream))
+      sfw._writer_stream(odd)._threads == 1
+      and sfw._writer_stream(FakeStream(1920, 1080, "argb"))._threads == 1
+      and sfw._writer_stream(FakeStream(1920, 1080, "argb")).pix_fmt == "argb")
 s2 = FakeStream(1920, 1080, "yuv420p")
-w2 = sfw._ConvertingVideoStream(s2, 4)
+w2 = sfw._WriterStream(s2, 4)
 w2.encode(None)
 w2.codec_tag = "hvc1"
 check("…flushing passes None through, and settings reach the stream",
       s2.got == [None] and s2.codec_tag == "hvc1" and w2.width == 1920)
+s3 = FakeStream(64, 36, "yuv420p")
+w3 = sfw._WriterStream(s3, 1)
+for _ in range(2):
+    w3.encode(av.VideoFrame(64, 36, "yuv420p"))
+w3.hold(5)
+w3.encode(av.VideoFrame(64, 36, "yuv420p"))
+check("frames numbered 0, 1, then 7 after a hold of 5", [f.pts for f in s3.got] == [0, 1, 7],
+      str([f.pts for f in s3.got]))
 
 print("11. GPU cairo flushed before images and at the end of a frame")
 import types
@@ -452,6 +465,211 @@ calls.clear()
 c = Camera()
 c.capture_mobjects([Square()])
 check("…and pycairo, which has no flush, is never asked", calls == [], str(calls))
+
+print("12. wait() written as its first and last frame")
+import sys as _sys
+import tempfile as _tf
+from manim import BLUE as _BLUE, FadeIn as _FadeIn, FadeOut as _FadeOut, Scene as _Scene
+from manim.utils.ios_encoder import settings as _enc
+
+
+class _Holds(_Scene):
+    def construct(self):
+        sq = Square().set_fill(_BLUE, 0.6)
+        self.play(_FadeIn(sq), run_time=0.3)
+        self.wait(0.7)
+        self.play(sq.animate.shift(RIGHT), run_time=0.3)
+        self.wait(0.4)
+        self.play(_FadeOut(sq), run_time=0.2)
+        self.wait(0.3)
+
+
+class _AppTookTheRender(Exception):
+    """An app's own render hook (CodeBench's editor: its quality settings,
+    its output folder) moved the movie away."""
+
+
+def _render_holds(mode):
+    _enc.hold_frames = mode
+    media = _tf.mkdtemp(prefix="holds_")
+    with tempconfig({"media_dir": media, "pixel_width": 320, "pixel_height": 180,
+                     "frame_rate": 30, "disable_caching": True, "verbosity": "WARNING",
+                     "progress_bar": "none", "write_to_movie": True}):
+        sc = _Holds()
+        fw = sc.renderer.file_writer
+        real = _sys.platform
+        _sys.platform = "ios"  # the app's writer: VideoToolbox (a Mac has it too)
+        try:
+            sc.render()
+        finally:
+            _sys.platform = real
+        path = fw.movie_file_path
+        _render_holds.writer = fw
+        _render_holds.clips = [str(c) for c in fw.partial_movie_files if c]
+    if not os.path.exists(str(path)) or not all(os.path.exists(c) for c in _render_holds.clips):
+        raise _AppTookTheRender
+    with av.open(str(path)) as cont:
+        st = cont.streams.video[0]
+        shots = [(float(f.pts * f.time_base), f.to_ndarray(format="rgb24")[::4, ::4].astype(int))
+                 for f in cont.decode(st)]
+        dur = float(cont.duration / av.time_base)
+    return shots, dur
+
+
+def _on_screen(shots, t):
+    best = None
+    for ft, img in shots:
+        if ft <= t + 1e-9:
+            best = img
+    return best
+
+
+try:
+    _was = _enc.hold_frames
+    try:
+        every, dur_every = _render_holds("every")
+        once, dur_once = _render_holds("once")
+    finally:
+        _enc.hold_frames = _was
+    check(f"as long either way ({dur_every:.3f} s / {dur_once:.3f} s)",
+          abs(dur_every - 2.2) < 0.02 and abs(dur_once - dur_every) < 1e-6)
+    check(f"with fewer frames ({len(every)} -> {len(once)})", len(once) < len(every) - 20)
+    worst = max(int(np.abs(_on_screen(every, t) - _on_screen(once, t)).max())
+                for t in np.arange(0.0, 2.2, 1 / 60))
+    check(f"the same picture at every moment (worst {worst}/255, encoder noise)", worst <= 32)
+    from manim import config as _cfg
+    _fmt = _cfg.format
+    try:
+        _cfg.format = "gif"
+        check("a GIF keeps every frame", not sfw._holds_written_once())
+    finally:
+        _cfg.format = _fmt
+
+
+    # ManimStudio's encoder wrapper moves an animation to a new clip when iOS
+    # takes the hardware encoder away (writer._ms_segments); if the clips then
+    # differ in encoding, it joins them by decoding and numbering every frame.
+    import shutil as _sh
+
+
+    def _renumbering_join(paths):
+        n = 0
+        for pth in paths:
+            with av.open(pth) as cont:
+                n += sum(1 for _ in cont.decode(video=0))
+        return n
+
+
+    def _length(pth):
+        with av.open(pth) as cont:
+            return float(cont.duration / av.time_base)
+
+
+    once_writer, once_clips = _render_holds.writer, _render_holds.clips
+    work = _tf.mkdtemp(prefix="split_")
+    copies = []
+    for c in once_clips:
+        dst = os.path.join(work, os.path.basename(c))
+        _sh.copy(c, dst)
+        copies.append(dst)
+    seg = os.path.join(work, "continued.mp4")  # a software clip continuing the first
+    with av.open(copies[0]) as src, av.open(seg, "w") as dst:
+        st = dst.add_stream("mpeg4", rate=30)
+        st.width, st.height, st.pix_fmt = 320, 180, "yuv420p"
+        for k, fr in enumerate(src.decode(video=0)):
+            g = av.VideoFrame.from_ndarray(fr.to_ndarray(format="rgb24"), format="rgb24")
+            g.pts = k
+            for pk in st.encode(g):
+                dst.mux(pk)
+        for pk in st.encode():
+            dst.mux(pk)
+    held_copies = {os.path.join(work, os.path.basename(c)) for c in once_writer.__dict__.get("_held_clips", ())}
+    fake = object.__new__(SceneFileWriter := type(once_writer))
+    fake.__dict__["_held_clips"] = set(held_copies)
+    paths = [p for c in copies for p in [c] + ([seg] if c == copies[0] else [])]
+    frames_due = int(round(sum(_length(p) for p in paths) * 30))
+    before = _renumbering_join(paths)
+    fake._ms_segments = {copies[0]: [seg]}
+    with tempconfig({"frame_rate": 30, "pixel_width": 320, "pixel_height": 180}):
+        SceneFileWriter._fill_holds_before_reencoding(fake, copies)
+    after = _renumbering_join(paths)
+    check(f"a join that numbers frames keeps the holds' length once they are written out "
+          f"({before} -> {after} of {frames_due} frames)",
+          len(held_copies) == 3 and before < frames_due and after == frames_due)
+    work2 = _tf.mkdtemp(prefix="split2_")
+    fresh = []
+    for c in once_clips:
+        dst = os.path.join(work2, os.path.basename(c))
+        _sh.copy(c, dst)
+        fresh.append(dst)
+    held2 = {os.path.join(work2, os.path.basename(c)) for c in once_writer.__dict__.get("_held_clips", ())}
+    sizes = {c: os.path.getsize(c) for c in fresh}
+    w2 = object.__new__(SceneFileWriter)
+    w2.__dict__["_held_clips"] = set(held2)
+    w2._ms_segments = {fresh[1]: []}  # a split, but no clip in another encoding
+    same = len({sfw._clip_encoding(c) for c in fresh}) == 1
+    with tempconfig({"frame_rate": 30, "pixel_width": 320, "pixel_height": 180}):
+        SceneFileWriter._fill_holds_before_reencoding(w2, fresh)
+    untouched = w2.__dict__["_held_clips"] == held2 and all(os.path.getsize(c) == sizes[c] for c in fresh)
+    check("…and only then: clips that join packet for packet are left as they are"
+          + ("" if same else " (these encoder sessions differ, so they were written out)"),
+          untouched == same)
+
+
+    class _Ctx:
+        def __init__(self, name):
+            self.codec_context = type("C", (), {"name": name})()
+
+
+    check("…and so does an encoder that reorders frames (libx264)",
+          not sfw._holds_written_once(_Ctx("libx264"))
+          and sfw._holds_written_once(_Ctx("hevc_videotoolbox")))
+
+except _AppTookTheRender:
+    print("        (the app's render hook moved this scene's movie: checked by rendering"
+          " through manim's own writer, as manim_writer_test.py does)")
+
+print("13. from_ndarray: one copy, without the GIL")
+import threading
+ok = total = 0
+for (h, w) in ((7, 9), (480, 854), (1080, 1920)):
+    for fmt, ch in (("rgba", 4), ("rgb24", 3), ("gray", None)):
+        shape = (h, w) if ch is None else (h, w, ch)
+        a = rng.integers(0, 256, size=shape, dtype=np.uint8)
+        for x in (a, np.asfortranarray(a)):
+            f = av.VideoFrame.from_ndarray(x, format=fmt)
+            p = f.planes[0]
+            bpp = 1 if ch is None else ch
+            rows = np.frombuffer(p, np.uint8).reshape(p.height, p.line_size)[:, : p.width * bpp]
+            total += 1
+            ok += rows.tobytes() == x.tobytes(order="C")
+check(f"{total} frames hold exactly the array's bytes", ok == total, f"{ok}/{total}")
+big = np.zeros((4320, 7680, 4), np.uint8)
+count = [0]
+stop = threading.Event()
+
+
+def _spin():
+    while not stop.is_set():
+        count[0] += 1
+
+
+th = threading.Thread(target=_spin)
+th.start()
+time.sleep(0.05)
+c0 = count[0]; t0 = time.perf_counter()
+for _ in range(5):
+    av.VideoFrame.from_ndarray(big, format="rgba")
+during = (count[0] - c0) / (time.perf_counter() - t0)
+c0 = count[0]; t0 = time.perf_counter()
+time.sleep(0.3)
+free = (count[0] - c0) / (time.perf_counter() - t0)
+stop.set(); th.join()
+ratio = during / max(free, 1)
+if _sys.platform == "ios":
+    check(f"another thread runs during an 8K copy ({ratio:.0%} of its free speed)", ratio > 0.4)
+else:
+    print(f"        (this PyAV is not the app's: another thread ran at {ratio:.0%} during an 8K copy)")
 
 print(f"{PASSED} passed, {FAILED} failed")
 raise SystemExit(1 if FAILED else 0)

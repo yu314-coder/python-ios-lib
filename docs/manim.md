@@ -523,6 +523,34 @@ than accumulates, which makes 4K and 8K memory-safe:
   105 to 76 ms. What remains on the writer is PyAV's `from_ndarray`, which
   copies the array twice (`tobytes()` first) and holds the GIL meanwhile
   (33 ms at 8K in the app's build); that needs a PyAV rebuild.
+- **A `wait()` is written as its first and last frame.** A frozen frame
+  held for *n* frames used to be converted and encoded *n* times; at 8K the
+  hardware encoder takes ~55 ms a frame whatever it gets, and holds were
+  47% of the TSNE video's frames. The writer now encodes the first frame,
+  moves the time stamps on (`_WriterStream.hold`) and encodes the last, so
+  the first stays on screen until the second: the clip is as long as
+  before and shows the same picture at every moment (the movie is variable
+  frame rate across a hold). Only with VideoToolbox, which does not
+  reorder frames — libx264's B-frames made the joined movie short across a
+  hold, so software encoders and GIF output still write every frame.
+  `settings.hold_frames = "every"` (or `OFFLINAI_MANIM_HOLD_FRAMES=every`)
+  writes every frame everywhere. If ManimStudio's encoder wrapper moves an
+  animation to a new clip in the middle of a hold (iOS took the hardware
+  encoder away), the rest of the hold is written frame by frame. Its join
+  copies packets when the clips share an encoding (the holds keep their
+  times); when a software clip made them differ, it decodes every clip and
+  numbers the frames one by one, which would shrink a hold to two frames
+  (a 3.2 s test video came back 1.6 s). Before combining, the writer sees
+  that case (`_ms_segments` and clips in more than one encoding) and writes
+  its hold clips out frame by frame first (`_fill_holds_before_reencoding`),
+  so the join keeps their length — no change in ManimStudio. In the app's
+  build at 8K120 (TSNE scene, first seven animations, CPU cairo,
+  ManimStudio's encoder wrapper) the movie is 10.600 s either way, 666
+  frames written instead of 1,272, the same picture at every moment; run
+  alternately against the previous commit on a loaded Mac: 111.6 and
+  133.3 s → 86.5 and 84.6 s. 14336×8064 (14K) HEVC
+  renders as before (checked: same duration and pictures, 4.49 GB peak
+  footprint vs 4.50 GB before).
 - **GPU cairo (CairoMetal) frames were blank.** CairoMetal records fills and
   strokes and renders them into the frame's memory only when flushed
   (`cairo._flush_all`). manim never flushed, so with the GPU switch on every
