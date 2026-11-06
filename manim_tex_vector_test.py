@@ -166,5 +166,8 @@ with tempconfig({"media_dir": media, "verbosity": "WARNING", "disable_caching": 
     check("…and it still comes out as glyphs", no_images(pij) and len(glyphs(pij)) >= 15,
           f"{len(glyphs(pij))} glyphs, images={not no_images(pij)}")
 
+import shutil  # noqa: E402
+
+shutil.rmtree(media, ignore_errors=True)  # the formulas' SVGs, the probe's frames
 print(f"{PASSED} passed, {FAILED} failed")
 raise SystemExit(1 if FAILED else 0)
