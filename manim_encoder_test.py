@@ -23,6 +23,7 @@ Three things have to hold, and each was wrong at some point:
 from __future__ import annotations
 
 import os
+import shutil
 import sys
 import tempfile
 
@@ -160,11 +161,8 @@ else:
             check("the combined file is tagged hvc1, not hev1",
                   final_tag == "hvc1", repr(final_tag))
 
-    for path in parts:
-        try:
-            os.remove(path)
-        except OSError:
-            pass
+    # The parts, the listing and the combined file: the whole folder.
+    shutil.rmtree(tmp, ignore_errors=True)
 
 print("\n== the frame queue is bounded by bytes, not by frame count ==")
 # A fixed count of 32 was written for 1080p and holds ~256 MB; the same 32
