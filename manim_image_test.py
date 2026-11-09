@@ -174,6 +174,13 @@ def draw(name, w, h, seed, full_frame=False, images=True):
             return cam.pixel_array.copy()
     finally:
         Camera._composite_onto = real
+        # Each case makes a camera, and a camera lives on in reference cycles
+        # until the collector runs. Under CairoMetal (the GPU toggle) every
+        # live camera holds one of a few GPU frames, and a draw that finds
+        # none free waits holding the GIL, so the collector never runs: the
+        # suite hung there. Free each camera before the next one.
+        import gc
+        gc.collect()
 
 
 print("== every frame is pixel-identical to the full-frame way ==")

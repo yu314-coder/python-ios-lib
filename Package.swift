@@ -843,7 +843,7 @@ let package = Package(
             .copy("manim"), .copy("manimpango"), .copy("offlinai_latex"),
             .copy("svgelements"), .copy("pathops"),
             .copy("srt.py"),                         // single-file pkg, manim/scene/scene.py imports it
-            .copy("manim-0.19.0.dist-info"),
+            .copy("manim-0.22.1.dist-info"),
             .copy("manimpango-0.6.1.dist-info"),
             .copy("offlinai_latex-1.0.1.dist-info"),
             .copy("skia_pathops-0.9.2.dist-info"),

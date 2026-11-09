@@ -1,79 +1,78 @@
-Metadata-Version: 2.1
+Metadata-Version: 2.4
 Name: manim
-Version: 0.19.0
+Version: 0.22.1
 Summary: Animation engine for explanatory math videos.
-Home-page: https://www.manim.community/
-Project-URL: Bug Tracker, https://github.com/ManimCommunity/manim/issues
-Project-URL: Changelog, https://docs.manim.community/en/stable/changelog.html
-Project-URL: Discord, https://www.manim.community/discord/
-Project-URL: Documentation, https://docs.manim.community/
-Project-URL: Homepage, https://www.manim.community/
-Project-URL: Repository, https://github.com/manimcommunity/manim
-Project-URL: Twitter, https://twitter.com/manim_community
-Author: The Manim Community Developers
-Author-email: contact@manim.community
-License: MIT
-Requires-Python: >=3.9
+Author: The Manim Community Developers, Grant '3Blue1Brown' Sanderson
+Author-email: The Manim Community Developers <contact@manim.community>, Grant '3Blue1Brown' Sanderson <grant@3blue1brown.com>
+License-Expression: MIT
+License-File: LICENSE
+License-File: LICENSE.community
 Classifier: Development Status :: 4 - Beta
-Classifier: License :: OSI Approved :: MIT License
-Classifier: Natural Language :: English
-Classifier: Programming Language :: Python :: 3
-Classifier: Programming Language :: Python :: 3.10
+Classifier: Topic :: Scientific/Engineering
+Classifier: Topic :: Multimedia :: Video
+Classifier: Topic :: Multimedia :: Graphics
 Classifier: Programming Language :: Python :: 3.11
 Classifier: Programming Language :: Python :: 3.12
 Classifier: Programming Language :: Python :: 3.13
-Classifier: Programming Language :: Python :: 3.9
-Classifier: Topic :: Multimedia :: Graphics
-Classifier: Topic :: Multimedia :: Video
-Classifier: Topic :: Scientific/Engineering
-Requires-Dist: av<14.0.0,>=9.0.0
+Classifier: Programming Language :: Python :: 3.14
+Classifier: Natural Language :: English
+Requires-Dist: audioop-lts>=0.2.1 ; python_full_version >= '3.13'
+Requires-Dist: av>=15.0
+Requires-Dist: beautifulsoup4>=4.12
 Requires-Dist: click>=8.0
 Requires-Dist: cloup>=2.0.0
-Requires-Dist: dearpygui>=1.0.0; extra == "gui"
-Requires-Dist: decorator>=4.3.2
-Requires-Dist: importlib-metadata>=3.6; python_full_version <= "3.9.0"
-Requires-Dist: isosurfaces>=0.1.0
-Requires-Dist: jupyterlab>=3.0.0; extra == "jupyterlab"
-Requires-Dist: manimpango<1.0.0,>=0.5.0
+Requires-Dist: decorator>=5.1.0
+Requires-Dist: isosurfaces>=0.1.1
+Requires-Dist: manimpango>=0.7.0,<1.0.0
 Requires-Dist: mapbox-earcut>=1.0.0
-Requires-Dist: moderngl<6.0.0,>=5.0.0
 Requires-Dist: moderngl-window>=2.0.0
+Requires-Dist: moderngl>=5.7.0,<6.0.0
 Requires-Dist: networkx>=2.6
-Requires-Dist: notebook>=6.0.0; extra == "jupyterlab"
-Requires-Dist: numpy>=2.1; python_version >= "3.10"
-Requires-Dist: numpy>=2.0; python_version < "3.10"
-Requires-Dist: Pillow>=9.1
-Requires-Dist: pycairo<2.0.0,>=1.13
-Requires-Dist: pydub>=0.20.0
-Requires-Dist: audioop-lts>=0.2.0; python_version >= "3.13"
-Requires-Dist: Pygments>=2.0.0
+Requires-Dist: numpy>=2.1
+Requires-Dist: pillow>=11.0
+Requires-Dist: pycairo>=1.14,<2.0.0
+Requires-Dist: pydub>=0.22.0
+Requires-Dist: pygments>=2.17
 Requires-Dist: rich>=12.0.0
-Requires-Dist: scipy>=1.13.0; python_version < "3.13"
-Requires-Dist: scipy>=1.14.0; python_version >= "3.13"
-Requires-Dist: screeninfo>=0.7
-Requires-Dist: skia-pathops>=0.7.0
+Requires-Dist: scipy>=1.13.0
+Requires-Dist: scipy>=1.15.0 ; python_full_version >= '3.13'
+Requires-Dist: screeninfo>=0.7.0
+Requires-Dist: skia-pathops>=0.9.0
 Requires-Dist: srt>=3.0.0
-Requires-Dist: svgelements>=1.8.0
-Requires-Dist: tqdm>=4.0.0
-Requires-Dist: typing-extensions>=4.0.0
+Requires-Dist: svgelements>=1.9.0
+Requires-Dist: tqdm>=4.21.0
+Requires-Dist: typing-extensions>=4.12.0
 Requires-Dist: watchdog>=2.0.0
-Requires-Dist: beautifulsoup4>=4.12
+Requires-Dist: dearpygui>=1.0.0 ; extra == 'gui'
+Requires-Dist: jupyterlab>=4.3.4 ; extra == 'jupyterlab'
+Requires-Dist: notebook>=7.3.2 ; extra == 'jupyterlab'
+Requires-Dist: typst>=0.14 ; extra == 'typst'
+Requires-Python: >=3.11
+Project-URL: repository, https://github.com/manimcommunity/manim
+Project-URL: documentation, https://docs.manim.community/
+Project-URL: homepage, https://www.manim.community/
+Project-URL: Bug Tracker, https://github.com/ManimCommunity/manim/issues
+Project-URL: Changelog, https://docs.manim.community/en/stable/changelog.html
+Project-URL: X / Twitter, https://x.com/manimcommunity
+Project-URL: Bluesky, https://bsky.app/profile/manim.community
+Project-URL: Discord, https://www.manim.community/discord/
+Provides-Extra: gui
+Provides-Extra: jupyterlab
+Provides-Extra: typst
 Description-Content-Type: text/markdown
 
 <p align="center">
-    <a href="https://www.manim.community/"><img src="https://raw.githubusercontent.com/ManimCommunity/manim/main/logo/cropped.png"></a>
+    <a href="https://www.manim.community/"><img src="https://raw.githubusercontent.com/ManimCommunity/manim/main/logo/cropped.png" alt="Manim Community logo"></a>
     <br />
     <br />
     <a href="https://pypi.org/project/manim/"><img src="https://img.shields.io/pypi/v/manim.svg?style=flat&logo=pypi" alt="PyPI Latest Release"></a>
     <a href="https://hub.docker.com/r/manimcommunity/manim"><img src="https://img.shields.io/docker/v/manimcommunity/manim?color=%23099cec&label=docker%20image&logo=docker" alt="Docker image"> </a>
-    <a href="https://mybinder.org/v2/gh/ManimCommunity/jupyter_examples/HEAD?filepath=basic_example_scenes.ipynb"><img src="https://mybinder.org/badge_logo.svg"></a>
+    <a href="https://mybinder.org/v2/gh/ManimCommunity/jupyter_examples/HEAD?filepath=basic_example_scenes.ipynb"><img src="https://mybinder.org/badge_logo.svg" alt="Launch Binder"></a>
     <a href="http://choosealicense.com/licenses/mit/"><img src="https://img.shields.io/badge/license-MIT-red.svg?style=flat" alt="MIT License"></a>
     <a href="https://www.reddit.com/r/manim/"><img src="https://img.shields.io/reddit/subreddit-subscribers/manim.svg?color=orange&label=reddit&logo=reddit" alt="Reddit" href=></a>
-    <a href="https://twitter.com/manim_community/"><img src="https://img.shields.io/twitter/url/https/twitter.com/cloudposse.svg?style=social&label=Follow%20%40manim_community" alt="Twitter">
-    <a href="https://www.manim.community/discord/"><img src="https://img.shields.io/discord/581738731934056449.svg?label=discord&color=yellow&logo=discord" alt="Discord"></a>
-    <a href="https://github.com/psf/black"><img src="https://img.shields.io/badge/code%20style-black-000000.svg" alt="Code style: black">
+    <a href="https://twitter.com/manimcommunity/"><img src="https://img.shields.io/twitter/url/https/twitter.com/cloudposse.svg?style=social&label=Follow%20%40manimcommunity" alt="Twitter">
+    <a href="https://manim.community/discord/"><img src="https://img.shields.io/discord/581738731934056449.svg?label=discord&color=yellow&logo=discord" alt="Discord"></a>
     <a href="https://docs.manim.community/"><img src="https://readthedocs.org/projects/manimce/badge/?version=latest" alt="Documentation Status"></a>
-    <a href="https://pepy.tech/project/manim"><img src="https://pepy.tech/badge/manim/month?" alt="Downloads"> </a>
     <img src="https://github.com/ManimCommunity/manim/workflows/CI/badge.svg" alt="CI">
     <br />
     <br />
@@ -84,17 +83,17 @@ Description-Content-Type: text/markdown
 Manim is an animation engine for explanatory math videos. It's used to create precise animations programmatically, as demonstrated in the videos of [3Blue1Brown](https://www.3blue1brown.com/).
 
 > [!NOTE]
-> The community edition of Manim has been forked from 3b1b/manim, a tool originally created and open-sourced by Grant Sanderson, also creator of the 3Blue1Brown educational math videos. While Grant Sanderson’s repository continues to be maintained separately by him, he is not among the maintainers of the community edition. We recommend this version for its continued development, improved features, enhanced documentation, and more active community-driven maintenance. If you would like to study how Grant makes his videos, head over to his repository ([3b1b/manim](https://github.com/3b1b/manim)).
+> The community edition of Manim (ManimCE) is a version maintained and developed by the community. It was forked from 3b1b/manim, a tool originally created and open-sourced by Grant Sanderson, also creator of the 3Blue1Brown educational math videos. While Grant Sanderson continues to maintain his own repository, we recommend this version for its continued development, improved features, enhanced documentation, and more active community-driven maintenance. If you would like to study how Grant makes his videos, head over to his repository ([3b1b/manim](https://github.com/3b1b/manim)).
 
 ## Table of Contents:
 
--  [Installation](#installation)
--  [Usage](#usage)
--  [Documentation](#documentation)
--  [Docker](#docker)
--  [Help with Manim](#help-with-manim)
--  [Contributing](#contributing)
--  [License](#license)
+- [Installation](#installation)
+- [Usage](#usage)
+- [Documentation](#documentation)
+- [Docker](#docker)
+- [Help with Manim](#help-with-manim)
+- [Contributing](#contributing)
+- [License](#license)
 
 ## Installation
 
@@ -152,9 +151,9 @@ The `-p` flag in the command above is for previewing, meaning the video file wil
 
 Some other useful flags include:
 
--  `-s` to skip to the end and just show the final frame.
--  `-n <number>` to skip ahead to the `n`'th animation of a scene.
--  `-f` show the file in the file browser.
+- `-s` to skip to the end and just show the final frame.
+- `-n <number>` to skip ahead to the `n`'th animation of a scene.
+- `-f` show the file in the file browser.
 
 For a thorough list of command line arguments, visit the [documentation](https://docs.manim.community/en/stable/guides/configuration.html).
 
@@ -182,8 +181,8 @@ The contribution guide may become outdated quickly; we highly recommend joining 
 [Discord server](https://www.manim.community/discord/) to discuss any potential
 contributions and keep up to date with the latest developments.
 
-Most developers on the project use `poetry` for management. You'll want to have poetry installed and available in your environment.
-Learn more about `poetry` at its [documentation](https://python-poetry.org/docs/) and find out how to install manim with poetry at the [manim dev-installation guide](https://docs.manim.community/en/stable/contributing/development.html) in the manim documentation.
+Most developers on the project use `uv` for management. You'll want to have uv installed and available in your environment.
+Learn more about `uv` at its [documentation](https://docs.astral.sh/uv/) and find out how to install manim with uv at the [manim dev-installation guide](https://docs.manim.community/en/latest/contributing/development.html) in the manim documentation.
 
 ## How to Cite Manim
 
@@ -202,4 +201,3 @@ Our full code of conduct, and how we enforce it, can be read on [our website](ht
 ## License
 
 The software is double-licensed under the MIT license, with copyright by 3blue1brown LLC (see LICENSE), and copyright by Manim Community Developers (see LICENSE.community).
-

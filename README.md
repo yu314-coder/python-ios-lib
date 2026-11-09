@@ -127,7 +127,7 @@ The former software gaps — `sentencepiece`, `datasets`, `evaluate`, TensorBoar
 
 | Library | Version |
 |---|---|
-| **manim** | 0.19.0 |
+| **manim** | 0.22.1 |
 | **manimpango** | 0.6.1 (iOS shim) |
 | **mapbox_earcut** | 1.0.3 |
 | **isosurfaces** | 0.1.2 |

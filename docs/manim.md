@@ -1,9 +1,9 @@
 # Manim — math animation engine
 
-**Version:** 0.19.0
+**Version:** 0.22.1 (ManimCommunity's latest release, with python-ios-lib's iOS patches; was 0.20.0 until 2026-11-09)
 **Type:** Pure Python + iOS patches (Cairo renderer only)
 **SPM target:** `Manim` (depends on `CairoGraphics`, `ManimPango`)
-**Total Python modules:** 166
+**Total Python modules:** 178
 
 Mathematical animation engine — declarative Scene class with `.play()`
 animations, vectorized mobjects, LaTeX integration, programmatic camera
@@ -243,6 +243,63 @@ in `media/videos/script/480p15/HelloWorld.mp4`.
 ---
 
 ## iOS notes
+
+### Manim 0.22.1 (2026-11-09)
+
+The bundled manim follows ManimCommunity's latest release, 0.22.1: each
+iOS patch below was merged onto it (three-way: 0.20.0 → this library's
+0.20.0, 0.20.0 → 0.22.1). Rendered beside official 0.22.1 on a Mac, frame
+for frame, scenes with shapes, Text, MathTex with `{{ }}` parts,
+TransformMatchingTex, updaters, 3D, images, sections and dashed lines came
+out identical; the raw frames are identical to the 0.20 library's under
+pycairo and CairoMetal.
+
+Two bugs this fixed, both upstream 0.20.0's own:
+
+- A `}}` inside a formula was taken for manim's `{{ }}` part syntax:
+  `MathTex(r"\sum_{k\ \mathrm{odd}}^{N} ...")` was cut at `\mathrm{odd}}`
+  and everything after it stayed in the subscript. 0.22's
+  `MathTex._split_double_braces` opens a part only at the start of the
+  string or after whitespace. `set_color_by_tex` matches a part's string
+  exactly, as before: `{{ b }}` is the part `" b "`, so write `{{b}}`.
+- An `always_redraw` DashedLine, Line or Arc that reaches zero length
+  crashed the render (`IndexError` in `align_points` → `get_nth_subpath`).
+
+What changed for code that reaches into manim:
+
+- **The video writer** is 0.22's (resolved settings, `OutputPlan` paths,
+  sections, sound, cache pruning) around this library's encoding engine
+  (one clip at a time on its own writer thread, VideoToolbox, the iOS frame
+  queue, held frames, frames given back to the camera, a stall-aware close),
+  in place of 0.22's `VideoSegmentEncoder` jobs. Two VideoToolbox sessions at
+  once were slower on an iPad and cost gigabytes; upstream's own default is
+  one at a time too (`max_inflight_encoders = 1`).
+- It keeps manim 0.20's seams, which ManimStudio and CodeBench patch: the
+  renderer calls `write_frame(frame, num_frames)` positionally (0.22 passes
+  `repeat=`), `encode_and_write_frame`, `video_stream` / `video_container` /
+  `partial_movie_file_path` / `queue` while a clip is open,
+  `writer.renderer.num_plays`, `combine_files`, and
+  `scene_file_writer.to_av_frame_rate`. ManimStudio's unmodified encoder
+  wrapper was run against it, including a simulated hardware-encoder loss
+  mid-clip (the clip splits and the joined movie keeps its length).
+- A scene that raises mid-animation now stops its clip's writer thread and
+  drops the clip (0.22's `abort_encode_jobs`); before, the process waited for
+  that thread at exit, for good. A renderer blocked on a full frame queue
+  fails after the stall window instead of waiting forever.
+- `Mobject.update` follows 0.22: a suspended mobject updates neither itself
+  nor its family. `get_family` skips a mobject already on the path from the
+  root, so a family that contains itself ends.
+- `config.write_to_movie` and `config.movie_file_extension` are gone in 0.22
+  (output follows `config.format`); setting `write_to_movie` is harmless.
+  `config.flush_cache` is still honoured here: on iOS a scene's clips are
+  deleted once its movie is made.
+- `_config/video_encoder.py`: on iOS, codec `auto` resolves to VideoToolbox
+  (`ios_encoder.settings.codec_for`), as iOS's FFmpeg has no libx264.
+
+Tests: `manim_test.py` (90), `manim_regression_test.py` (renders both bugs,
+the seams above and the abort; 25), `manim_writer_test.py` (26, also
+`--as-ios`), `manim_encoder_test.py`, `manim_image_test.py`,
+`manim_speed_test.py`.
 
 ### Renderer
 
@@ -940,12 +997,16 @@ manim/mobject/text/tex_mobject.py     — PNG-fallback path
 manim/utils/tex_file_writing.py       — iOS: offlinai_latex; cache accepts its
                                        vector SVGs
 manim/mobject/text/numbers.py         — debug counter
-manim/scene/scene_file_writer.py      — VideoToolbox codec choice by resolution
+manim/scene/scene_file_writer.py      — 0.22's writer around this library's
+                                       encoding engine (see "Manim 0.22.1"):
+                                       VideoToolbox codec choice by resolution
                                        (h264/hevc) + hvc1 tagging; save_image guard;
                                        frames converted to YUV on several cores;
                                        holds written once; VideoToolbox capped at
                                        encoder_pending_frames; finished frames
-                                       given back to the camera
+                                       given back to the camera; 0.20's seams
+manim/_config/video_encoder.py        — iOS: codec auto is VideoToolbox
+manim/renderer/opengl_renderer.py     — write_frame count passed positionally
 manim/utils/ios_encoder.py           — NEW: VideoToolbox capability probe +
                                        RenderSettings (queue depth, codec,
                                        convert_threads, hold_frames,
@@ -967,7 +1028,8 @@ manim/utils/ipython_magic.py          — non-Jupyter cleanups
 manim/utils/color/core.py             — color parsing edge cases
 ```
 
-Don't `git checkout` these files casually — see `~/.claude/projects/-Volumes-D-OfflinAi/memory/gotchas_ios_patches.md`.
+Don't `git checkout` these files casually: they carry the iOS patches, and an
+upgrade merges them onto the new release rather than replacing them.
 
 ---
 

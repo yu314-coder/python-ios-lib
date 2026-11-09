@@ -53,7 +53,7 @@ def check(label, ok, detail=""):
 
 try:
     import av
-    from manim import BLUE, PI, RIGHT, Create, Scene, Square, tempconfig
+    from manim import BLUE, PI, RIGHT, Create, Scene, Square, config, tempconfig
     from manim.scene import scene_file_writer as sfw
     from manim.scene.scene_file_writer import SceneFileWriter
     from manim.utils.ios_encoder import RenderSettings, settings
@@ -151,6 +151,10 @@ def render(per_frame_delay=0.0, block_after=None, stall=None, queue=None):
         }):
             scene = ThreeClips()
             out["writer"] = scene.renderer.file_writer
+            # The clips are read after the render: on iOS they are deleted
+            # once the movie is made (config.flush_cache), unless told not to.
+            saved_flush = getattr(config, "flush_cache", False)
+            config.flush_cache = False
             if AS_IOS:
                 sys.platform = "ios"
             try:
@@ -159,13 +163,16 @@ def render(per_frame_delay=0.0, block_after=None, stall=None, queue=None):
                 out["error"] = e
             finally:
                 sys.platform = real_platform
+                config.flush_cache = saved_flush
                 release.set()
             for c in clips:
                 try:
                     c["in_file"] = frames_in(c["path"])
                 except Exception as e:
                     c["in_file"] = f"{type(e).__name__}"
-            movie = scene.renderer.file_writer.movie_file_path
+            # The writer taken before the render: CodeBench lets go of the
+            # scene's renderer once it has rendered.
+            movie = out["writer"].movie_file_path
             out["movie_frames"] = (frames_in(str(movie))
                                    if out["error"] is None and os.path.exists(movie) else None)
             # A stalled thread is let go above; give it a moment to finish

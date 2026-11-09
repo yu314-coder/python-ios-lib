@@ -360,9 +360,12 @@ with tempconfig({"verbosity": "WARNING"}):
     check("200 de-duplicated lists come out the same", ok2 == 200, f"{ok2}/200")
 
     def old_update(mob, dt, log):
-        if not mob.updating_suspended:
-            for u in mob.updaters:
-                u(mob, dt)
+        # manim 0.22.1's recursive update: a suspended mobject updates
+        # neither itself nor its family (0.20 still updated the family).
+        if mob.updating_suspended:
+            return
+        for u in mob.updaters:
+            u(mob, dt)
         for sub in mob.submobjects:
             old_update(sub, dt, log)
     ok = 0
