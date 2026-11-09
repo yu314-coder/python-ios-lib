@@ -3,9 +3,8 @@
 Rigorous correctness tests for CairoMetal — GEOMETRY area.
 
 Run:
-  CM_METALLIB="/Volumes/D/OfflinAi/cairo(metal)/build/default.metallib" \
-  PYTHONPATH="/Volumes/D/OfflinAi/cairo(metal)/python" \
-  python3 '/Volumes/D/OfflinAi/cairo(metal)/tests/test_geometry.py'
+  CM_METALLIB=build/default.metallib PYTHONPATH=python \
+    python3 tests/test_geometry.py            # from the CairoMetal root
 
 Every check compares a SPECIFIC pixel or returned numeric value against a
 hand-computed expected value. No smoke checks. Goal: FIND BUGS.

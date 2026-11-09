@@ -43,6 +43,19 @@
 #include <math.h>
 #include "cairo_metal.h"
 
+/* PyWeakref_GetRef is Python 3.13's; this is it for 3.10–3.12, where
+ * PyWeakref_GetObject hands back a borrowed reference (Py_None once dead). */
+#if PY_VERSION_HEX < 0x030D0000
+static int PyWeakref_GetRef(PyObject *ref, PyObject **pobj)
+{
+    PyObject *obj = PyWeakref_GetObject(ref);
+    if (obj == NULL) { *pobj = NULL; return -1; }
+    if (obj == Py_None) { *pobj = NULL; return 0; }
+    *pobj = Py_NewRef(obj);
+    return 1;
+}
+#endif
+
 /* ===========================================================================
  * Module-global state set up in PyInit_cairo_metal (exception type + the type
  * objects we need to reference from constructors / accessors).

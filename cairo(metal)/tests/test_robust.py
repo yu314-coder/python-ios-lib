@@ -8,9 +8,8 @@ it.  "Should fail" cases assert the SPECIFIC exception/status.  Documented gaps
 are confirmed to fail AS DOCUMENTED (not silently corrupt).
 
 Run:
-  CM_METALLIB="/Volumes/D/OfflinAi/cairo(metal)/build/default.metallib" \
-  PYTHONPATH="/Volumes/D/OfflinAi/cairo(metal)/python" \
-  python3 '/Volumes/D/OfflinAi/cairo(metal)/tests/test_robust.py'
+  CM_METALLIB=build/default.metallib PYTHONPATH=python \
+    python3 tests/test_robust.py            # from the CairoMetal root
 
 Stdlib only.  No numpy, no PIL, no pycairo.
 """
