@@ -3,8 +3,8 @@
 **Version:** 0.1.0 (dist-info) — `offlinai-shell` PyPI name
 **Type:** Pure Python, single file
 **SPM target:** Bundled in the Python framework (host-app glue, not a public PyPI dep)
-**File size:** 342 KB (~8,330 lines)
-**Total `@builtin` decorations:** 116 (covers ~108 unique command names — some are aliased via stacked decorators)
+**File size:** 426 KB (~10,471 lines)
+**Total `@builtin` decorations:** 139 (138 command names — some are aliased via stacked decorators)
 
 A zsh-shaped REPL that runs inside the CodeBench Python interpreter. iOS bans
 `fork()`, `exec()`, and `subprocess.Popen`, so every shell builtin is a pure
@@ -36,7 +36,7 @@ That's it — one pure-Python file, no submodules, no C extensions.
 ## The builtin catalog
 
 Found via `grep -n "@builtin(" /Volumes/D/OfflinAi/app_packages/site-packages/offlinai_shell.py`
-(116 decorations total — count includes stacked aliases like
+(139 decorations total — count includes stacked aliases like
 `@builtin("python") @builtin("python3")`).
 
 ### File operations
@@ -165,13 +165,21 @@ Found via `grep -n "@builtin(" /Volumes/D/OfflinAi/app_packages/site-packages/of
 
 | Command | Line | Notes |
 |---|---|---|
-| `pip` / `pip3` | 3107–08 | `pip._internal.cli.main.main`. Injects `--target ~/Documents/site-packages` (sandbox-writable). Skips packages already on `sys.path` so bundled torch / numpy / matplotlib aren't re-downloaded. Honours `-U` only when explicitly passed |
+| `pip` / `pip3` | 3764–65 | BenchCode ships no pip: `list`, `show`, `freeze` and `check` are answered from the installed packages' metadata ([`benchcode_pip`](../app_packages/site-packages/benchcode_pip.py)); `install` and the other download verbs never download — they say which requested packages are built in, point a local file (`pip install ./x.whl`) at `pkg add`, and `pip uninstall` of a package the user added at `pkg remove` |
 | `pip-install` | 4691 | Shortcut → `pip install` |
 | `pip-uninstall` | 4697 | Shortcut → `pip uninstall` |
 | `pip-list` | 4703 | Shortcut → `pip list` |
 | `pip-show` | 4709 | Shortcut → `pip show` |
 | `pip-freeze` | 4715 | Shortcut → `pip freeze` |
 | `pip-check` | 4721 | Shortcut → `pip check` + diagnostic of bundled-vs-user-installed |
+
+### Your own commands and packages
+
+| Command | Line | Notes |
+|---|---|---|
+| `cmd` | 1900 | `cmd new <name>` makes `<name>.py` in My work › Commands and opens it in the editor; `cmd new <name> "<line>"` makes a one-line shortcut (`<name>.sh`); `--shell` a multi-line one. Also `list`, `show`, `edit`, `remove`, `where`. See [Your own commands and packages](#your-own-commands-and-packages-benchcode_custom) |
+| `alias` / `unalias` | 1996, 2066 | `alias gs='git status'` keeps a shortcut as `Commands/gs.sh` (arguments go on the end); bare `alias` lists the built-in ones (`ll`, `la`, …) and yours |
+| `pkg` | 2100 | `pkg add <file, folder or link>` adds a pure-Python package into `~/Documents/site-packages`: a `.whl`, `.zip` or `.tar.gz`, a package folder, a `.py` file, or a GitHub / GitLab / Codeberg / Bitbucket link (a repository, or a file in one). Also `new`, `list`, `show`, `files`, `edit`, `update`, `remove`, `where` |
 
 ### Version control
 
@@ -295,6 +303,123 @@ evicts the entry-point module + every submodule of its top package from
 because module-level argparse parsers conflict on re-entry), then calls
 the entry-point function directly. Makes `pypistats recent numpy` work
 after `pip install pypistats` with no restart.
+
+### Your own commands and packages (`benchcode_custom`)
+
+The work behind `cmd`, `alias` and `pkg` is in
+[`benchcode_custom.py`](../app_packages/site-packages/benchcode_custom.py).
+The only thing it fetches is a link the user gives `pkg add`.
+
+**Commands.** A command is one file in My work › Commands
+(`~/Documents/Workspace/Commands`), visible in My work and the Files app like
+any other script; a file put there by hand is a command too. After a builtin
+and a `console_scripts` entry point, `run_line` (`_run_user_command`, line 756)
+looks for `<name>.py`, then `<name>.sh`:
+
+- `<name>.py` runs through the `python` builtin, without its `[shell] running`
+  line: `__name__ == "__main__"`, the arguments in `sys.argv[1:]`
+  (`sys.argv[0]` is the file's path, as for a script on a Unix `PATH`), the
+  Ctrl-C watchdog and the clean-up afterwards.
+- `<name>.sh` runs each line through `run_line`, as if typed: terminal commands
+  and Python lines alike (a Python block left open at the end is closed).
+  `$1` … `$9`, `${10}`, `$@`, `$*`, `$#` and `$0` stand for the arguments and
+  the name, shell-quoted outside quotes, escaped inside double quotes, left
+  alone inside single quotes; `"$@"` gives each argument as its own word.
+  Commands that call each other stop at 16 deep.
+
+`help <name>` and `<name> --help` (for `.sh`) print the docstring or the
+leading `#` comment; `which <name>` names the file; `help` lists them under
+*Your commands*; Tab completes them. A new name can't be a builtin, an alias,
+a Python keyword or a Python built-in name (`list`, `print`, …), since the
+terminal reads those as Python.
+
+**Packages.** `pkg add` unpacks into a temporary folder first, then copies
+into `~/Documents/site-packages`, which `PythonRuntime` puts on `sys.path`
+for the terminal, the editor's Run and notebooks:
+
+| Given | Taken |
+|---|---|
+| `.whl` (or a `.zip` holding a `.dist-info/WHEEL`) | everything; `<name>.data/purelib` and `platlib` are merged in, `scripts`, `headers` and `data` left out (and named) |
+| `.tar.gz` / `.tgz` / `.tar` / `.zip` source archive, or a project folder | the packages (folders with `__init__.py`) and modules under `src/` or the top, as `pyproject.toml` (`[tool.setuptools]` packages / py-modules / package-dir, flit, hatch), `setup.cfg` or `setup.py` name them; `tests`, `docs`, `examples`, `setup.py`, `conftest.py`, `test_*.py` are never taken. Name, version, summary and requirements come from `PKG-INFO`, `pyproject.toml`, `setup.cfg` or `setup.py` |
+| a folder with `__init__.py` | the folder, as a package (version from `__version__`) |
+| a `.py` file | the module (its name must be importable: `get-py2bin.py` is refused) |
+| a link | see below, then as the archive or file it fetched |
+
+**Links.** `pkg add` takes links to GitHub, GitLab, Codeberg and Bitbucket
+(`parse_link`), and fetches them the way `git clone` does, with
+`urllib` and a `BenchCode-pkg/1.0` User-Agent. Other hosts are refused, and
+`pkg` never looks a package up by name.
+
+- **A repository:** `https://github.com/<owner>/<repo>`, with or without
+  `https://` and `.git`, `git@github.com:<owner>/<repo>.git`,
+  `…/tree/<branch>/<folder>`, pip's `git+https://…/<repo>@<ref>#subdirectory=<folder>`,
+  and GitLab's `…/-/tree/<ref>`. It is fetched as the host's archive of that
+  ref (GitHub's `api.github.com/repos/<o>/<r>/zipball[/<ref>]`, GitLab's
+  `repository/archive.zip?sha=`, Codeberg's `/archive/<ref>.zip`, Bitbucket's
+  `/get/<ref>.zip`). It is then added like a project folder, from that folder
+  inside it if one is given. The repository's name is used when the project
+  names none.
+- **A file in one:** a release asset (`…/releases/download/…/x.whl`), or a
+  file page (`…/blob/<ref>/m.py`, fetched from `raw.githubusercontent.com`),
+  is fetched and added as that file.
+- **Where it came from:** the link (`github.com/<owner>/<repo>@<ref>`) is kept
+  in `benchcode.json`. `pkg list` shows it, and `pkg update [name]` fetches it
+  again.
+- **Errors**, in words: 404 (missing or private), 403/429 (rate limit),
+  no connection, over 512 MB.
+
+Refused, with the reason in words: anything with native code (`.so`,
+`.dylib`, `.pyd`, a wheel tagged for a platform — iOS only runs native code
+that ships inside the app), archive members outside their own folder, more
+than 512 MB unpacked, `pip` (BenchCode works offline), and a package whose
+import name is already built in or part of the standard library: PYTHONPATH
+puts `~/Documents/site-packages` last, so Python would always find the
+built-in one first and the copy would never be used (this also keeps a user
+file from replacing a module BenchCode itself runs on). Adding a package of
+the same name again updates it; `--replace` puts it in place of another
+package of the user's with the same import name, or one put there by hand.
+Bytecode is never copied. C sources are copied; when the project would
+compile them (`ext_modules` / `Extension(` / `cythonize(` in `setup.py`,
+`.pyx` files, a meson / scikit-build / maturin backend) the shell says that
+part can't run.
+
+Each package gets a `.dist-info` (the wheel's own, or a written `METADATA`,
+plus an `entry_points.txt` from `[project.scripts]` / `gui-scripts` /
+`entry-points` in `pyproject.toml`, `[options.entry_points]` in `setup.cfg`,
+or `console_scripts` in `setup.py`) with `INSTALLER` = `BenchCode`,
+`top_level.txt`, a `benchcode.json`
+(`{"from": <file name>, "added": <time>}`) and a `RECORD` of every file
+copied, so `pip list` / `pip show` and the Library list it as added by the
+user. After adding, the shell prints what it imports as, requirements not
+found on this Python (markers evaluated, extras skipped), any
+`console_scripts` (they run by name), and whether an old copy is still
+imported in this session. `pkg remove` deletes a top-level folder no other
+package shares as a whole (files the user added to it too), otherwise only
+the files in `RECORD`, then bytecode and empty folders; it never touches
+anything outside `~/Documents/site-packages`. `pkg list` also shows things
+put in that folder by hand.
+
+**Commands that packages bring.** A package's `console_scripts` run by name
+through the console-script dispatch, and the ones from packages in
+`~/Documents/site-packages` appear in `help` under *Commands from your
+packages* by themselves (built-in packages' commands still run but aren't
+listed). `help <command>` names the package and prints the command's own
+`--help`, for built-in packages' commands too; `which <command>` gives the
+package and `module:function`; Tab completes them and typos suggest them.
+Tested with [python_to_binary](https://github.com/yu314-coder/python_to_binary)
+(a `src/` layout with a custom build backend and `py2bin = "py2bin.cli:main"`):
+added from `pkg add https://github.com/yu314-coder/python_to_binary`, from
+GitHub's Download ZIP or from a folder, `py2bin --version`,
+`help py2bin`, `py2bin compile` and `py2bin emit-c` work, and `pkg remove`
+takes the command out of `help` again.
+
+**Tests:** [`tests/shell/cmd_pkg_test.py`](../tests/shell/cmd_pkg_test.py)
+(123 checks on a host Python 3.14, against a throwaway HOME; `PY2BIN_REPO`
+adds the python_to_binary checks, `PKG_NET=0` skips the live GitHub ones).
+
+**Python lines.** A line whose second word is `=`, `+=`, `==` or another
+Python operator runs as Python even if its first word is a command, so
+`cmd = "ls"` or `id = 3` assigns.
 
 ### cpu-z and gpu-z (`offlinai_bench`)
 
