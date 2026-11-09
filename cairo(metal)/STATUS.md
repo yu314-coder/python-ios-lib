@@ -12,6 +12,55 @@ the design rationale.
 
 ---
 
+## 2026-11-09 — no draw waits for ever for a GPU frame
+
+**The hang.** cairo draws at once. CairoMetal batches a surface's drawing into
+one open frame (one command buffer) until the surface is flushed, and the device
+has `CM_FRAMES_IN_FLIGHT` (3) frames behind a semaphore. A fourth surface drawn
+while three others held open frames waited for a frame only a flush of those
+surfaces could return: for ever, and holding the GIL, so nothing else in the
+process ran. Two ways in:
+
+- Any code that draws into four or more surfaces in turn without flushing
+  (`tests/test_frame_limit.py` reproduces it with five).
+- manim with more than 64 live cameras. The Python flush registry
+  (`_flush_all`'s list of `create_for_data` surfaces) was a fixed 64, so later
+  surfaces were never flushed, their drawing never reached their buffer, and
+  three of them hung the next draw. `manim_image_test.py`, which makes a
+  camera per case, hung CodeBench's GPU mode this way; cameras live on in
+  reference cycles until the collector runs, and the collector can't run while
+  the draw waits holding the GIL.
+
+**The fix.**
+
+- `cm_glue_make_room` (`cairo_metal.m`): before a frame begins on a device
+  whose frames are all open, the oldest open frame of another surface is
+  ended. What it holds is drawn now, as cairo would have drawn it, and that
+  surface's next draw starts a frame from those pixels. Frames are only
+  acquired at the start of a draw, for its own surface, so no draw is encoding
+  into the frame ended. The ANTIALIAS_NONE path does the same.
+  `_frames_ended_early()` counts these.
+- The flush registry grows as needed (`cairo_metal_ext.c`).
+- `cm_device_take_frame` (`cm_device.m`): a frame wait that still finds none
+  free after 20 s fails the draw with a device error instead of waiting for
+  ever. It's waited in slices, and a slice far longer than asked (the app
+  suspended in the background) counts as a pause.
+
+**Checked.** `tests/test_frame_limit.py` (7 cases, each in a child process
+with a time limit; in-process on iOS): all 7 hung or failed before the fix and
+pass after. That includes random draws with OVER, SOURCE, ADD and CLEAR over 7
+surfaces in turn, against pycairo: within one level, the same ±1 CairoMetal
+shows with no frame ended early. All other suites pass unchanged (raster,
+geometry 177, robust 78, layer frames 45, path batch 11, reference 0 flagged,
+gaps 91, full shim 81, shim). manim's GPU frames are identical before and
+after (189/189). `manim_image_test.py` without its `gc.collect()` passes under
+CairoMetal on the Mac and in CodeBench (it hung both before). In CodeBench,
+with GPU mode on: test_frame_limit 7/7, test_layer_frames 45/45,
+cairo_gpu_test 25/25. The shaders are unchanged; the metallib is
+byte-identical.
+
+---
+
 ## 2026-11-07 — manim's paths in one call; transparent draws skipped
 
 - **`Context._append_cubic_curves(points, atol)`** builds, in one C call, the path

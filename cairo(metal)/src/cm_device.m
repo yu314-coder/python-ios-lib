@@ -1564,6 +1564,32 @@ cm_frame *cm_frame_begin(cm_surface_t *surface)
     return cm_frame_begin_ex(surface, false);
 }
 
+/* Take a ring frame. One comes free within milliseconds -- the GPU finishing a
+ * frame in flight -- unless a frame is held open for good, which the glue's
+ * cm_glue_make_room prevents. Should one never come anyway, the draw fails after
+ * CM_FRAME_WAIT_S with an error instead of waiting for ever: the caller holds the
+ * Python GIL, so a wait for ever stops the whole process. Waited in short slices,
+ * and a slice that took far longer than asked (the app suspended in the
+ * background) counts as a pause, not as waiting. */
+#define CM_FRAME_WAIT_S 20.0
+static bool cm_device_take_frame(cm_device *dev)
+{
+    double waited = 0.0;
+    for (;;) {
+        CFAbsoluteTime t0 = CFAbsoluteTimeGetCurrent();
+        if (dispatch_semaphore_wait(dev->sem,
+                dispatch_time(DISPATCH_TIME_NOW, 250 * NSEC_PER_MSEC)) == 0)
+            return true;
+        double ran = CFAbsoluteTimeGetCurrent() - t0;
+        waited += ran < 0.75 ? ran : 0.75;
+        if (waited >= CM_FRAME_WAIT_S) {
+            NSLog(@"CairoMetal: no GPU frame came free in %.0f s (%d frames, all in use); "
+                  @"the draw fails", CM_FRAME_WAIT_S, CM_FRAMES_IN_FLIGHT);
+            return false;
+        }
+    }
+}
+
 cm_frame *cm_frame_begin_ex(cm_surface_t *surface, bool layer_ok)
 {
     if (!surface || !surface->dev) return NULL;
@@ -1571,7 +1597,10 @@ cm_frame *cm_frame_begin_ex(cm_surface_t *surface, bool layer_ok)
 
     /* Gate on the ring depth: block until a slot the GPU has finished with is
      * available, so we never overwrite a buffer still being read. */
-    dispatch_semaphore_wait(dev->sem, DISPATCH_TIME_FOREVER);
+    if (!cm_device_take_frame(dev)) {
+        surface->status = CM_STATUS_DEVICE_ERROR;
+        return NULL;
+    }
 
     /* Pick a slot that is neither mid-encode (active) nor still being read by the
      * GPU (in_flight).  Do NOT key the slot purely off frame_seq % N: a per-surface
@@ -1751,7 +1780,10 @@ cm_frame *cm_frame_begin_single(cm_surface_t *surface)
 
     /* Gate on the ring depth exactly like cm_frame_begin so we never overwrite a
      * slice the GPU is still reading. */
-    dispatch_semaphore_wait(dev->sem, DISPATCH_TIME_FOREVER);
+    if (!cm_device_take_frame(dev)) {
+        surface->status = CM_STATUS_DEVICE_ERROR;
+        return NULL;
+    }
 
     cm_frame *f = NULL;
     for (int i = 0; i < CM_FRAMES_IN_FLIGHT; ++i) {

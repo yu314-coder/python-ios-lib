@@ -119,6 +119,50 @@ cm_frame *cm_glue_frame_for_surface(cm_surface_t *surface, bool create)
     return cm_glue_frame_for_surface_ex(surface, create, false);
 }
 
+/* Frames ended early so another surface could draw (diagnostic). */
+static long g_cm_frames_ended_early = 0;
+long cm_debug_frames_ended_early(void) { return g_cm_frames_ended_early; }
+
+/* Make sure a new frame on `dev` can begin: call on g_active_q.
+ *
+ * cairo draws at once; here a surface's drawing waits in an open frame until
+ * the surface is flushed, and the device has CM_FRAMES_IN_FLIGHT frames. With
+ * every one of them open on another surface, cm_frame_begin_ex waited for a
+ * frame only a flush of those surfaces could return -- for ever, holding the
+ * caller's GIL (four surfaces drawn in turn; manim with more live cameras than
+ * the Python flush registry held, 2026-11-09). The oldest open frame is ended
+ * instead: what it holds is drawn now, as cairo would have drawn it, and the
+ * surface's next draw opens a frame that starts from those pixels. Frames are
+ * only acquired at the start of a draw, for its own surface, so no draw is
+ * encoding into the frame ended here. */
+static void cm_glue_make_room_locked(cm_device *dev, cm_surface_t *except)
+{
+    for (;;) {
+        int open = 0;
+        cm_active_frame **oldest = NULL;
+        /* The list is newest first: the last match is the oldest. */
+        for (cm_active_frame **pp = &g_active_frames; *pp; pp = &(*pp)->next) {
+            if ((*pp)->surface->dev != dev) continue;
+            open++;
+            if ((*pp)->surface != except) oldest = pp;
+        }
+        if (open < CM_FRAMES_IN_FLIGHT || !oldest) return;
+        cm_active_frame *node = *oldest;
+        *oldest = node->next;
+        cm_frame *f = node->frame;
+        free(node);
+        cm_frame_end(f, false);
+        g_cm_frames_ended_early++;
+    }
+}
+
+static void cm_glue_make_room(cm_device *dev, cm_surface_t *except)
+{
+    if (!dev) return;
+    cm_glue_active_init();
+    dispatch_sync(g_active_q, ^{ cm_glue_make_room_locked(dev, except); });
+}
+
 static cm_frame *cm_glue_frame_for_surface_ex(cm_surface_t *surface, bool create,
                                               bool layer_ok)
 {
@@ -132,6 +176,7 @@ static cm_frame *cm_glue_frame_for_surface_ex(cm_surface_t *surface, bool create
         if (node) { result = node->frame; return; }
         if (!create) return;
 
+        cm_glue_make_room_locked(surface->dev, surface);
         cm_frame *f = cm_frame_begin_ex(surface, layer_ok); /* one command buffer / frame */
         if (!f) return;                          /* surface->status set inside */
         cm_active_frame *n = (cm_active_frame *)malloc(sizeof(*n));
@@ -202,6 +247,8 @@ cm_frame *cm_glue_frame_for_draw(cm_context_t *ctx, bool *out_immediate)
         /* Resolve any pending MSAA work into the colour texture first so the
          * 1-sample pass (loadAction Load) composites over the up-to-date image. */
         cm_glue_end_frame_for_surface(ctx->surface, /*wait=*/true);
+        /* The 1-sample frame takes a ring frame too (cm_glue_make_room). */
+        cm_glue_make_room(ctx->surface->dev, ctx->surface);
         cm_frame *f = cm_frame_begin_single(ctx->surface);
         if (f) { if (out_immediate) *out_immediate = true; return f; }
         /* Fallback (non-BGRA8 target, or 1-sample stencil unavailable): use the

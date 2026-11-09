@@ -366,11 +366,23 @@ typedef struct {
 
 /* Registry of live external-buffer (create_for_data) surfaces, so the manim
  * render hook can flush them all right before the frame's pixel_array is read
- * (manim never calls surface.flush() itself). */
-#define CM_REG_MAX 64
-static CMSurface *g_reg[CM_REG_MAX];
-static int g_reg_n = 0;
-static void cm_reg_add(CMSurface *s) { if (g_reg_n < CM_REG_MAX) g_reg[g_reg_n++] = s; }
+ * (manim never calls surface.flush() itself). It grows as needed: it was a
+ * fixed 64, and a surface made past that was never flushed by _flush_all, so
+ * its drawing never reached its buffer, and three of them kept the device's
+ * frames open until a draw waited for one for ever (manim with more than 64
+ * cameras alive, 2026-11-09). */
+static CMSurface **g_reg = NULL;
+static int g_reg_n = 0, g_reg_cap = 0;
+static void cm_reg_add(CMSurface *s) {
+    if (g_reg_n == g_reg_cap) {
+        int cap = g_reg_cap ? g_reg_cap * 2 : 64;
+        CMSurface **grown = (CMSurface **)PyMem_Realloc(g_reg, (size_t)cap * sizeof(*g_reg));
+        if (!grown) return;   /* out of memory: left unregistered, as before */
+        g_reg = grown;
+        g_reg_cap = cap;
+    }
+    g_reg[g_reg_n++] = s;
+}
 static void cm_reg_del(CMSurface *s) {
     for (int i = 0; i < g_reg_n; ++i)
         if (g_reg[i] == s) { g_reg[i] = g_reg[--g_reg_n]; return; }
@@ -2793,6 +2805,10 @@ static PyObject *cm_set_layer_frames(PyObject *m, PyObject *a) {
     extern void cm_debug_set_layer_frames(int on);
     cm_debug_set_layer_frames(on);
     Py_RETURN_NONE; }
+static PyObject *cm_frames_ended_early(PyObject *m, PyObject *a) {
+    (void)m; (void)a;
+    extern long cm_debug_frames_ended_early(void);
+    return PyLong_FromLong(cm_debug_frames_ended_early()); }
 static PyObject *cm_live_surfaces(PyObject *m, PyObject *a) {
     (void)m; (void)a; return PyLong_FromLong(g_reg_n); }
 static PyObject *cm_flush_stats(PyObject *m, PyObject *a) {
@@ -2830,6 +2846,7 @@ static PyMethodDef module_methods[] = {
     {"_flush_all",           cm_flush_all,               METH_NOARGS, "flush all live create_for_data surfaces (manim per-frame hook)"},
     {"metal_device_name",    cm_metal_device,            METH_NOARGS, "name of the live Metal GPU device (\"\" if unavailable)"},
     {"live_surfaces",        cm_live_surfaces,           METH_NOARGS, "number of live create_for_data surfaces"},
+    {"_frames_ended_early",  cm_frames_ended_early,      METH_NOARGS, "frames ended before their surface was flushed, so another surface could draw"},
     {"gpu_selftest",         cm_gpu_selftest,            METH_NOARGS, "render+readback a test pattern; returns (ok, device, msg)"},
     {"flush_stats",          cm_flush_stats,             METH_NOARGS, "(total_flushes, nonempty_flushes)"},
     {"last_gpu_ms",          cm_last_gpu_ms,             METH_NOARGS, "GPU time of the last waited-on frame, in ms"},
