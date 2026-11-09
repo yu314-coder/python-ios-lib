@@ -184,7 +184,11 @@ before importing manim.
   `cairo(metal)/STATUS.md` and `docs/manim.md`. MetalFX upscaling (draw at
   4K, upscale to 8K) was measured and is slower than drawing at 8K. The
   real speed lever is **lower fps**. CairoMetal is a real, general-purpose
-  GPU cairo — just not a manim accelerator.
+  GPU cairo — just not a manim accelerator. It batches a surface's drawing
+  into one GPU frame until the surface is flushed; since 2026-11-09 any
+  number of surfaces may hold pending drawing (the oldest of the device's
+  three frames is rendered early, same pixels), where four surfaces drawn in
+  turn, or manim with more than 64 live cameras, used to hang the process.
 - **PDF / PostScript / SVG backends ARE built in.** (An earlier revision
   of this doc said they were absent — stale.) `cairo-pdf.h` / `cairo-ps.h` /
   `cairo-svg.h` ship in `cairo/include/`, `libcairo.a` exports

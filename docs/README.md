@@ -43,7 +43,7 @@ All four share the same Monaco-based code editor (WKWebView) with IntelliSense (
 |---------|---------|------|-------------|
 | **matplotlib** | 3.11.0 | Real C build (arm64) | Full matplotlib incl. `ft2font`/`_path`/`_qhull`; plotly showcase backend optional |
 | **Plotly** | 6.6.0 | Pure Python | Interactive charts, 3D plots, maps |
-| **manim** | 0.20.1 | Modified for iOS | 145+ mobjects, 73 animations, 40+ rate functions, H.264 video |
+| **manim** | 0.22.1 | Modified for iOS | 145+ mobjects, 73 animations, 40+ rate functions, H.264 video |
 
 ### Media & Rendering
 

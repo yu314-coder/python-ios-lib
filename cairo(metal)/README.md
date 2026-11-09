@@ -398,7 +398,14 @@ option 2 above).
 The goal: `camera.py` keeps its logic; only the cairo handle is swapped for a
 CairoMetal one. Two tiers (see [DESIGN.md §6](DESIGN.md) for the full detail):
 
-### 1. Python shim (a `cairo_metal` ext module) — *not yet built*
+### 1. Python shim (a `cairo_metal` ext module) — *built*
+
+Built and shipped (`python/cairo_metal_ext.c`: 171 symbols, 18 classes,
+`Context` with 91 methods). manim uses it unchanged through
+`sys.modules["cairo"] = cairo_metal` (CodeBench's and ManimStudio's GPU
+switch): `create_for_data` surfaces draw straight into manim's `pixel_array`,
+and manim's camera calls `cairo._flush_all()` before it reads or writes the
+frame itself. The plan as first written follows.
 
 A small CPython extension exposes objects that **quack like pycairo**
 (`Context`, `ImageSurface`, `LinearGradient`, `Matrix`, and the `FORMAT_ARGB32`
@@ -442,38 +449,38 @@ is IOSurface-backed rather than a plain `MTLTexture` or CPU buffer.
 
 ## Current status
 
-Honest state (see [STATUS.md](STATUS.md) for the running detail):
+Running detail, round by round, is in [STATUS.md](STATUS.md).
 
-**Working today**
+**Working**
 
-- ✅ `swift build` (SwiftPM) compiles the library cleanly.
-- ✅ The clang/Make path (`make`, `build.sh`) compiles the lib, compiles both
-  shaders into `default.metallib`, and links the demo.
-- ✅ `make run` renders `build/demo.png` correctly on a Metal device: donut
-  (hole via winding), linear gradient, round-join/round-cap stroke — all
-  anti-aliased via MSAA.
-- ✅ The full public C API ([`include/cairo_metal.h`](include/cairo_metal.h)) is
-  implemented over the stencil-then-cover pipeline with all the optimizations
-  above present in the device backbone.
+- ✅ The C library (246 `cm_*` functions over the stencil-then-cover
+  pipeline) builds with `make`, `swift build` and `python/build_ios.sh`
+  (iOS arm64); the shaders compile into `default.metallib`.
+- ✅ The Python module (`cairo_metal`) is a pycairo drop-in, bundled in
+  python-ios-lib (`app_packages/site-packages`, and the SwiftPM `CairoMetal`
+  product) and used by manim when an app's GPU switch is on.
+- ✅ Test suites, all passing on Apple silicon: `tests/test_raster.py`,
+  `test_geometry.py` (177), `test_robust.py` (78), `test_reference.py`
+  (pixel diff against real cairo: byte-identical flats, ±1 on edges),
+  `test_layer_frames.py` (45), `test_path_batch.py` (11),
+  `test_frame_limit.py` (7), `python/test_gaps.py` (91),
+  `python/test_full_shim.py` (81), `python/test_shim.py`; plus the GPU smoke
+  scripts `cairo_gpu_test.py` (25) and the full/deep variants.
+- ✅ In CodeBench (Designed for iPad on an M4 Mac, GPU mode on): the GPU smoke
+  test, layer frames and frame-limit suites pass, and manim renders through it.
+- ✅ Drawing into any number of surfaces in any order: a surface's drawing waits
+  in one GPU frame until it is flushed, and when all three device frames are
+  open on other surfaces the oldest is rendered early (same pixels); a frame
+  wait never blocks for ever (2026-11-09).
 
-**Not done yet**
+**Not done**
 
-- ⛔ **manim Python shim** (the `cairo_metal` ext module) — designed, not built.
-- ⛔ **VideoToolbox wiring** — `cm_surface_get_iosurface` exists; the
-  `CVPixelBuffer` + `VTCompressionSession` glue lives in the consumer and is not
-  written here.
-- ⛔ **Test suite** — `tests/` is a placeholder; correctness is currently
-  asserted by the single visual demo. Fill rules, holes, stroke joins/caps, and
-  gradients each deserve a golden-image test.
-- ⚠️ **On-device (iOS arm64) validation** — the package targets iOS 17 and
-  builds for it, but the rendering path has been exercised on macOS (Apple
-  silicon), not yet on an iOS device.
-
-> **Note:** earlier revisions of `STATUS.md` described a non-building,
-> name-diverged scaffold. That has since been reconciled — the module names,
-> `Package.swift`, and the `Makefile` now match the files on disk, and the
-> backbone (`cm_device.m`, `cm_matrix.c`) is implemented. This README and the
-> current `STATUS.md` reflect the reconciled, building state.
+- ⛔ **VideoToolbox zero-copy** (tier 2 above): frames still reach the encoder
+  through `pixel_array`.
+- ⚠️ **A physical iPad or iPhone**: exercised on Apple silicon Macs, including
+  the iPad build of CodeBench, not yet on an iOS device.
+- Known gaps (round joins/caps, `mask()` with a gradient pattern, …) are listed
+  in STATUS.md.
 
 ---
 
@@ -503,7 +510,9 @@ cairo(metal)/
 │   └── fill.metal             vertex + stencil/cover-solid/cover-linear shaders
 ├── examples/
 │   └── demo.m                 standalone smoke test (renders demo.png)
-├── tests/                     (placeholder — golden-image tests to come)
+├── tests/                     test_*.py suites (raster, geometry, robust,
+│                              reference vs real cairo, layer frames, path
+│                              batch, frame limit); python/test_*.py: the shim
 └── .github/workflows/build.yml  CI: build on a macOS runner + render the demo
 ```
 
