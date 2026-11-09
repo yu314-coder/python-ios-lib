@@ -40,6 +40,7 @@ for everything that doesn't need a GPU windowing backend (see
 | **HarfBuzz / FreeType / fribidi** | ✅ | Text objects + full i18n — **50 locale catalogs bundled** (`bpy.app.translations`; PyPI ships i18n *off*, so this exceeds it). Verified: `pgettext_iface("Render")` → `レンダー` (ja) / `算繪` (zh_HANT) |
 | **OBJ / PLY / STL / FBX / glTF** | ✅ | Mesh I/O — FBX via the new C++ `bpy.ops.wm.fbx_*`; glTF exports/imports **with Draco + MeshOptimizer compression** (bridges cross-compiled for iOS; verified 5.15× encode + round-trip decode) |
 | **Geometry nodes** | ✅ | Full node graph |
+| **Essentials asset library** | ✅ | `5.3/datafiles/assets` (11 MB, CC0, from Blender 5.2.1): the brush assets (sculpt, paint, **Grease Pencil Draw/Erase**) and the node-group assets — `object.shade_auto_smooth` (Smooth by Angle) and Add Modifier ▸ Array / Curve to Tube / Scatter on Surface work. Headless, `modifier_add_node_group` cancels with "Asset loading is unfinished" until something has loaded the library (Shade Auto Smooth does) |
 | **FFmpeg video** | ✅ | H.264/H.265 (Apple VideoToolbox) · MPEG-4 · FFV1 · QTRLE · … — see [Video output](#video-output-ffmpeg) |
 | **Cycles OSL** | ❌ | Needs LLVM JIT — impossible under iOS W^X; script shader node only (SVM nodes work) |
 | **Eevee + `gpu` module** | ✅ (Metal) | Offscreen Metal GHOST backend — `gpu.init()`, `GPUOffScreen`, `BLENDER_EEVEE` render all work on device (see [GPU backend](#gpu-module--eevee-metal)) |
